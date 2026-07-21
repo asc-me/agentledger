@@ -1,0 +1,73 @@
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from app.db import get_db
+from app.models import User
+from app.schemas import (
+    GdriveConnectIn,
+    GithubConnectIn,
+    GithubIssueIn,
+    PlatformConfigOut,
+    PlatformUpdate,
+)
+from app.security.deps import get_current_user
+from app.services import items as items_svc
+from app.services import platform as platform_svc
+
+router = APIRouter(prefix="/platform", tags=["platform"])
+
+
+@router.get("", response_model=PlatformConfigOut)
+def get_platform(project_id: str = "core", db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    return platform_svc.get_config(db, project_id)
+
+
+@router.patch("", response_model=PlatformConfigOut)
+def update_platform(body: PlatformUpdate, project_id: str = "core", db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    if body.llm_mode is not None and body.llm_mode not in ("stub", "local", "cloud"):
+        raise HTTPException(422, "llm_mode must be stub | local | cloud")
+    return platform_svc.update_config(db, project_id, body.model_dump(exclude_unset=True))
+
+
+@router.post("/github/connect", response_model=PlatformConfigOut)
+def github_connect(body: GithubConnectIn, project_id: str = "core", db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    return platform_svc.connect_github(db, project_id, account=body.account, repo=body.repo)
+
+
+@router.post("/github/disconnect", response_model=PlatformConfigOut)
+def github_disconnect(project_id: str = "core", db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    return platform_svc.disconnect_github(db, project_id)
+
+
+@router.post("/github/create-issue")
+def github_create_issue(
+    body: GithubIssueIn, project_id: str = "core", db: Session = Depends(get_db), user: User = Depends(get_current_user)
+):
+    """Create a tracker item mirroring a GitHub issue.
+
+    Local slice: records the item and the intended issue. Pushing to the real
+    GitHub API requires a connected account with a token (out of scope offline).
+    """
+    cfg = platform_svc.get_config(db, project_id)
+    item = items_svc.create_item(
+        db, title=body.title, description=body.body, tags=["github", body.type],
+        project_id=project_id, reporter={"name": user.name, "handle": user.handle, "avatar": user.avatar},
+    )
+    return {
+        "item": {"id": item.id, "title": item.title},
+        "pushed_to_github": False,
+        "detail": (
+            f"Would open an issue in {cfg.github_repo}" if cfg.github_connected
+            else "GitHub not connected — item created locally only"
+        ),
+    }
+
+
+@router.post("/gdrive/connect", response_model=PlatformConfigOut)
+def gdrive_connect(body: GdriveConnectIn, project_id: str = "core", db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    return platform_svc.connect_gdrive(db, project_id, account=body.account, folder=body.folder)
+
+
+@router.post("/gdrive/disconnect", response_model=PlatformConfigOut)
+def gdrive_disconnect(project_id: str = "core", db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    return platform_svc.disconnect_gdrive(db, project_id)

@@ -1,0 +1,98 @@
+/* IBM Plex fonts are self-hosted via @fontsource (imported in main.tsx) — no runtime CDN fetch. */
+@import "tailwindcss";
+
+/* ---- AgentLedger design tokens (dark-only, from AgentLedger.dc.html) ---- */
+@theme {
+  --font-sans: "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  --color-bg: #0a0c0e;
+  --color-surface: #0d1114;
+  --color-surface-2: #101418;
+  --color-surface-3: #12171b;
+  --color-surface-4: #14181d;
+  --color-header: rgba(12, 15, 17, 0.72);
+
+  --color-line: #1a1f24;
+  --color-line-2: #1e242a;
+  --color-line-hover: #2a333a;
+  --color-line-3: #2c353c;
+
+  --color-fg: #e6e9ec;
+  --color-fg-2: #dfe3e7;
+  --color-muted: #8b949e;
+  --color-muted-2: #9aa3ab;
+  --color-faint: #5c656e;
+  --color-faint-2: #4a525a;
+
+  --color-accent: #c6f24e;
+  --color-accent-hi: #d8ff74;
+  --color-purple: #a78bfa;
+  --color-purple-2: #c9b8ff;
+
+  --color-st-backlog: #8b949e;
+  --color-st-next: #7ca2ff;
+  --color-st-in_progress: #c6f24e;
+  --color-st-review: #e0b34a;
+  --color-st-done: #5fd07a;
+  --color-st-blocked: #ff6b6b;
+
+  --color-ty-bug: #ff8f8f;
+  --color-ty-feature: #c6f24e;
+  --color-ty-enhancement: #7ca2ff;
+  --color-ty-feedback: #c9b8ff;
+
+  --animate-fade: alFade 0.16s ease both;
+  --animate-slide-up: alSlideUp 0.18s ease both;
+}
+
+@keyframes alFade {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes alBlink {
+  50% { opacity: 0.25; }
+}
+@keyframes alSlideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+@keyframes alSlideLeft {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+@keyframes alPop {
+  from { transform: scale(0.6); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; margin: 0; }
+
+body {
+  background:
+    radial-gradient(1200px 600px at 78% -10%, rgba(167, 139, 250, 0.06), transparent 60%),
+    radial-gradient(900px 500px at 12% 110%, rgba(198, 242, 78, 0.05), transparent 55%),
+    var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection { background: var(--color-accent); color: var(--color-bg); }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+  background: #20272d;
+  border-radius: 8px;
+  border: 2px solid var(--color-bg);
+}
+::-webkit-scrollbar-thumb:hover { background: #2c353c; }
+
+.blink { animation: alBlink 2.2s ease-in-out infinite; }
+
+input, button, textarea { font-family: inherit; color: inherit; }
+button { cursor: pointer; }
+a { color: var(--color-accent); text-decoration: none; }
+a:hover { color: var(--color-accent-hi); }

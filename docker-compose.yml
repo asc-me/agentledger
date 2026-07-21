@@ -1,0 +1,51 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-agentledger}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agentledger}
+      POSTGRES_DB: ${POSTGRES_DB:-agentledger}
+    volumes:
+      - agentledger_pgdata:/var/lib/postgresql/data
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agentledger}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-agentledger}:${POSTGRES_PASSWORD:-agentledger}@db:5432/${POSTGRES_DB:-agentledger}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me-in-production-0123456789abcdef}
+      SEED_ON_START: ${SEED_ON_START:-true}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080,http://localhost:5173}
+      EMBED_DIM: ${EMBED_DIM:-384}
+      # AI providers (F1). Defaults are all-stub → fully offline.
+      EMBED_PROVIDER: ${EMBED_PROVIDER:-stub}
+      CHAT_PROVIDER: ${CHAT_PROVIDER:-stub}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-nomic-embed-text}
+      OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-llama3.1:8b}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_EMBED_MODEL: ${OPENAI_EMBED_MODEL:-text-embedding-3-small}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-opus-4-8}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${API_PORT:-8000}:8000"
+
+  web:
+    build: ./web
+    depends_on:
+      - api
+    ports:
+      - "${WEB_PORT:-8080}:80"
+
+volumes:
+  agentledger_pgdata:

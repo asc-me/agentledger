@@ -1,0 +1,141 @@
+import {
+  BarChart3,
+  Check,
+  ChevronDown,
+  GitFork,
+  LayoutGrid,
+  ListChecks,
+  Map,
+  Plug,
+  Settings,
+  Sparkles,
+  Star,
+} from "lucide-react";
+import * as React from "react";
+import { NavLink } from "react-router-dom";
+
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { useProjectCtx } from "@/features/ProjectContext";
+import { cn } from "@/lib/cn";
+import { useItems, useRequests } from "@/lib/queries";
+
+export function LeftNav() {
+  const { projects, active, activeId, setActiveId } = useProjectCtx();
+  const { data: items } = useItems(activeId);
+  const { data: requests } = useRequests(activeId);
+
+  return (
+    <aside className="flex w-[228px] flex-none flex-col border-r border-line bg-surface/40 px-3 py-3.5">
+      {/* Project switcher */}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button className="flex h-10 w-full items-center gap-2.5 rounded-[10px] border border-line-2 bg-surface-2 px-3 transition-colors hover:border-line-hover">
+            <span
+              className="h-2.5 w-2.5 flex-none rounded-[3px]"
+              style={{ background: active?.accent ?? "#c6f24e" }}
+            />
+            <span className="flex-1 truncate text-left text-[13px] font-semibold">
+              {active?.name ?? "Core Platform"}
+            </span>
+            <ChevronDown size={12} className="text-faint" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-[204px]">
+          <DropdownMenuLabel>Switch project</DropdownMenuLabel>
+          {projects.map((p) => (
+            <DropdownMenuItem
+              key={p.id}
+              onSelect={() => setActiveId(p.id)}
+              className="gap-2.5 text-[12.5px]"
+            >
+              <span className="h-2.5 w-2.5 flex-none rounded-[3px]" style={{ background: p.accent }} />
+              <span className="flex-1 truncate text-left">{p.name}</span>
+              {p.id === active?.id && <Check size={13} style={{ color: p.accent }} />}
+            </DropdownMenuItem>
+          ))}
+          <DropdownMenuSeparator />
+          <div className="px-2.5 py-1.5 font-mono text-[10px] text-faint-2">
+            New project · Settings — soon
+          </div>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <div className="mb-2 mt-5 px-2 font-mono text-[10px] uppercase tracking-wide text-faint">
+        Workspace
+      </div>
+      <nav className="flex flex-col gap-0.5">
+        <NavItem to="/tracker" icon={<ListChecks size={16} />} label="Tracker" count={items?.length} />
+        <NavItem to="/requests" icon={<Star size={16} />} label="Requests" count={requests?.length} />
+        <NavItem to="/dashboard" icon={<LayoutGrid size={16} />} label="Dashboard" />
+        <NavItem to="/links" icon={<GitFork size={16} />} label="Links" />
+        <NavItem to="/roadmap" icon={<Map size={16} />} label="Roadmap" />
+        <NavItem to="/mcp-tools" icon={<Plug size={16} />} label="MCP Tools" />
+        <NavItem to="/prds" icon={<BarChart3 size={16} />} label="PRDs" />
+      </nav>
+
+      <div className="mt-auto flex flex-col gap-0.5 border-t border-line pt-3">
+        <NavItem to="/feedback-kit" icon={<Sparkles size={16} />} label="Feedback Kit" />
+        <NavItem to="/settings" icon={<Settings size={16} />} label="Settings" />
+      </div>
+    </aside>
+  );
+}
+
+function NavItem({
+  to,
+  icon,
+  label,
+  count,
+  soon,
+}: {
+  to?: string;
+  icon: React.ReactNode;
+  label: string;
+  count?: number;
+  soon?: boolean;
+}) {
+  const base =
+    "flex items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-[13px] transition-colors";
+  if (soon || !to) {
+    return (
+      <div
+        className={cn(base, "cursor-default text-faint-2")}
+        title="Coming in a later pass"
+      >
+        {icon}
+        <span className="flex-1">{label}</span>
+        <span className="rounded border border-line-2 px-1.5 py-px font-mono text-[9px] uppercase text-faint-2">
+          soon
+        </span>
+      </div>
+    );
+  }
+  return (
+    <NavLink
+      to={to}
+      className={({ isActive }) =>
+        cn(
+          base,
+          isActive
+            ? "bg-surface-3 text-fg"
+            : "text-muted hover:bg-surface-3 hover:text-fg-2",
+        )
+      }
+    >
+      {icon}
+      <span className="flex-1">{label}</span>
+      {count != null && (
+        <span className="rounded-md bg-surface-4 px-1.5 py-0.5 font-mono text-[10px] text-muted">
+          {count}
+        </span>
+      )}
+    </NavLink>
+  );
+}

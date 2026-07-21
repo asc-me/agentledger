@@ -1,0 +1,161 @@
+import * as React from "react";
+import { useOutletContext } from "react-router-dom";
+
+import { Dot } from "@/components/ui/badge";
+import { useProjectCtx } from "@/features/ProjectContext";
+import { cn } from "@/lib/cn";
+import { STATUS_META, STATUS_ORDER } from "@/lib/meta";
+import { useItems, useReorderItems, useUpdateItem } from "@/lib/queries";
+import type { Item, Status } from "@/lib/types";
+
+import { ItemDetailPanel } from "./ItemDetailPanel";
+import { ItemRow } from "./ItemRow";
+import { NewItemDialog } from "./NewItemDialog";
+
+export function TrackerView() {
+  const search = useOutletContext<string>();
+  const { activeId } = useProjectCtx();
+  const { data: items = [], isLoading } = useItems(activeId);
+  const update = useUpdateItem();
+  const reorder = useReorderItems();
+
+  const [filter, setFilter] = React.useState<Status | "all">("all");
+  const [selectedId, setSelectedId] = React.useState<string | null>(null);
+  const [dragId, setDragId] = React.useState<string | null>(null);
+  const [overId, setOverId] = React.useState<string | null>(null);
+
+  const ordered = React.useMemo(
+    () => [...items].sort((a, b) => a.sort_order - b.sort_order),
+    [items],
+  );
+
+  const visible = ordered.filter((it) => {
+    if (filter !== "all" && it.status !== filter) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      return it.title.toLowerCase().includes(q) || it.id.toLowerCase().includes(q);
+    }
+    return true;
+  });
+
+  const counts = React.useMemo(() => {
+    const c: Record<string, number> = {};
+    for (const it of ordered) c[it.status] = (c[it.status] ?? 0) + 1;
+    return c;
+  }, [ordered]);
+
+  const selected = items.find((i) => i.id === selectedId) ?? null;
+
+  function setStatus(item: Item, status: Status) {
+    update.mutate({ id: item.id, body: { status } });
+  }
+
+  function onDrop() {
+    if (!dragId || !overId || dragId === overId) {
+      setDragId(null);
+      setOverId(null);
+      return;
+    }
+    const ids = ordered.map((i) => i.id);
+    const from = ids.indexOf(dragId);
+    const to = ids.indexOf(overId);
+    ids.splice(to, 0, ids.splice(from, 1)[0]);
+    reorder.mutate(ids);
+    setDragId(null);
+    setOverId(null);
+  }
+
+  return (
+    <div className="relative flex h-full min-h-0 flex-col">
+      <div className="flex flex-none items-center gap-4 border-b border-line px-5 py-4">
+        <div>
+          <h1 className="text-[18px] font-semibold tracking-tight">Tracker</h1>
+          <p className="mt-0.5 text-[12.5px] text-muted">
+            One linear stream. Priority + recency. Drag to reorder, click a status to advance it.
+          </p>
+        </div>
+        <div className="ml-auto">
+          <NewItemDialog />
+        </div>
+      </div>
+
+      <div className="flex flex-none flex-wrap items-center gap-1.5 border-b border-line px-5 py-2.5">
+        <FilterChip active={filter === "all"} onClick={() => setFilter("all")} label="All" count={ordered.length} />
+        {STATUS_ORDER.map((s) => (
+          <FilterChip
+            key={s}
+            active={filter === s}
+            onClick={() => setFilter(s)}
+            label={STATUS_META[s].label}
+            count={counts[s] ?? 0}
+            color={STATUS_META[s].color}
+          />
+        ))}
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {isLoading ? (
+          <div className="p-8 text-center text-[13px] text-muted">Loading stream…</div>
+        ) : visible.length === 0 ? (
+          <div className="p-8 text-center text-[13px] text-muted">No items match.</div>
+        ) : (
+          visible.map((item) => (
+            <ItemRow
+              key={item.id}
+              item={item}
+              selected={item.id === selectedId}
+              onSelect={() => setSelectedId(item.id)}
+              onStatus={(s) => setStatus(item, s)}
+              dragging={dragId === item.id}
+              dragOver={overId === item.id && dragId !== item.id}
+              dragHandlers={{
+                onDragStart: () => setDragId(item.id),
+                onDragEnter: () => setOverId(item.id),
+                onDragOver: (e) => e.preventDefault(),
+                onDragEnd: onDrop,
+              }}
+            />
+          ))
+        )}
+      </div>
+
+      {selected && (
+        <ItemDetailPanel
+          item={selected}
+          onClose={() => setSelectedId(null)}
+          onStatus={(s) => setStatus(selected, s)}
+        />
+      )}
+    </div>
+  );
+}
+
+function FilterChip({
+  active,
+  onClick,
+  label,
+  count,
+  color,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  count: number;
+  color?: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[12px] transition-colors",
+        active
+          ? "border-line-hover bg-surface-3 text-fg"
+          : "border-line-2 bg-surface-2 text-muted hover:border-line-3 hover:text-fg-2",
+      )}
+    >
+      {color && <Dot color={color} />}
+      {label}
+      <span className="font-mono text-[10px] text-faint">{count}</span>
+    </button>
+  );
+}

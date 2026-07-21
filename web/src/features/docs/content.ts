@@ -1,0 +1,179 @@
+/** Context-aware content for the inline docs reader, keyed by route.
+ *  Distilled from the docs/ guides into the reader's structured format. */
+
+export interface DocSection {
+  num: number;
+  h: string;
+  b: string;
+}
+export interface DocShortcut {
+  k: string;
+  d: string;
+}
+export interface DocRelated {
+  label: string;
+  to: string;
+}
+export interface DocEntry {
+  badge: string; // mono page label in the header
+  title: string;
+  tagline: string;
+  sections: DocSection[];
+  shortcuts?: DocShortcut[];
+  related?: DocRelated[];
+}
+
+const DEFAULT: DocEntry = {
+  badge: "AGENTLEDGER",
+  title: "AgentLedger",
+  tagline: "Agent memory. Linear execution.",
+  sections: [
+    { num: 1, h: "One linear stream", b: "Work lives in a single priority-ordered tracker, not boards. The left nav switches between the workspace views." },
+    { num: 2, h: "Agent context", b: "The right sidebar (toggle “Agent”) holds searchable memory and a chat grounded in your project state." },
+    { num: 3, h: "Same code path for agents", b: "Agents drive the app through MCP tools — identical to the UI, so their writes show up instantly." },
+  ],
+  related: [
+    { label: "MCP Tools", to: "/mcp-tools" },
+    { label: "Dashboard", to: "/dashboard" },
+  ],
+};
+
+const CONTENT: Record<string, DocEntry> = {
+  default: DEFAULT,
+
+  "/tracker": {
+    badge: "TRACKER",
+    title: "Tracker",
+    tagline: "One linear stream of work, priority + recency.",
+    sections: [
+      { num: 1, h: "Advance status", b: "Click a status dot on a row (or in the detail panel) and pick a new state. Moving an item to Done auto-extracts a lesson into memory." },
+      { num: 2, h: "Reorder", b: "Drag a row to change its position — the new order persists." },
+      { num: 3, h: "Filter & inspect", b: "Use the status chips to filter and the top-bar search to find by title or id. Click a row for its detail panel: description, blocker, PR, and linked memory." },
+    ],
+    related: [
+      { label: "MCP Tools", to: "/mcp-tools" },
+      { label: "Dashboard", to: "/dashboard" },
+    ],
+  },
+
+  "/requests": {
+    badge: "REQUESTS",
+    title: "Requests",
+    tagline: "Triage queue fed by the public feedback form.",
+    sections: [
+      { num: 1, h: "Triage", b: "Filter by type, upvote, and link a request to a tracker item — linking sets its status to “linked”." },
+      { num: 2, h: "Public submissions", b: "The embeddable feedback widget (/embed/feedback) drops submissions here, with auto-duplicate detection before they land." },
+    ],
+    related: [{ label: "Feedback Kit", to: "/feedback-kit" }],
+  },
+
+  "/prds": {
+    badge: "PRDS",
+    title: "PRDs",
+    tagline: "Specs with versions, links, and AI drafting.",
+    sections: [
+      { num: 1, h: "Create from a template", b: "New PRD offers a Standard skeleton or Blank. Each row shows status, version, and linked items." },
+      { num: 2, h: "Open to edit", b: "Click a PRD to open the split markdown editor with live preview, version history, and AI commands." },
+    ],
+  },
+
+  "prd-editor": {
+    badge: "PRD EDITOR",
+    title: "PRD editor",
+    tagline: "Markdown editor with preview, versions, and AI.",
+    sections: [
+      { num: 1, h: "Write with live preview", b: "Edit markdown on the left; the rendered preview updates on the right. Save persists your draft." },
+      { num: 2, h: "Version & diff", b: "Snapshot cuts a new version and bumps the number. The History tab lists versions; click one for a line diff against your draft." },
+      { num: 3, h: "AI commands", b: "Expand, Generate risks, and Summarize append generated markdown to the body — using the configured chat provider." },
+      { num: 4, h: "Link items", b: "The Linked dropdown attaches tracker items to this PRD." },
+    ],
+    related: [{ label: "Tracker", to: "/tracker" }],
+  },
+
+  "/links": {
+    badge: "LINKS",
+    title: "Links graph",
+    tagline: "Typed relationships between items and requests.",
+    sections: [
+      { num: 1, h: "Read the graph", b: "Nodes are items and requests; edges are colored by type — dependency, code, semantic, tag. Toggle the type chips to filter." },
+      { num: 2, h: "Inspect", b: "Click a node to highlight its neighborhood and see each connection’s reason; click an edge for its endpoints and confidence." },
+    ],
+  },
+
+  "/dashboard": {
+    badge: "DASHBOARD",
+    title: "Dashboard",
+    tagline: "Project health at a glance.",
+    sections: [
+      { num: 1, h: "KPIs & distribution", b: "Tiles summarize items, memory, PRDs, and MCP activity. The status bar shows the spread across the six states with a labeled legend." },
+      { num: 2, h: "Requests & activity", b: "See requests broken down by type and the most recently updated items." },
+    ],
+    related: [{ label: "Tracker", to: "/tracker" }],
+  },
+
+  "/roadmap": {
+    badge: "ROADMAP",
+    title: "Roadmap",
+    tagline: "Phased milestones with rolled-up progress.",
+    sections: [
+      { num: 1, h: "Phases", b: "MVP → Post-MVP → Later. Each phase’s progress is computed from its milestones’ done state." },
+      { num: 2, h: "Share it", b: "Copy public link gives a read-only /embed/roadmap page you can share outside the app." },
+    ],
+  },
+
+  "/mcp-tools": {
+    badge: "MCP TOOLS",
+    title: "MCP Tools",
+    tagline: "The tool surface agents call — with live metrics.",
+    sections: [
+      { num: 1, h: "The surface", b: "11 live tools over a JSON-RPC endpoint (POST /api/mcp). Each card shows its params, description, and call count." },
+      { num: 2, h: "Authenticate agents", b: "Create a scoped API key in Settings → API Keys, then call the endpoint with it. Every call is metered here." },
+    ],
+    related: [{ label: "Settings", to: "/settings" }],
+  },
+
+  "/feedback-kit": {
+    badge: "FEEDBACK KIT",
+    title: "Feedback Kit",
+    tagline: "Generate a themeable embeddable feedback widget.",
+    sections: [
+      { num: 1, h: "Configure", b: "Pick an accent, corner radius, enabled types, and whether to collect email — the preview updates live." },
+      { num: 2, h: "Embed", b: "Copy the iframe snippet. The widget posts to the public feedback endpoint with built-in duplicate detection." },
+    ],
+    related: [{ label: "Requests", to: "/requests" }],
+  },
+
+  "/settings": {
+    badge: "SETTINGS",
+    title: "Settings",
+    tagline: "Providers, integrations, project, members, keys.",
+    sections: [
+      { num: 1, h: "AI Providers", b: "Switch the chat/extraction provider (stub / Ollama / Claude) live. Embeddings are a deploy-time setting." },
+      { num: 2, h: "Integrations", b: "Connect GitHub/Drive config and copy the inbound issues webhook — opened GitHub issues become tracker items." },
+      { num: 3, h: "Project, members, keys", b: "Edit project config and flags, review member roles, and create/revoke scoped API keys (shown once)." },
+    ],
+    related: [{ label: "MCP Tools", to: "/mcp-tools" }],
+  },
+
+  "/profile": {
+    badge: "PROFILE",
+    title: "Profile",
+    tagline: "Your account and project access.",
+    sections: [
+      { num: 1, h: "Account", b: "Your name, handle, and email." },
+      { num: 2, h: "Project access", b: "Every project you belong to, with your role and access level." },
+    ],
+    related: [{ label: "Settings", to: "/settings" }],
+  },
+};
+
+/** Global shortcuts shown on every page (these are actually wired). */
+export const GLOBAL_SHORTCUTS: DocShortcut[] = [
+  { k: "?", d: "Open / close this help" },
+  { k: "Esc", d: "Close this panel" },
+];
+
+export function docFor(pathname: string): DocEntry {
+  if (/^\/prds\/[^/]+$/.test(pathname)) return CONTENT["prd-editor"];
+  return CONTENT[pathname] ?? CONTENT.default;
+}

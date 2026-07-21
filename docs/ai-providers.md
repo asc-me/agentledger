@@ -1,0 +1,85 @@
+# AI providers
+
+Every AI capability in AgentLedger sits behind a small **provider abstraction** so the app
+runs fully offline by default and swaps in real models without touching call sites.
+
+## Three capabilities
+
+`backend/app/providers/base.py` defines three protocols:
+
+| Protocol | Used by |
+| --- | --- |
+| `Embedder` | Memory embedding + semantic search, duplicate detection |
+| `ChatModel` | Agent chat (with a `stream()` method for SSE) |
+| `Extractor` | Auto-extraction on `done`, PRD AI commands, the `extract_lessons` MCP tool |
+
+## Implementations
+
+| Provider | Chat / extraction | Embeddings | Extra deps |
+| --- | --- | --- | --- |
+| **stub** (default) | deterministic composed reply | hashed bag-of-tokens → L2-normalized vector | none |
+| **ollama** | `POST {base}/api/chat` (+ streaming ndjson) | `POST {base}/api/embeddings` | httpx |
+| **anthropic** | Claude Messages API (`claude-opus-4-8`) | — (no embeddings endpoint) | `anthropic` (optional `cloud` extra) |
+| **openai** | — | `POST {base}/v1/embeddings` | httpx |
+
+The **stub** is deterministic (same text → same vector/reply), which keeps the stack offline
+and makes tests reproducible. It's honest: the stub chat reply grounds itself in real project
+data and tells you how to enable a real model. Because Anthropic has no embeddings endpoint,
+**cloud embeddings** go through any OpenAI-compatible `/v1/embeddings` API.
+
+## Choosing providers
+
+Two independent selectors:
+
+- **`CHAT_PROVIDER`** — `stub | ollama | anthropic`. Drives chat, auto-extraction, and PRD AI
+  commands. **Switchable live** from [Settings → AI Providers](settings.md#ai-providers-tab)
+  (or env). Changing it updates the in-memory settings and resets the provider cache.
+- **`EMBED_PROVIDER`** — `stub | ollama | openai`. Drives memory embedding + search and
+  duplicate detection. This is a **deploy-time** setting.
+
+### Why embeddings are deploy-time
+
+The pgvector column dimension is fixed when the schema is created. Different embedders have
+different dimensions (stub 384, `nomic-embed-text` 768, OpenAI `text-embedding-3-small`
+1536). To switch: set `EMBED_PROVIDER` **and** `EMBED_DIM` to match, reprovision the database
+(so the `vector` column has the right width), then re-embed everything:
+
+```bash
+curl -s -X POST http://localhost:8000/api/memory/backfill -H "Authorization: Bearer <jwt>"
+```
+
+## Configuration
+
+Set in `.env` / the environment (see [Configuration](configuration.md)):
+
+```bash
+CHAT_PROVIDER=stub                 # stub | ollama | anthropic
+EMBED_PROVIDER=stub                # stub | ollama | openai
+EMBED_DIM=384                      # must match EMBED_PROVIDER
+
+# local (Ollama) — from Docker, the host is host.docker.internal
+OLLAMA_BASE_URL=http://host.docker.internal:11434
+OLLAMA_CHAT_MODEL=llama3.1:8b
+OLLAMA_EMBED_MODEL=nomic-embed-text
+
+# cloud
+OPENAI_API_KEY=...                 # for OpenAI-compatible embeddings
+OPENAI_EMBED_MODEL=text-embedding-3-small
+ANTHROPIC_API_KEY=...              # read by the anthropic SDK
+ANTHROPIC_MODEL=claude-opus-4-8
+```
+
+The `anthropic` SDK is only imported when `CHAT_PROVIDER=anthropic`; install it with the
+`cloud` extra (`pip install -e ".[cloud]"`) or add it to the backend image.
+
+## How it works
+
+- `backend/app/providers/__init__.py` is the registry (`get_embedder`, `get_chat_model`,
+  `get_extractor`, `iter_reply`, `reset`), cached per process.
+- `backend/app/services/platform.py::apply_llm` maps the platform `llm_mode` to the chat
+  provider and resets the cache — this is what makes the Settings switch take effect live.
+- `backend/app/embeddings.py` is a thin back-compat shim over the registry.
+
+## Related
+
+- [Memory & chat](memory-and-chat.md) · [PRDs](prds.md) · [Settings](settings.md)

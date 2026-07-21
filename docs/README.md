@@ -1,0 +1,44 @@
+# AgentLedger documentation
+
+**Agent memory. Linear execution.** An agent-native dev tool: a skinny linear tracker +
+persistent agent memory (pgvector) + request triage + a PRD editor, with native MCP tools
+so agents read/write project context through the *same code path* as the web app. Runs
+fully offline with `docker compose up`.
+
+## Start here
+
+- **[Product overview](product-overview.md)** — vision, goals, target users, philosophy, licensing
+- **[Getting started](getting-started.md)** — install, run, first login, a guided tour
+- **[Architecture](ARCHITECTURE.md)** — how the system fits together and why
+
+## Feature guides
+
+| Guide | What it covers |
+| --- | --- |
+| [Tracker](tracker.md) | The linear item stream — states, drag-reorder, inline status, detail panel, filters |
+| [Memory & agent chat](memory-and-chat.md) | Memory shards, semantic search, auto-extraction, import/export, streaming chat |
+| [Requests & feedback](requests-and-feedback.md) | Triage queue, the public embeddable form, auto-duplicate detection, the Feedback Kit |
+| [PRDs](prds.md) | List + markdown editor, live preview, version history + diff, AI commands, item links |
+| [Links graph](links-graph.md) | Interactive typed-relationship graph |
+| [Dashboard](dashboard.md) | KPIs, status distribution, request breakdown, recent activity |
+| [Roadmap](roadmap.md) | Phased milestones + the shareable public roadmap |
+| [Settings & profile](settings.md) | AI provider switch, integrations, project config, members, API keys, profile |
+
+## Reference
+
+| Doc | What it covers |
+| --- | --- |
+| [MCP tools](mcp.md) | The 11 MCP tools, JSON-RPC endpoint, API-key auth, call metering |
+| [AI providers](ai-providers.md) | The provider abstraction — stub / Ollama / Anthropic / OpenAI |
+| [API reference](api-reference.md) | Every REST + public endpoint |
+| [Data model](data-model.md) | Entities and relationships |
+| [Configuration](configuration.md) | Environment variables |
+| [Development](development.md) | Local dev, tests, migrations |
+| [Implementation plan](IMPLEMENTATION_PLAN.md) | Phase-by-phase build status |
+
+## Conventions used in these docs
+
+- **UI** paths are described from the left nav / top bar.
+- **API** endpoints are all under `/api` (e.g. `POST /api/items`), JWT-authed unless noted
+  **public** (unauthenticated) or **MCP** (API-key authed).
+- Seeded demo login: **alex@ascme-labs.com** / **agentledger**.
