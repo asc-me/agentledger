@@ -41,4 +41,5 @@ fully offline with `docker compose up`.
 - **UI** paths are described from the left nav / top bar.
 - **API** endpoints are all under `/api` (e.g. `POST /api/items`), JWT-authed unless noted
   **public** (unauthenticated) or **MCP** (API-key authed).
-- Seeded demo login: **alex@ascme-labs.com** / **agentledger**.
+- The app starts empty — create an account and your first project in the UI. A demo dataset
+  is available opt-in via `SEED_ON_START=true` (see [Getting started](getting-started.md)).

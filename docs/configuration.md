@@ -40,7 +40,7 @@ See [AI providers](ai-providers.md) for the details (and why embeddings are depl
 
 | Var | Default | Notes |
 | --- | --- | --- |
-| `SEED_ON_START` | `true` | Seed the demo dataset when the DB is empty |
+| `SEED_ON_START` | `false` | Load the demo dataset on an empty DB. Default off — the app starts empty and you sign up in the UI. Set `true` for a populated demo. |
 | `PUBLIC_SUBMIT_ENABLED` | `true` | Allow the public feedback endpoints |
 | `CORS_ORIGINS` | `http://localhost:8080,http://localhost:5173` | Comma-separated allowed origins |
 

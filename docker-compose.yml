@@ -20,7 +20,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-agentledger}:${POSTGRES_PASSWORD:-agentledger}@db:5432/${POSTGRES_DB:-agentledger}
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me-in-production-0123456789abcdef}
-      SEED_ON_START: ${SEED_ON_START:-true}
+      SEED_ON_START: ${SEED_ON_START:-false}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080,http://localhost:5173}
       EMBED_DIM: ${EMBED_DIM:-384}
       # AI providers (F1). Defaults are all-stub → fully offline.

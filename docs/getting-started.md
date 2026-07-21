@@ -8,7 +8,7 @@ docker compose up --build
 ```
 
 The stack is **Postgres (pgvector) + FastAPI + an nginx-served SPA**. On first boot the API
-enables the `vector` extension, runs Alembic migrations, and seeds the demo dataset.
+enables the `vector` extension and runs Alembic migrations. The database starts **empty**.
 
 | Surface | URL |
 | --- | --- |
@@ -17,19 +17,30 @@ enables the `vector` extension, runs Alembic migrations, and seeds the demo data
 | Public feedback widget | http://localhost:8080/embed/feedback |
 | Public roadmap | http://localhost:8080/embed/roadmap |
 
-**Seeded login:** `alex@ascme-labs.com` / `agentledger` (all seeded users share that
-password — change it for any real deployment).
+## First run — create your account
+
+Open the web app and, on the sign-in screen, choose **Create an account**. Register with a
+name, handle, email, and password, then **Create your first project** — a workspace for your
+tracker, agent memory, requests, and PRDs. You can add more projects later from the switcher
+at the top of the left nav.
 
 Ports and credentials are configurable via `.env` — see [Configuration](configuration.md).
 
-## What's seeded
+## Optional: load the demo dataset
 
-So the app is populated out of the box (mirroring the design prototype):
+To explore a fully-populated app instead of starting empty, set `SEED_ON_START=true` in `.env`
+**before the first `docker compose up`** (seeding only runs on an empty database). It loads a
+dataset mirroring the design prototype:
 
 - 3 projects (Core Platform, Web App, Infra), 4 users with roles/memberships.
 - 9 tracker items across all six states (with tags, effort, PR metadata).
 - 5 requests, 5 memory shards, a typed link graph, a roadmap, PRDs with version history.
 - Seeded MCP call counts and a platform config (offline stub provider; GitHub shown connected).
+
+The seeded users share the password `agentledger` (e.g. sign in as `alex@ascme-labs.com`) —
+change it for any real deployment. To clear demo data later, set `SEED_ON_START=false` and
+either truncate the tables or run `docker compose down -v` to reset the volume, then sign up
+fresh.
 
 ## A guided tour
 

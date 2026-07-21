@@ -12,7 +12,7 @@ API keys, no external services required. Cloud/local LLM providers and integrati
 opt-in. A hosted multi-tenant service is a later, additive layer.
 
 > Built from the `AgentLedger.dc.html` design prototype. Design tokens (dark-only, lime
-> `#c6f24e` / purple `#a78bfa`, IBM Plex) and the seeded dataset mirror the prototype.
+> `#c6f24e` / purple `#a78bfa`, IBM Plex) and the optional demo dataset mirror the prototype.
 > **Full documentation is in [`docs/`](docs/README.md)** — product overview, per-feature
 > guides, architecture, API reference, and the phase-by-phase implementation plan.
 
@@ -45,11 +45,14 @@ docker compose up --build
 - API → http://localhost:8000  (`/health`, OpenAPI at `/docs`)
 - Public roadmap → http://localhost:8080/embed/roadmap
 - Embeddable feedback widget → http://localhost:8080/embed/feedback
-- Seeded login → **alex@ascme-labs.com** / **agentledger**
 
-On first boot the API creates the pgvector extension, runs Alembic migrations, and seeds
-the prototype dataset (9 items, 5 requests, 5 memory shards, 3 PRDs with history, a typed
-link graph, a roadmap, MCP call counts, and platform config).
+On first boot the API creates the pgvector extension and runs Alembic migrations; the database
+starts **empty**. Open the web app, **Create an account**, then **Create your first project**.
+
+To explore a populated app instead, set `SEED_ON_START=true` before the first `docker compose
+up` — it loads a demo dataset (9 items, 5 requests, 5 memory shards, 3 PRDs with history, a
+typed link graph, a roadmap, MCP call counts, and platform config; seeded users share the
+password `agentledger`). See [Getting started](docs/getting-started.md).
 
 ## AI providers (F1)
 
