@@ -7,6 +7,7 @@ import {
   ListChecks,
   Map,
   Plug,
+  Plus,
   Settings,
   Sparkles,
   Star,
@@ -23,6 +24,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useProjectCtx } from "@/features/ProjectContext";
+import { NewProjectDialog } from "@/features/onboarding/NewProjectDialog";
 import { cn } from "@/lib/cn";
 import { useItems, useRequests } from "@/lib/queries";
 
@@ -30,6 +32,7 @@ export function LeftNav() {
   const { projects, active, activeId, setActiveId } = useProjectCtx();
   const { data: items } = useItems(activeId);
   const { data: requests } = useRequests(activeId);
+  const [newProjectOpen, setNewProjectOpen] = React.useState(false);
 
   return (
     <aside className="flex w-[216px] flex-none flex-col border-r border-line bg-[rgba(9,11,13,0.5)] px-3 py-4">
@@ -61,11 +64,20 @@ export function LeftNav() {
             </DropdownMenuItem>
           ))}
           <DropdownMenuSeparator />
-          <div className="px-2.5 py-1.5 font-mono text-[10px] text-faint-2">
-            New project · Settings — soon
-          </div>
+          <DropdownMenuItem
+            onSelect={(e) => {
+              e.preventDefault();
+              setNewProjectOpen(true);
+            }}
+            className="gap-2.5 text-[12.5px] text-muted"
+          >
+            <Plus size={14} className="flex-none" />
+            <span className="flex-1 truncate text-left">New project</span>
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+
+      <NewProjectDialog open={newProjectOpen} onOpenChange={setNewProjectOpen} />
 
       <div className="mb-2 mt-5 px-2 font-mono text-[10px] uppercase tracking-wide text-faint">
         Workspace

@@ -19,6 +19,7 @@ const hits: ShardHit[] = [
 ];
 
 vi.mock("@/lib/api", () => ({
+  setActiveProjectId: vi.fn(),
   api: {
     projects: vi.fn(async () => []),
     shards: vi.fn(async () => []),

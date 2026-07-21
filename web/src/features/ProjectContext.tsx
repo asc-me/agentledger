@@ -1,5 +1,6 @@
 import * as React from "react";
 
+import { setActiveProjectId } from "@/lib/api";
 import { useProjects } from "@/lib/queries";
 import type { Project } from "@/lib/types";
 
@@ -17,6 +18,12 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   const { data: projects = [], isLoading } = useProjects();
   const [activeId, setActiveId] = React.useState("");
   const active = projects.find((p) => p.id === activeId) ?? projects[0] ?? null;
+
+  // Keep the API client's write-scope in sync so create calls target this project.
+  React.useEffect(() => {
+    setActiveProjectId(active?.id);
+  }, [active?.id]);
+
   return (
     <Ctx.Provider
       value={{ projects, active, activeId: active?.id ?? activeId, setActiveId, loading: isLoading }}

@@ -138,6 +138,23 @@ def test_register_then_create_first_project(client):
     members = client.get("/api/projects/my-first-project/members", headers=hdr).json()
     assert any(m["role"] == "owner" and m["user"]["email"] == "sam@example.com" for m in members)
 
+    # Creating an item scoped to the new project works and lands there (not "core").
+    it = client.post(
+        "/api/items",
+        json={"title": "First task", "effort": 2, "project_id": "my-first-project"},
+        headers=hdr,
+    )
+    assert it.status_code == 201, it.text
+    assert it.json()["project_id"] == "my-first-project"
+    listed = client.get("/api/items?project_id=my-first-project", headers=hdr).json()
+    assert [i["title"] for i in listed] == ["First task"]
+
+
+def test_create_item_unknown_project_is_422(client, auth):
+    # A missing/incorrect project is a clean client error, not a 500.
+    r = client.post("/api/items", json={"title": "x", "project_id": "does-not-exist"}, headers=auth)
+    assert r.status_code == 422
+
 
 def test_create_project_slug_collision(client, auth):
     a = client.post("/api/projects", json={"name": "Duplicate"}, headers=auth).json()

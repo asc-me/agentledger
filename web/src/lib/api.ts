@@ -30,6 +30,17 @@ const REFRESH_KEY = "al_refresh";
 
 let accessToken: string | null = null;
 
+// The project the app is currently scoped to. Writes (create item / shard / PRD,
+// platform settings) target this project. ProjectProvider keeps it in sync with the
+// active project so no create silently falls back to a non-existent default.
+let activeProjectId: string | undefined;
+export function setActiveProjectId(id: string | undefined) {
+  activeProjectId = id;
+}
+function projectQuery(): string {
+  return activeProjectId ? `?project_id=${encodeURIComponent(activeProjectId)}` : "";
+}
+
 export function setRefreshToken(t: string | null) {
   if (t) localStorage.setItem(REFRESH_KEY, t);
   else localStorage.removeItem(REFRESH_KEY);
@@ -127,7 +138,10 @@ export const api = {
   items: (projectId?: string) =>
     request<Item[]>(`/items${projectId ? `?project_id=${projectId}` : ""}`),
   createItem: (body: Partial<Item>) =>
-    request<Item>("/items", { method: "POST", body: JSON.stringify(body) }),
+    request<Item>("/items", {
+      method: "POST",
+      body: JSON.stringify({ project_id: activeProjectId, ...body }),
+    }),
   updateItem: (id: string, body: Partial<Item>) =>
     request<Item>(`/items/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   reorderItems: (orderedIds: string[]) =>
@@ -139,7 +153,10 @@ export const api = {
   shards: (projectId?: string) =>
     request<Shard[]>(`/memory/shards${projectId ? `?project_id=${projectId}` : ""}`),
   addShard: (body: { text: string; scope?: string; item_id?: string | null }) =>
-    request<Shard>("/memory/shards", { method: "POST", body: JSON.stringify(body) }),
+    request<Shard>("/memory/shards", {
+      method: "POST",
+      body: JSON.stringify({ project_id: activeProjectId, ...body }),
+    }),
   searchMemory: (query: string, top_k = 5) =>
     request<ShardHit[]>("/memory/search", {
       method: "POST",
@@ -168,7 +185,10 @@ export const api = {
     request<PrdSummary[]>(`/prds${projectId ? `?project_id=${projectId}` : ""}`),
   prd: (id: string) => request<Prd>(`/prds/${id}`),
   createPrd: (title: string, template = "standard") =>
-    request<Prd>("/prds", { method: "POST", body: JSON.stringify({ title, template }) }),
+    request<Prd>("/prds", {
+      method: "POST",
+      body: JSON.stringify({ title, template, project_id: activeProjectId }),
+    }),
   updatePrd: (id: string, body: { title?: string; status?: PrdStatus; body?: string }) =>
     request<Prd>(`/prds/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   prdVersions: (id: string) => request<PrdVersion[]>(`/prds/${id}/versions`),
@@ -190,15 +210,15 @@ export const api = {
     request<GraphLink[]>(`/links${projectId ? `?project_id=${projectId}` : ""}`),
   mcpTools: () => request<{ live: number; tools: McpToolInfo[] }>("/mcp/tools"),
 
-  platform: () => request<PlatformConfig>("/platform"),
+  platform: () => request<PlatformConfig>(`/platform${projectQuery()}`),
   updatePlatform: (body: Partial<PlatformConfig>) =>
-    request<PlatformConfig>("/platform", { method: "PATCH", body: JSON.stringify(body) }),
+    request<PlatformConfig>(`/platform${projectQuery()}`, { method: "PATCH", body: JSON.stringify(body) }),
   githubConnect: (account: string, repo: string) =>
-    request<PlatformConfig>("/platform/github/connect", { method: "POST", body: JSON.stringify({ account, repo }) }),
-  githubDisconnect: () => request<PlatformConfig>("/platform/github/disconnect", { method: "POST" }),
+    request<PlatformConfig>(`/platform/github/connect${projectQuery()}`, { method: "POST", body: JSON.stringify({ account, repo }) }),
+  githubDisconnect: () => request<PlatformConfig>(`/platform/github/disconnect${projectQuery()}`, { method: "POST" }),
   gdriveConnect: (account: string, folder: string) =>
-    request<PlatformConfig>("/platform/gdrive/connect", { method: "POST", body: JSON.stringify({ account, folder }) }),
-  gdriveDisconnect: () => request<PlatformConfig>("/platform/gdrive/disconnect", { method: "POST" }),
+    request<PlatformConfig>(`/platform/gdrive/connect${projectQuery()}`, { method: "POST", body: JSON.stringify({ account, folder }) }),
+  gdriveDisconnect: () => request<PlatformConfig>(`/platform/gdrive/disconnect${projectQuery()}`, { method: "POST" }),
   updateProject: (id: string, body: Partial<Project>) =>
     request<Project>(`/projects/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   members: (id: string) => request<Member[]>(`/projects/${id}/members`),

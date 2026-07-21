@@ -6,7 +6,7 @@ import re
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from app.models import Item
+from app.models import Item, Project
 
 STATUSES = ["backlog", "next", "in_progress", "review", "done", "blocked"]
 
@@ -51,6 +51,8 @@ def create_item(
 ) -> Item:
     if status not in STATUSES:
         raise ValueError(f"invalid status: {status}")
+    if db.get(Project, project_id) is None:
+        raise ValueError(f"unknown project: {project_id!r}")
     max_order = db.scalar(select(func.max(Item.sort_order))) or 0
     item = Item(
         id=next_item_id(db),

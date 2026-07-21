@@ -92,7 +92,12 @@ body {
 
 .blink { animation: alBlink 2.2s ease-in-out infinite; }
 
-input, button, textarea { font-family: inherit; color: inherit; }
-button { cursor: pointer; }
-a { color: var(--color-accent); text-decoration: none; }
-a:hover { color: var(--color-accent-hi); }
+/* Element defaults live in @layer base so Tailwind utility classes (which sit in a
+   later cascade layer) can override them — otherwise a bare `a{color:accent}` would
+   beat `text-muted` on nav links and tint every icon lime. */
+@layer base {
+  input, button, textarea { font-family: inherit; color: inherit; }
+  button { cursor: pointer; }
+  a { color: var(--color-accent); text-decoration: none; }
+  a:hover { color: var(--color-accent-hi); }
+}

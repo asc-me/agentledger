@@ -24,6 +24,7 @@ const items: Item[] = [
 ];
 
 vi.mock("@/lib/api", () => ({
+  setActiveProjectId: vi.fn(),
   api: {
     projects: vi.fn(async () => []),
     items: vi.fn(async () => items),
