@@ -1,18 +1,54 @@
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import Membership, Project, User
-from app.schemas import MemberOut, ProjectOut, ProjectUpdate, UserOut
+from app.schemas import MemberOut, ProjectCreate, ProjectOut, ProjectUpdate, UserOut
 from app.security.deps import get_current_user
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 
+def _unique_slug(db: Session, name: str) -> str:
+    base = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:32] or "project"
+    slug = base
+    n = 2
+    while db.get(Project, slug) is not None:
+        slug = f"{base}-{n}"
+        n += 1
+    return slug
+
+
 @router.get("", response_model=list[ProjectOut])
 def list_projects(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     return list(db.scalars(select(Project).order_by(Project.name)).all())
+
+
+@router.post("", response_model=ProjectOut, status_code=201)
+def create_project(
+    body: ProjectCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(422, "project name is required")
+    project = Project(
+        id=_unique_slug(db, name),
+        name=name,
+        accent=body.accent or "#c6f24e",
+        description=body.description or "",
+    )
+    db.add(project)
+    db.flush()
+    # The creator is the owner with full write access.
+    db.add(Membership(user_id=user.id, project_id=project.id, role="owner", access="write"))
+    db.commit()
+    db.refresh(project)
+    return project
 
 
 @router.patch("/{project_id}", response_model=ProjectOut)

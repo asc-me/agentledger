@@ -5,24 +5,44 @@ import { Input } from "@/components/ui/input";
 
 import { useAuth } from "./AuthContext";
 
+type Mode = "signin" | "signup";
+
 export function LoginPage() {
-  const { login } = useAuth();
-  const [email, setEmail] = React.useState("alex@ascme-labs.com");
-  const [password, setPassword] = React.useState("agentledger");
+  const { login, register } = useAuth();
+  const [mode, setMode] = React.useState<Mode>("signin");
+  const [name, setName] = React.useState("");
+  const [handle, setHandle] = React.useState("");
+  const [email, setEmail] = React.useState("");
+  const [password, setPassword] = React.useState("");
   const [error, setError] = React.useState("");
   const [busy, setBusy] = React.useState(false);
+
+  const isSignup = mode === "signup";
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError("");
     try {
-      await login(email, password);
-    } catch {
-      setError("Invalid credentials. Try the seeded account below.");
+      if (isSignup) {
+        await register(name.trim(), email.trim(), handle.trim(), password);
+      } else {
+        await login(email.trim(), password);
+      }
+    } catch (err) {
+      setError(
+        isSignup
+          ? messageFor(err, "Could not create account. That email or handle may already be in use.")
+          : "Invalid email or password.",
+      );
     } finally {
       setBusy(false);
     }
+  }
+
+  function switchMode(next: Mode) {
+    setMode(next);
+    setError("");
   }
 
   return (
@@ -42,45 +62,100 @@ export function LoginPage() {
           onSubmit={onSubmit}
           className="rounded-[16px] border border-line bg-surface-3/70 p-6 shadow-[0_24px_60px_rgba(0,0,0,0.4)]"
         >
-          <h1 className="mb-1 text-[16px] font-semibold">Sign in</h1>
-          <p className="mb-5 text-[12.5px] text-muted">Welcome back. Pick up where the agents left off.</p>
+          <h1 className="mb-1 text-[16px] font-semibold">
+            {isSignup ? "Create your account" : "Sign in"}
+          </h1>
+          <p className="mb-5 text-[12.5px] text-muted">
+            {isSignup
+              ? "Set up a workspace and start capturing agent memory."
+              : "Welcome back. Pick up where the agents left off."}
+          </p>
 
-          <label className="mb-1.5 block font-mono text-[10px] uppercase tracking-wide text-faint">
-            Email
-          </label>
-          <Input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="mb-4"
-            autoComplete="username"
-          />
+          {isSignup && (
+            <>
+              <Field label="Name">
+                <Input value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
+              </Field>
+              <Field label="Handle">
+                <Input
+                  value={handle}
+                  onChange={(e) => setHandle(e.target.value)}
+                  placeholder="yourhandle"
+                  autoComplete="username"
+                />
+              </Field>
+            </>
+          )}
 
-          <label className="mb-1.5 block font-mono text-[10px] uppercase tracking-wide text-faint">
-            Password
-          </label>
-          <Input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="mb-5"
-            autoComplete="current-password"
-          />
+          <Field label="Email">
+            <Input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              autoComplete={isSignup ? "email" : "username"}
+            />
+          </Field>
+
+          <Field label="Password">
+            <Input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete={isSignup ? "new-password" : "current-password"}
+            />
+          </Field>
 
           {error && <p className="mb-4 text-[12px] text-st-blocked">{error}</p>}
 
           <Button type="submit" className="w-full" disabled={busy}>
-            {busy ? "Signing in…" : "Sign in"}
+            {busy
+              ? isSignup
+                ? "Creating account…"
+                : "Signing in…"
+              : isSignup
+                ? "Create account"
+                : "Sign in"}
           </Button>
 
-          <div className="mt-5 rounded-lg border border-line-2 bg-surface-2 p-3 font-mono text-[10.5px] text-muted">
-            <div className="mb-1 text-faint">SEEDED DEMO ACCOUNT</div>
-            alex@ascme-labs.com · agentledger
+          <div className="mt-5 text-center text-[12px] text-muted">
+            {isSignup ? (
+              <>
+                Already have an account?{" "}
+                <button type="button" onClick={() => switchMode("signin")} className="text-accent hover:underline">
+                  Sign in
+                </button>
+              </>
+            ) : (
+              <>
+                New here?{" "}
+                <button type="button" onClick={() => switchMode("signup")} className="text-accent hover:underline">
+                  Create an account
+                </button>
+              </>
+            )}
           </div>
         </form>
       </div>
     </div>
   );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="mb-4">
+      <label className="mb-1.5 block font-mono text-[10px] uppercase tracking-wide text-faint">
+        {label}
+      </label>
+      {children}
+    </div>
+  );
+}
+
+function messageFor(err: unknown, fallback: string): string {
+  if (err && typeof err === "object" && "message" in err && typeof err.message === "string") {
+    return err.message;
+  }
+  return fallback;
 }
 
 function LogoMark() {

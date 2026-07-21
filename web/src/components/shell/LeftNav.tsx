@@ -32,7 +32,7 @@ export function LeftNav() {
   const { data: requests } = useRequests(activeId);
 
   return (
-    <aside className="flex w-[228px] flex-none flex-col border-r border-line bg-surface/40 px-3 py-3.5">
+    <aside className="flex w-[216px] flex-none flex-col border-r border-line bg-[rgba(9,11,13,0.5)] px-3 py-4">
       {/* Project switcher */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>

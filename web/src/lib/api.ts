@@ -100,6 +100,16 @@ export const api = {
     setRefreshToken(data.refresh_token);
     return this.me();
   },
+  async register(name: string, email: string, handle: string, password: string): Promise<User> {
+    const data = await request<{ access_token: string; refresh_token: string }>(
+      "/auth/register",
+      { method: "POST", body: JSON.stringify({ name, email, handle, password }) },
+      false,
+    );
+    accessToken = data.access_token;
+    setRefreshToken(data.refresh_token);
+    return this.me();
+  },
   logout() {
     accessToken = null;
     setRefreshToken(null);
@@ -111,6 +121,8 @@ export const api = {
     ),
 
   projects: () => request<Project[]>("/projects"),
+  createProject: (body: { name: string; accent?: string; description?: string }) =>
+    request<Project>("/projects", { method: "POST", body: JSON.stringify(body) }),
 
   items: (projectId?: string) =>
     request<Item[]>(`/items${projectId ? `?project_id=${projectId}` : ""}`),

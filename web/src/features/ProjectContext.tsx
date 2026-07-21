@@ -8,16 +8,19 @@ interface ProjectState {
   active: Project | null;
   activeId: string;
   setActiveId: (id: string) => void;
+  loading: boolean;
 }
 
 const Ctx = React.createContext<ProjectState | null>(null);
 
 export function ProjectProvider({ children }: { children: React.ReactNode }) {
-  const { data: projects = [] } = useProjects();
-  const [activeId, setActiveId] = React.useState("core");
+  const { data: projects = [], isLoading } = useProjects();
+  const [activeId, setActiveId] = React.useState("");
   const active = projects.find((p) => p.id === activeId) ?? projects[0] ?? null;
   return (
-    <Ctx.Provider value={{ projects, active, activeId: active?.id ?? activeId, setActiveId }}>
+    <Ctx.Provider
+      value={{ projects, active, activeId: active?.id ?? activeId, setActiveId, loading: isLoading }}
+    >
       {children}
     </Ctx.Provider>
   );

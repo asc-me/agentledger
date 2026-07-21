@@ -54,6 +54,12 @@ class ProjectOut(ORMModel):
     embed_model: str
 
 
+class ProjectCreate(BaseModel):
+    name: str
+    accent: str = "#c6f24e"
+    description: str = ""
+
+
 # ---- Items ----
 class ItemCreate(BaseModel):
     title: str

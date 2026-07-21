@@ -115,3 +115,32 @@ def test_mcp_tools_and_call(client, auth):
     # The agent-created item is visible through the web API — shared service layer.
     items = client.get("/api/items", headers=auth).json()
     assert any(i["title"] == "From agent" for i in items)
+
+
+def test_register_then_create_first_project(client):
+    # A brand-new user (as after a full data wipe) can register and stand up a workspace.
+    r = client.post(
+        "/api/auth/register",
+        json={"name": "Sam Rivers", "email": "sam@example.com", "handle": "sam", "password": "pw123456"},
+    )
+    assert r.status_code == 201, r.text
+    hdr = {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+    proj = client.post("/api/projects", json={"name": "My First Project", "accent": "#a78bfa"}, headers=hdr)
+    assert proj.status_code == 201, proj.text
+    body = proj.json()
+    assert body["name"] == "My First Project"
+    assert body["id"] == "my-first-project"  # slugified from the name
+
+    # It shows up in the project list and the creator is a member.
+    projects = client.get("/api/projects", headers=hdr).json()
+    assert any(p["id"] == "my-first-project" for p in projects)
+    members = client.get("/api/projects/my-first-project/members", headers=hdr).json()
+    assert any(m["role"] == "owner" and m["user"]["email"] == "sam@example.com" for m in members)
+
+
+def test_create_project_slug_collision(client, auth):
+    a = client.post("/api/projects", json={"name": "Duplicate"}, headers=auth).json()
+    b = client.post("/api/projects", json={"name": "Duplicate"}, headers=auth).json()
+    assert a["id"] == "duplicate"
+    assert b["id"] == "duplicate-2"

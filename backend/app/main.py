@@ -43,11 +43,17 @@ async def lifespan(app: FastAPI):
             db.close()
 
     # Apply any persisted platform LLM config so it drives the live providers.
+    # Use the first existing project (there may be none on a freshly wiped DB).
+    from sqlalchemy import select
+
+    from app.models import Project
     from app.services.platform import apply_llm, get_config
 
     db = SessionLocal()
     try:
-        apply_llm(get_config(db, "core"))
+        first = db.scalars(select(Project).order_by(Project.name)).first()
+        if first is not None:
+            apply_llm(get_config(db, first.id))
     finally:
         db.close()
     yield
