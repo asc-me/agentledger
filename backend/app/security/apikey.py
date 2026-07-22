@@ -21,13 +21,22 @@ def _hash_key(raw: str) -> str:
 
 
 def generate_api_key(
-    db: Session, user_id: str, name: str, scopes: list[str] | None = None
+    db: Session,
+    user_id: str,
+    name: str,
+    scopes: list[str] | None = None,
+    project_id: str | None = None,
 ) -> tuple[ApiKey, str]:
-    """Create a key row and return (row, plaintext). Plaintext is not persisted."""
+    """Create a key row and return (row, plaintext). Plaintext is not persisted.
+
+    `project_id` scopes the key to one project (agent writes target it by default);
+    None makes a global key.
+    """
     raw = KEY_PREFIX + secrets.token_hex(20)
     row = ApiKey(
         id=str(uuid.uuid4()),
         user_id=user_id,
+        project_id=project_id,
         name=name,
         prefix=raw[: len(KEY_PREFIX) + 4],
         hashed_key=_hash_key(raw),

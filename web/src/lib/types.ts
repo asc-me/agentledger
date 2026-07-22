@@ -90,6 +90,7 @@ export interface ApiKey {
   name: string;
   prefix: string;
   scopes: string[];
+  project_id: string | null;
   last_used: string | null;
   created_at: string;
 }

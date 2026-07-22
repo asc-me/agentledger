@@ -163,6 +163,8 @@ class RequestOut(ORMModel):
 class ApiKeyCreate(BaseModel):
     name: str = "agent key"
     scopes: list[str] = ["read", "write"]
+    # Project the key's agent writes to by default. None = global key.
+    project_id: str | None = None
 
 
 class ApiKeyOut(ORMModel):
@@ -170,6 +172,7 @@ class ApiKeyOut(ORMModel):
     name: str
     prefix: str
     scopes: list[str]
+    project_id: str | None = None
     last_used: datetime | None
     created_at: datetime
 

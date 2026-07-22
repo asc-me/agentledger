@@ -15,7 +15,7 @@ export const DEFAULT_CONFIG: FeedbackConfig = {
   radius: 10,
   types: ALL_TYPES,
   showEmail: true,
-  projectId: "core",
+  projectId: "", // filled with the active project by the Feedback Kit; empty → server default
 };
 
 /** Serialize config to the query params the /embed/feedback route reads. */

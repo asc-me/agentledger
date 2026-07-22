@@ -177,8 +177,11 @@ export const api = {
     }),
 
   apiKeys: () => request<ApiKey[]>("/api-keys"),
-  createApiKey: (name: string) =>
-    request<ApiKeyCreated>("/api-keys", { method: "POST", body: JSON.stringify({ name }) }),
+  createApiKey: (name: string, projectId: string | null) =>
+    request<ApiKeyCreated>("/api-keys", {
+      method: "POST",
+      body: JSON.stringify({ name, project_id: projectId }),
+    }),
   revokeApiKey: (id: string) => request<void>(`/api-keys/${id}`, { method: "DELETE" }),
 
   prds: (projectId?: string) =>

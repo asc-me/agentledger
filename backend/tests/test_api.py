@@ -1,3 +1,6 @@
+import json
+
+
 def test_health(client):
     assert client.get("/health").json()["status"] == "ok"
 
@@ -153,6 +156,44 @@ def test_register_then_create_first_project(client):
 def test_create_item_unknown_project_is_422(client, auth):
     # A missing/incorrect project is a clean client error, not a 500.
     r = client.post("/api/items", json={"title": "x", "project_id": "does-not-exist"}, headers=auth)
+    assert r.status_code == 422
+
+
+def _mcp(client, key, name, args):
+    r = client.post(
+        "/api/mcp",
+        json={"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+              "params": {"name": name, "arguments": args}},
+        headers={"X-API-Key": key},
+    )
+    return json.loads(r.json()["result"]["content"][0]["text"])
+
+
+def test_project_scoped_api_key_targets_its_project(client, auth):
+    # Two fresh projects; a key scoped to A should write to A by default.
+    client.post("/api/projects", json={"name": "Alpha"}, headers=auth)
+    client.post("/api/projects", json={"name": "Beta"}, headers=auth)
+    created = client.post("/api/api-keys", json={"name": "alpha-agent", "project_id": "alpha"}, headers=auth)
+    assert created.status_code == 201
+    assert created.json()["project_id"] == "alpha"
+    key = created.json()["plaintext"]
+
+    # Default: agent writes land in the key's project.
+    item = _mcp(client, key, "create_item", {"title": "scoped task"})
+    assert item["id"]
+    got = client.get("/api/items?project_id=alpha", headers=auth).json()
+    assert any(i["title"] == "scoped task" for i in got)
+
+    # Override: an explicit project_id on the call wins.
+    _mcp(client, key, "create_item", {"title": "override task", "project_id": "beta"})
+    beta = client.get("/api/items?project_id=beta", headers=auth).json()
+    assert any(i["title"] == "override task" for i in beta)
+    alpha = client.get("/api/items?project_id=alpha", headers=auth).json()
+    assert not any(i["title"] == "override task" for i in alpha)
+
+
+def test_create_api_key_unknown_project_is_422(client, auth):
+    r = client.post("/api/api-keys", json={"name": "x", "project_id": "nope"}, headers=auth)
     assert r.status_code == 422
 
 

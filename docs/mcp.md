@@ -13,6 +13,11 @@ agent's writes are identical to a user's and appear instantly in the UI.
 - **Auth** — a scoped **API key** via `X-API-Key: al_sk_…` or `Authorization: Bearer
   al_sk_…`. Create one in [Settings → API Keys](settings.md#api-keys-tab). Unauthenticated
   calls return `401`.
+- **Project scope** — each key targets one **project** by default (the active project when
+  you create it), so an agent's writes land in the right workspace. Tick *global* at creation
+  to leave it unscoped. Any project-scoped tool call (`create_item`, `add_memory`,
+  `search_items`, `search_memory`, `get_backlog`, `suggest_next`, `generate_digest`) also
+  accepts an optional `project_id` argument that overrides the key's project for that call.
 - **Metering** — every `tools/call` increments a per-tool counter (the `mcp_tool_stats`
   table) surfaced on the **MCP Tools** view.
 

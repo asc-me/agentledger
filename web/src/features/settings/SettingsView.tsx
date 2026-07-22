@@ -300,14 +300,19 @@ function MembersPanel() {
 
 function ApiKeysPanel() {
   const { data: apiKeys = [] } = useApiKeys();
+  const { active, projects } = useProjectCtx();
   const qc = useQueryClient();
   const [name, setName] = React.useState("");
+  const [global, setGlobal] = React.useState(false);
   const [created, setCreated] = React.useState<string | null>(null);
   const [copied, setCopied] = React.useState(false);
 
+  const projectName = (id: string | null) =>
+    id ? (projects.find((p) => p.id === id)?.name ?? id) : "All projects";
+
   async function create() {
     if (!name.trim()) return;
-    const res = await api.createApiKey(name.trim());
+    const res = await api.createApiKey(name.trim(), global ? null : active?.id ?? null);
     setCreated(res.plaintext);
     setName("");
     qc.invalidateQueries({ queryKey: keys.apiKeys });
@@ -331,16 +336,34 @@ function ApiKeysPanel() {
           </div>
         </div>
       )}
-      <div className="mb-4 flex items-center gap-2">
+      <div className="mb-2 flex items-center gap-2">
         <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Key name (e.g. ci-agent)" className="max-w-xs" />
         <Button size="sm" onClick={create} disabled={!name.trim()}><Plus size={14} />Create key</Button>
       </div>
+      <label className="mb-4 flex items-center gap-2 text-[12px] text-muted">
+        <input type="checkbox" checked={global} onChange={(e) => setGlobal(e.target.checked)} className="accent-accent" />
+        {global ? (
+          <span>Global key — the agent passes <code className="font-mono text-[11px]">project_id</code> per call.</span>
+        ) : (
+          <span>Scoped to <span className="text-fg-2">{active?.name ?? "the active project"}</span> — check to make it global.</span>
+        )}
+      </label>
       <div className="space-y-2">
         {apiKeys.map((k) => (
           <div key={k.id} className="flex items-center gap-3 rounded-[11px] border border-line-2 bg-surface-2 px-3 py-2.5">
             <KeyRound size={14} className="text-muted" />
             <span className="text-[13px] text-fg-2">{k.name}</span>
             <code className="font-mono text-[11px] text-faint">{k.prefix}…</code>
+            <span
+              className={cn(
+                "rounded border px-1.5 py-px font-mono text-[9.5px] uppercase tracking-wide",
+                k.project_id
+                  ? "border-line-2 text-muted"
+                  : "border-[rgba(167,139,250,0.3)] text-purple-2",
+              )}
+            >
+              {projectName(k.project_id)}
+            </span>
             <span className="ml-auto font-mono text-[10px] text-faint-2">{k.last_used ? "used" : "never used"}</span>
             <button className="text-faint hover:text-st-blocked" onClick={() => revoke(k.id)} title="Revoke">
               <Trash2 size={14} />

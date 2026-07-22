@@ -128,9 +128,15 @@ def reorder_items(db: Session, ordered_ids: list[str]) -> list[Item]:
 
 
 def search_items(
-    db: Session, query: str = "", status: str | None = None, limit: int = 25
+    db: Session,
+    query: str = "",
+    status: str | None = None,
+    limit: int = 25,
+    project_id: str | None = None,
 ) -> list[Item]:
     stmt = select(Item)
+    if project_id:
+        stmt = stmt.where(Item.project_id == project_id)
     if query:
         like = f"%{query.lower()}%"
         stmt = stmt.where(
@@ -142,13 +148,11 @@ def search_items(
     return list(db.scalars(stmt).all())
 
 
-def get_backlog(db: Session, limit: int = 20) -> list[Item]:
-    stmt = (
-        select(Item)
-        .where(Item.status.in_(["backlog", "next"]))
-        .order_by(Item.sort_order.asc())
-        .limit(limit)
-    )
+def get_backlog(db: Session, limit: int = 20, project_id: str | None = None) -> list[Item]:
+    stmt = select(Item).where(Item.status.in_(["backlog", "next"]))
+    if project_id:
+        stmt = stmt.where(Item.project_id == project_id)
+    stmt = stmt.order_by(Item.sort_order.asc()).limit(limit)
     return list(db.scalars(stmt).all())
 
 

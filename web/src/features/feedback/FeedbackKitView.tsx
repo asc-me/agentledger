@@ -1,6 +1,7 @@
 import { Check, Copy } from "lucide-react";
 import * as React from "react";
 
+import { useProjectCtx } from "@/features/ProjectContext";
 import { cn } from "@/lib/cn";
 import { TYPE_META } from "@/lib/meta";
 import type { RequestType } from "@/lib/types";
@@ -14,8 +15,14 @@ const RADII = [4, 8, 12, 20];
 /** Feedback Kit — configure a themeable embeddable widget, preview it live,
  *  and copy the embed snippet. (Phase 2.) */
 export function FeedbackKitView() {
-  const [cfg, setCfg] = React.useState<FeedbackConfig>(DEFAULT_CONFIG);
+  const { activeId } = useProjectCtx();
+  const [cfg, setCfg] = React.useState<FeedbackConfig>(() => ({ ...DEFAULT_CONFIG, projectId: activeId }));
   const [copied, setCopied] = React.useState(false);
+
+  // Fill the project once it resolves (the widget targets the active project).
+  React.useEffect(() => {
+    setCfg((c) => (c.projectId ? c : { ...c, projectId: activeId }));
+  }, [activeId]);
 
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const embedUrl = `${origin}/embed/feedback?${toParams(cfg)}`;

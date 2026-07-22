@@ -249,6 +249,9 @@ class ApiKey(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    # The project this key's agent writes to by default. NULL = global key (the agent
+    # must pass project_id per call, or it falls back to the default project).
+    project_id: Mapped[str | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
     name: Mapped[str] = mapped_column(String, default="agent key")
     prefix: Mapped[str] = mapped_column(String)  # e.g. al_sk_ab12 for display
     hashed_key: Mapped[str] = mapped_column(String)

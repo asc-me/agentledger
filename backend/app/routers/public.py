@@ -18,6 +18,7 @@ from app.services import duplicates as dup_svc
 from app.services import items as items_svc
 from app.services import requests as req_svc
 from app.services import roadmap as roadmap_svc
+from app.services.projects import default_project_id, resolve_project_id
 
 router = APIRouter(prefix="/public", tags=["public"])
 
@@ -43,9 +44,9 @@ def _ensure_enabled() -> None:
 
 
 @router.get("/roadmap")
-def public_roadmap(project_id: str = "core", db: Session = Depends(get_db)):
+def public_roadmap(project_id: str | None = None, db: Session = Depends(get_db)):
     """Read-only public roadmap for the shareable link."""
-    return roadmap_svc.list_roadmap(db, project_id=project_id)
+    return roadmap_svc.list_roadmap(db, project_id=resolve_project_id(db, project_id))
 
 
 @router.post("/github/webhook")
@@ -65,7 +66,7 @@ async def github_webhook(
         title=issue.get("title", "Untitled GitHub issue"),
         description=issue.get("body", "") or "",
         tags=["github"],
-        project_id="core",
+        project_id=default_project_id(db),
         reporter={"name": "GitHub", "handle": "github", "avatar": "#8b949e"},
     )
     return {"created_item": item.id}
@@ -74,13 +75,13 @@ async def github_webhook(
 @router.get("/duplicates", response_model=list[DuplicateHit])
 def check_duplicates(
     q: str,
-    project_id: str = "core",
+    project_id: str | None = None,
     _rl: None = Depends(rate_limit),
     db: Session = Depends(get_db),
 ):
     """Live duplicate check for the widget — before the user submits."""
     _ensure_enabled()
-    return dup_svc.find_duplicates(db, q, project_id=project_id)
+    return dup_svc.find_duplicates(db, q, project_id=resolve_project_id(db, project_id))
 
 
 @router.post("/requests", response_model=PublicRequestOut, status_code=201)
@@ -91,14 +92,15 @@ def submit_request(
 ):
     _ensure_enabled()
     text = f"{body.title} {body.detail}".strip()
+    project_id = resolve_project_id(db, body.project_id)
     try:
         req = req_svc.create_request(
             db, type_=body.type, title=body.title,
-            by=body.email or "public", project_id=body.project_id,
+            by=body.email or "public", project_id=project_id,
         )
     except ValueError as e:
         raise HTTPException(422, str(e))
-    dups = dup_svc.find_duplicates(db, text, project_id=body.project_id, exclude_request_id=req.id)
+    dups = dup_svc.find_duplicates(db, text, project_id=project_id, exclude_request_id=req.id)
     return PublicRequestOut(
         request=RequestOut.model_validate(req),
         duplicates=[DuplicateHit(**d) for d in dups],

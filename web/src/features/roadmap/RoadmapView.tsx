@@ -13,7 +13,7 @@ export function RoadmapView() {
   const [copied, setCopied] = React.useState(false);
 
   async function copyPublic() {
-    const url = `${window.location.origin}/embed/roadmap`;
+    const url = `${window.location.origin}/embed/roadmap?project=${encodeURIComponent(activeId)}`;
     await navigator.clipboard.writeText(url);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);

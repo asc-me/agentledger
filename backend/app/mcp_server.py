@@ -24,6 +24,7 @@ from app.services import items as items_svc
 from app.services import links as links_svc
 from app.services import mcp_stats
 from app.services import memory as mem_svc
+from app.services.projects import resolve_project_id
 
 router = APIRouter(tags=["mcp"])
 
@@ -145,6 +146,18 @@ TOOLS: list[dict[str, Any]] = [
     },
 ]
 
+# Project-scoped tools accept an optional `project_id` that overrides the key's project.
+_PROJECT_SCOPED = {
+    "create_item", "search_items", "add_memory", "search_memory",
+    "get_backlog", "suggest_next", "generate_digest",
+}
+for _t in TOOLS:
+    if _t["name"] in _PROJECT_SCOPED:
+        _t["inputSchema"].setdefault("properties", {})["project_id"] = {
+            "type": "string",
+            "description": "Override the key's project. Defaults to the API key's project.",
+        }
+
 LIVE_TOOL_COUNT = len(TOOLS)
 
 
@@ -158,7 +171,9 @@ def _item_dict(item) -> dict:
     }
 
 
-def _call_tool(db: Session, name: str, args: dict[str, Any]) -> Any:
+def _call_tool(db: Session, name: str, args: dict[str, Any], project_id: str | None = None) -> Any:
+    # The key scopes the agent to a project; a per-call `project_id` argument overrides it.
+    pid = args.get("project_id") or project_id
     if name == "create_item":
         item = items_svc.create_item(
             db,
@@ -167,6 +182,7 @@ def _call_tool(db: Session, name: str, args: dict[str, Any]) -> Any:
             tags=args.get("tags", []),
             effort=args.get("effort", 0),
             status=args.get("status", "backlog"),
+            project_id=pid,
             reporter={"name": "Agent", "handle": "mcp", "avatar": "#a78bfa"},
         )
         return _item_dict(item)
@@ -183,7 +199,7 @@ def _call_tool(db: Session, name: str, args: dict[str, Any]) -> Any:
             raise ValueError(f"item not found: {args['id']}")
         return _item_dict(item)
     if name == "search_items":
-        rows = items_svc.search_items(db, args.get("query", ""), status=args.get("status"))
+        rows = items_svc.search_items(db, args.get("query", ""), status=args.get("status"), project_id=pid)
         return [_item_dict(i) for i in rows]
     if name == "add_memory":
         shard = mem_svc.add_memory(
@@ -191,23 +207,24 @@ def _call_tool(db: Session, name: str, args: dict[str, Any]) -> Any:
             text_body=args["text"],
             scope=args.get("scope", "global"),
             item_id=args.get("item_id"),
+            project_id=pid,
         )
         return {"id": shard.id, "text": shard.text, "scope": shard.scope}
     if name == "search_memory":
-        hits = mem_svc.search_memory(db, args["query"], top_k=args.get("top_k", 5))
+        hits = mem_svc.search_memory(db, args["query"], top_k=args.get("top_k", 5), project_id=pid)
         return [
             {"id": s.id, "text": s.text, "scope": s.scope, "score": round(score, 4)}
             for s, score in hits
         ]
     if name == "get_backlog":
-        return [_item_dict(i) for i in items_svc.get_backlog(db, limit=args.get("limit", 20))]
+        return [_item_dict(i) for i in items_svc.get_backlog(db, limit=args.get("limit", 20), project_id=pid)]
     if name == "get_item_details":
         details = items_svc.get_item_details(db, args["id"])
         if details is None:
             raise ValueError(f"item not found: {args['id']}")
         return details
     if name == "suggest_next":
-        item = items_svc.suggest_next(db)
+        item = items_svc.suggest_next(db, project_id=pid)
         return _item_dict(item) if item else None
     if name == "link_items":
         link = links_svc.create_link(
@@ -218,7 +235,7 @@ def _call_tool(db: Session, name: str, args: dict[str, Any]) -> Any:
     if name == "extract_lessons":
         return insights_svc.extract_lessons(db, args["id"])
     if name == "generate_digest":
-        return {"digest": insights_svc.generate_digest(db)}
+        return {"digest": insights_svc.generate_digest(db, project_id=pid)}
     raise ValueError(f"unknown tool: {name}")
 
 
@@ -264,7 +281,8 @@ async def mcp_endpoint(
         if name:
             mcp_stats.increment(db, name)  # per-tool metering for the MCP Tools page
         try:
-            result = _call_tool(db, name, args)
+            project_id = resolve_project_id(db, key.project_id)
+            result = _call_tool(db, name, args, project_id)
         except (ValueError, KeyError) as e:
             return _rpc_result(
                 id_,
