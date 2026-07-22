@@ -233,6 +233,8 @@ class PlatformConfigOut(ORMModel):
     rate_limit_per_min: int = 20
     turnstile_sitekey: str = ""
     turnstile_secret_set: bool = False  # never expose the secret itself
+    active_chat_provider: str = ""
+    provider_config: dict = {}  # redacted per-provider config (api keys → key_set bool)
 
 
 class PlatformUpdate(BaseModel):
@@ -244,6 +246,8 @@ class PlatformUpdate(BaseModel):
     rate_limit_per_min: int | None = None
     turnstile_sitekey: str | None = None
     turnstile_secret: str | None = None
+    active_chat_provider: str | None = None
+    providers: dict | None = None
 
 
 class GithubConnectIn(BaseModel):

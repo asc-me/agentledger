@@ -28,30 +28,77 @@ def get_config(db: Session, project_id: str = "core") -> PlatformConfig:
 
 
 def apply_llm(cfg: PlatformConfig) -> None:
-    """Point the in-memory settings + provider cache at the configured chat provider."""
-    if cfg.llm_mode == "local":
+    """Point the live provider layer at the configured chat provider, and bridge Ollama's
+    endpoint/model into the (deploy-time) embedder."""
+    if cfg.active_chat_provider:
+        # New provider-registry path.
+        pconf = (cfg.providers or {}).get(cfg.active_chat_provider, {})
+        providers.set_active_chat(
+            provider=cfg.active_chat_provider,
+            base_url=pconf.get("base_url", ""),
+            api_key=pconf.get("api_key", ""),
+            model=pconf.get("chat_model", ""),
+        )
+    elif cfg.llm_mode == "local":
+        # Legacy llm_mode path (kept for back-compat; sets app_settings.chat_provider too).
         app_settings.chat_provider = "ollama"
         app_settings.ollama_base_url = cfg.local_base_url
         app_settings.ollama_chat_model = cfg.local_model
+        providers.set_active_chat("ollama", base_url=cfg.local_base_url, model=cfg.local_model)
     elif cfg.llm_mode == "cloud":
         app_settings.chat_provider = "anthropic"
         app_settings.anthropic_model = cfg.cloud_model
+        providers.set_active_chat("anthropic", model=cfg.cloud_model)
     else:
         app_settings.chat_provider = "stub"
+        providers.set_active_chat("stub")
+
+    # A UI-configured Ollama serves embeddings too when EMBED_PROVIDER=ollama (deploy-time):
+    # push its endpoint/model/auth into the env-selected embedder.
+    ollama_conf = (cfg.providers or {}).get("ollama", {})
+    if ollama_conf.get("base_url"):
+        app_settings.ollama_base_url = ollama_conf["base_url"]
+    if ollama_conf.get("embed_model"):
+        app_settings.ollama_embed_model = ollama_conf["embed_model"]
+    if ollama_conf.get("api_key"):
+        app_settings.ollama_auth_key = ollama_conf["api_key"]
     providers.reset()
 
 
-_LLM_FIELDS = {"llm_mode", "local_base_url", "local_model", "cloud_provider", "cloud_model"}
+_LLM_FIELDS = {
+    "llm_mode", "local_base_url", "local_model", "cloud_provider", "cloud_model",
+    "active_chat_provider", "providers",
+}
 
 
 def update_config(db: Session, project_id: str, fields: dict) -> PlatformConfig:
     cfg = get_config(db, project_id)
+    touched = set(fields.keys())
+
+    # Providers dict: merge (don't clobber), with write-only key semantics — a blank api_key
+    # keeps the stored one, so the redacted round-trip from the UI never wipes a key.
+    if fields.get("providers") is not None:
+        merged = dict(cfg.providers or {})
+        for pid, incoming in (fields["providers"] or {}).items():
+            cur = dict(merged.get(pid, {}))
+            for k, v in (incoming or {}).items():
+                if k == "api_key":
+                    if v:
+                        cur["api_key"] = v
+                elif v is not None:
+                    cur[k] = v
+            merged[pid] = cur
+        cfg.providers = merged  # reassign so SQLAlchemy tracks the JSON change
+
     for k, v in fields.items():
+        if k == "providers":
+            continue
         if hasattr(cfg, k) and v is not None:
             setattr(cfg, k, v)
+
     db.commit()
     db.refresh(cfg)
-    if _LLM_FIELDS & fields.keys():
+    if _LLM_FIELDS & touched:
         apply_llm(cfg)
     return cfg
 

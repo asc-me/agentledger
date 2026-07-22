@@ -13,6 +13,7 @@ from app.schemas import (
     PlatformConfigOut,
     PlatformUpdate,
 )
+from app.providers import registry as provider_registry
 from app.security.deps import get_current_user
 from app.services import drive_sync
 from app.services import items as items_svc
@@ -26,6 +27,12 @@ def _sync_root(project_id: str, folder: str) -> str:
     return os.path.join(settings.sync_dir, sub)
 
 
+@router.get("/providers")
+def list_providers(_: User = Depends(get_current_user)):
+    """The AI-provider catalog the Settings UI renders (id, label, kind, embeds, defaults)."""
+    return {"providers": provider_registry.PROVIDERS}
+
+
 @router.get("", response_model=PlatformConfigOut)
 def get_platform(project_id: str = "core", db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     return platform_svc.get_config(db, project_id)
@@ -35,6 +42,8 @@ def get_platform(project_id: str = "core", db: Session = Depends(get_db), _: Use
 def update_platform(body: PlatformUpdate, project_id: str = "core", db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     if body.llm_mode is not None and body.llm_mode not in ("stub", "local", "cloud"):
         raise HTTPException(422, "llm_mode must be stub | local | cloud")
+    if body.active_chat_provider and body.active_chat_provider not in provider_registry.IDS:
+        raise HTTPException(422, f"unknown provider: {body.active_chat_provider}")
     return platform_svc.update_config(db, project_id, body.model_dump(exclude_unset=True))
 
 
