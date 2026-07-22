@@ -47,23 +47,11 @@ TOOLS: list[dict[str, Any]] = [
             "many projects and tools exist. Call this first when you start."
         ),
         "inputSchema": {"type": "object", "properties": {}},
-        "outputSchema": {
-            "type": "object",
-            "properties": {
-                "project_id": {"type": ["string", "null"]},
-                "project_name": {"type": ["string", "null"]},
-                "key_project_id": {"type": ["string", "null"]},
-                "scopes": {"type": "array", "items": {"type": "string"}},
-                "project_count": {"type": "integer"},
-                "tool_count": {"type": "integer"},
-            },
-        },
     },
     {
         "name": "list_projects",
         "description": "List all projects (id, name, accent, description). Use an id as the `project_id` override.",
         "inputSchema": {"type": "object", "properties": {}},
-        "outputSchema": {"type": "object", "properties": {"results": {"type": "array"}}},
     },
     {
         "name": "create_item",
@@ -209,6 +197,93 @@ _PAGE_META = {  # shared output shape for paged reads (#9)
     },
 }
 
+# --- Output schemas (#8): every tool's structuredContent shape. ---
+_STR = {"type": "string"}
+_NULLABLE_STR = {"type": ["string", "null"]}
+_ITEM_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "id": _STR,
+        "project_id": _NULLABLE_STR,
+        "title": _STR,
+        "status": {"type": "string", "enum": _STATUS_ENUM},
+        "tags": {"type": "array", "items": _STR},
+        "effort": {"type": "integer"},
+    },
+}
+_SHARD_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "id": _STR, "text": _STR, "scope": _STR,
+        "item_id": _NULLABLE_STR, "project_id": _NULLABLE_STR,
+    },
+}
+
+_OUTPUT_SCHEMAS: dict[str, dict] = {
+    "get_context": {
+        "type": "object",
+        "properties": {
+            "project_id": _NULLABLE_STR,
+            "project_name": _NULLABLE_STR,
+            "key_project_id": _NULLABLE_STR,
+            "scopes": {"type": "array", "items": _STR},
+            "project_count": {"type": "integer"},
+            "tool_count": {"type": "integer"},
+        },
+    },
+    "list_projects": {
+        "type": "object",
+        "properties": {"results": {"type": "array", "items": {
+            "type": "object",
+            "properties": {"id": _STR, "name": _STR, "accent": _STR, "description": _STR},
+        }}},
+    },
+    "create_item": _ITEM_SCHEMA,
+    "update_item": _ITEM_SCHEMA,
+    "suggest_next": _ITEM_SCHEMA,  # or absent when the backlog is empty
+    "add_memory": _SHARD_SCHEMA,
+    "search_memory": {
+        "type": "object",
+        "properties": {
+            "results": {"type": "array", "items": {
+                "type": "object",
+                "properties": {
+                    "id": _STR, "text": _STR, "scope": _STR, "score": {"type": "number"},
+                    "item_id": _NULLABLE_STR, "source": _STR, "project_id": _NULLABLE_STR,
+                },
+            }},
+            "returned": {"type": "integer"},
+            "top_k": {"type": "integer"},
+        },
+    },
+    "get_item_details": {
+        "type": "object",
+        "properties": {
+            "id": _STR, "title": _STR, "description": _STR,
+            "status": {"type": "string", "enum": _STATUS_ENUM},
+            "tags": {"type": "array", "items": _STR},
+            "effort": {"type": "integer"}, "blocker": _STR,
+            "pr": {"type": ["object", "null"]},
+            "linked_shards": {"type": "array", "items": {"type": "object"}},
+            "linked_requests": {"type": "array", "items": {"type": "object"}},
+        },
+    },
+    "link_items": {
+        "type": "object",
+        "properties": {"id": {"type": "integer"}, "a": _STR, "b": _STR, "type": _STR},
+    },
+    "extract_lessons": {
+        "type": "object",
+        "properties": {"results": {"type": "array", "items": {
+            "type": "object", "properties": {"id": _STR, "text": _STR},
+        }}},
+    },
+    "generate_digest": {
+        "type": "object",
+        "properties": {"digest": _STR},
+    },
+}
+
 for _t in TOOLS:
     _name = _t["name"]
     props = _t["inputSchema"].setdefault("properties", {})
@@ -226,6 +301,8 @@ for _t in TOOLS:
         props["limit"] = {"type": "integer", "description": "Max results (default 25)."}
         props["offset"] = {"type": "integer", "description": "Results to skip for paging (default 0)."}
         _t["outputSchema"] = _PAGE_META
+    elif _name in _OUTPUT_SCHEMAS:
+        _t["outputSchema"] = _OUTPUT_SCHEMAS[_name]
     # MCP annotations so an agent can reason about safety (#7).
     _ro = _name in _READ_ONLY
     _t["annotations"] = {

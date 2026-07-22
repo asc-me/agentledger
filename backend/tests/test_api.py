@@ -238,6 +238,15 @@ def test_mcp_tools_carry_annotations(client, auth):
     assert by["update_item"]["annotations"]["destructiveHint"] is True
 
 
+def test_every_mcp_tool_declares_output_schema(client, auth):
+    key = client.post("/api/api-keys", json={"name": "os"}, headers=auth).json()["plaintext"]
+    tl = client.post("/api/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+                     headers={"X-API-Key": key})
+    tools = tl.json()["result"]["tools"]
+    missing = [t["name"] for t in tools if t.get("outputSchema", {}).get("type") != "object"]
+    assert missing == [], f"tools without an object outputSchema: {missing}"
+
+
 def test_mcp_returns_structured_content(client, auth):
     key = client.post("/api/api-keys", json={"name": "sc"}, headers=auth).json()["plaintext"]
     r = client.post("/api/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/call",
