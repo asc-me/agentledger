@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, Github, HardDrive, KeyRound, Plus, ShieldCheck, Trash2 } from "lucide-react";
+import { Check, Copy, Github, HardDrive, KeyRound, Plus, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
 import * as React from "react";
 
 import { Avatar } from "@/components/ui/avatar";
@@ -151,6 +151,17 @@ function IntegrationsPanel() {
   const [drAccount, setDrAccount] = React.useState("");
   const [drFolder, setDrFolder] = React.useState("");
   const [copied, setCopied] = React.useState(false);
+  const [syncing, setSyncing] = React.useState(false);
+  const [syncReport, setSyncReport] = React.useState<Awaited<ReturnType<typeof api.gdriveSync>> | null>(null);
+  async function runSync() {
+    setSyncing(true);
+    try {
+      setSyncReport(await api.gdriveSync());
+      qc.invalidateQueries({ queryKey: keys.prds });
+    } finally {
+      setSyncing(false);
+    }
+  }
   const [rateLimit, setRateLimit] = React.useState(20);
   const [sitekey, setSitekey] = React.useState("");
   const [secret, setSecret] = React.useState("");
@@ -241,9 +252,28 @@ function IntegrationsPanel() {
           <div className="space-y-3">
             <Row label="Account" value={cfg.gdrive_account} />
             <Row label="Folder" value={cfg.gdrive_folder} />
-            <Button variant="danger" size="sm" onClick={() => api.gdriveDisconnect().then(invalidate)}>
-              Disconnect
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button size="sm" onClick={runSync} disabled={syncing}>
+                <RefreshCw size={13} className={syncing ? "animate-spin" : ""} />
+                {syncing ? "Syncing…" : "Sync now"}
+              </Button>
+              <Button variant="danger" size="sm" onClick={() => api.gdriveDisconnect().then(invalidate)}>
+                Disconnect
+              </Button>
+            </div>
+            {syncReport && (
+              <div className="rounded-[11px] border border-line-2 bg-surface px-3 py-2.5 text-[12px]">
+                <div className="mb-1 flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-[11px] text-muted">
+                  <span>↑ exported {syncReport.exported.length + syncReport.updated_file.length}</span>
+                  <span>↓ imported {syncReport.imported.length + syncReport.updated_db.length}</span>
+                  <span>= in sync {syncReport.in_sync}</span>
+                  {syncReport.conflicts.length > 0 && (
+                    <span className="text-st-blocked">⚠ conflicts {syncReport.conflicts.join(", ")}</span>
+                  )}
+                </div>
+                <code className="block overflow-x-auto text-[10.5px] text-faint">{syncReport.prds_dir}</code>
+              </div>
+            )}
           </div>
         ) : (
           <div className="space-y-3">
@@ -259,8 +289,10 @@ function IntegrationsPanel() {
         <div className="mt-4 border-t border-line pt-3">
           <Label>How the folder is organized</Label>
           <p className="mb-2 text-[11px] text-faint">
-            The folder is this project's root. On sync it's split into typed subfolders (live sync
-            is planned — for now, import markdown from the PRDs page):
+            The folder is this project's root. PRDs two-way sync with the <code>PRDs/</code>
+            subfolder — drop a <code>.md</code> there to import a draft; conflicts are flagged, not
+            clobbered. The sync directory is a mounted volume; point it at a Google Drive Desktop
+            folder to reach Drive.
           </p>
           <pre className="overflow-x-auto rounded-md border border-line-2 bg-surface px-2.5 py-2 font-mono text-[10.5px] leading-relaxed text-muted-2">{`<folder>/
   PRDs/         PRD markdown — drop a .md here to import a draft

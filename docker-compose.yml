@@ -34,6 +34,10 @@ services:
       OPENAI_EMBED_MODEL: ${OPENAI_EMBED_MODEL:-text-embedding-3-small}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-opus-4-8}
+      SYNC_DIR: /data/sync
+    volumes:
+      # Drive sync target. Point SYNC_HOST_DIR at a Google Drive Desktop folder to reach Drive.
+      - ${SYNC_HOST_DIR:-./sync}:/data/sync
     depends_on:
       db:
         condition: service_healthy

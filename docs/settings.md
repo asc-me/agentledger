@@ -35,37 +35,37 @@ Switches the **chat & extraction** provider — takes effect immediately.
 
 ### Google Drive
 
-A connect form (account + folder) that stores connection config. **Live import/sync is not
-wired in the local slice** (no third-party OAuth); the layout below is the **intended design**
-for when sync ships.
+A connect form (account + folder) plus a **Sync now** button. Sync is **real** — the engine
+mirrors PRDs to markdown files and imports them back, with conflict detection. It's
+**filesystem-backed**: the container mounts a host directory (`SYNC_DIR`, default `/data/sync`,
+mapped from `SYNC_HOST_DIR` — default `./sync`). **Point that host directory at a Google Drive
+Desktop folder and PRDs reach Drive with no OAuth.** The sync engine talks to a `SyncBackend`
+interface, so a native Drive-API backend can be added without touching the reconcile logic.
 
-**Folder structure.** The connection is per-project, so the folder you pick *is* that project's
-root. AgentLedger organizes it into typed subfolders (created on first sync):
+**Folder structure.** The connection is per-project; the folder name you pick is a subfolder of
+`SYNC_DIR`, and that folder is the project's root:
 
 ```
-<connected folder>/
-├── PRDs/          Each PRD mirrored as "AL-PRD-1 — Title.md" (front-matter carries id/status/version)
-├── Digests/       Generated progress digests, dated: "2026-07-21 — digest.md"
-├── Exports/       Data snapshots — memory shards & items as JSON
-└── Attachments/   Feedback screenshots, by request id
+<SYNC_DIR>/<folder>/
+└── PRDs/    Each PRD as "<PRD-id> — Title.md" with a front-matter block
+              (agentledger_id / title / status / version)
 ```
 
-Only these known subfolders are managed; anything else in the root is left untouched.
+(`Digests/`, `Exports/`, `Attachments/` are reserved for future sync of those artifacts.)
 
-**Manually-added files.** The design is a two-way, folder-as-source-of-truth sync:
+**Two-way sync (Sync now).** The reconcile is conflict-safe via a per-PRD last-synced hash:
 
-- Drop a `.md` file into **`PRDs/`** → it's imported as a new **draft PRD** on the next sync,
-  taking its title from the first `# heading` (or the file name). This is the same import path
-  the [PRD page](prds.md) exposes via **Import a .md file** — Drive just automates it.
-- Editing a file that mirrors an existing PRD updates that PRD and snapshots a new version;
-  a conflicting edit on both sides is flagged rather than silently overwritten (last-writer
-  never clobbers).
-- Files placed **outside** the known subfolders (or with unrecognized extensions) are ignored,
-  so the folder is safe to use for your own notes.
-- Deleting a mirrored file does **not** delete the PRD (archival is explicit) — it just detaches
-  the mirror.
+- A PRD with no file yet → **exported** to `PRDs/`.
+- A `.md` file with **no** `agentledger_id` → **imported** as a new draft PRD (title from the first
+  `# heading` or the file name), and the id is written back into that same file so it isn't
+  re-imported. This is the same import the [PRD page](prds.md) exposes manually.
+- Only the **file** changed since last sync → the PRD is updated and a version is snapshotted.
+- Only the **PRD** changed → the file is rewritten.
+- **Both** changed since last sync → a **conflict is flagged** (reported in the sync summary) and
+  *neither side is clobbered* — resolve it and sync again.
 
-Until sync ships, use **PRDs → Import a .md file** to bring markdown in directly.
+The **Sync now** button reports counts (exported / imported / updated / in-sync) and any
+conflicts. Deleting a file doesn't delete the PRD.
 
 ## Project tab
 

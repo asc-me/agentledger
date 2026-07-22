@@ -229,6 +229,17 @@ export const api = {
   gdriveConnect: (account: string, folder: string) =>
     request<PlatformConfig>(`/platform/gdrive/connect${projectQuery()}`, { method: "POST", body: JSON.stringify({ account, folder }) }),
   gdriveDisconnect: () => request<PlatformConfig>(`/platform/gdrive/disconnect${projectQuery()}`, { method: "POST" }),
+  gdriveSync: () =>
+    request<{
+      folder: string;
+      prds_dir: string;
+      exported: string[];
+      imported: string[];
+      updated_db: string[];
+      updated_file: string[];
+      conflicts: string[];
+      in_sync: number;
+    }>(`/platform/gdrive/sync${projectQuery()}`, { method: "POST" }),
   updateProject: (id: string, body: Partial<Project>) =>
     request<Project>(`/projects/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   members: (id: string) => request<Member[]>(`/projects/${id}/members`),

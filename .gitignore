@@ -17,6 +17,9 @@ web/*.tsbuildinfo
 .env
 .env.local
 
+# Drive sync target (runtime data / mounted volume)
+sync/
+
 # OS / editor
 .DS_Store
 

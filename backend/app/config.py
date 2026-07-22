@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     # Public embeddable feedback form (Phase 2).
     public_submit_enabled: bool = True
 
+    # Drive sync: base directory the filesystem backend syncs into. Mount this at a
+    # Google Drive Desktop folder to reach Drive with no OAuth.
+    sync_dir: str = "/data/sync"
+
     # Seed the design's dataset on startup when the DB is empty.
     seed_on_start: bool = True
 

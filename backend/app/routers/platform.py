@@ -1,6 +1,9 @@
+import os
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.db import get_db
 from app.models import User
 from app.schemas import (
@@ -11,10 +14,16 @@ from app.schemas import (
     PlatformUpdate,
 )
 from app.security.deps import get_current_user
+from app.services import drive_sync
 from app.services import items as items_svc
 from app.services import platform as platform_svc
 
 router = APIRouter(prefix="/platform", tags=["platform"])
+
+
+def _sync_root(project_id: str, folder: str) -> str:
+    sub = (folder or project_id).strip().strip("/").replace("..", "") or project_id
+    return os.path.join(settings.sync_dir, sub)
 
 
 @router.get("", response_model=PlatformConfigOut)
@@ -71,3 +80,14 @@ def gdrive_connect(body: GdriveConnectIn, project_id: str = "core", db: Session 
 @router.post("/gdrive/disconnect", response_model=PlatformConfigOut)
 def gdrive_disconnect(project_id: str = "core", db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     return platform_svc.disconnect_gdrive(db, project_id)
+
+
+@router.post("/gdrive/sync")
+def gdrive_sync(project_id: str = "core", db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    """Two-way sync of this project's PRDs with the connected folder's PRDs/ subdirectory."""
+    cfg = platform_svc.get_config(db, project_id)
+    if not cfg.gdrive_connected:
+        raise HTTPException(400, "Google Drive is not connected for this project")
+    root = _sync_root(project_id, cfg.gdrive_folder)
+    report = drive_sync.sync(db, project_id, root_dir=root)
+    return {"folder": root, "prds_dir": os.path.join(root, drive_sync.PRDS_SUBDIR), **report}

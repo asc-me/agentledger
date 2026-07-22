@@ -299,6 +299,18 @@ class ApiKey(Base):
     user: Mapped[User] = relationship(back_populates="api_keys")
 
 
+class SyncState(Base):
+    """Per-PRD last-synced snapshot for the Drive/filesystem sync — powers conflict
+    detection (flag when both sides changed since last sync)."""
+
+    __tablename__ = "sync_state"
+
+    prd_id: Mapped[str] = mapped_column(String, primary_key=True)
+    file_name: Mapped[str] = mapped_column(String, default="")
+    last_hash: Mapped[str] = mapped_column(String, default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class IdempotencyKey(Base):
     """Maps an agent-supplied idempotency key to the resource a create tool produced,
     so a retried call returns the original resource instead of a duplicate."""
