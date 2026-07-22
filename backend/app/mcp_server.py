@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import ApiKey, Item, Link, MemoryShard, Project
 from app.security.deps import get_agent_key
+from app.services import clustering as cluster_svc
 from app.services import idempotency as idem_svc
 from app.services import insights as insights_svc
 from app.services import items as items_svc
@@ -62,6 +63,8 @@ TOOLS: list[dict[str, Any]] = [
                 "title": {"type": "string"},
                 "description": {"type": "string", "description": "Markdown body."},
                 "tags": {"type": "array", "items": {"type": "string"}},
+                "touchpoints": {"type": "array", "items": {"type": "string"},
+                                "description": "Files/globs/modules this item affects, e.g. backend/app/routers/*. Powers related-work clustering."},
                 "effort": {"type": "integer", "description": _EFFORT_DESC},
                 "status": {"type": "string", "enum": _STATUS_ENUM, "description": "Defaults to backlog."},
             },
@@ -79,6 +82,8 @@ TOOLS: list[dict[str, Any]] = [
                 "title": {"type": "string"},
                 "description": {"type": "string"},
                 "tags": {"type": "array", "items": {"type": "string"}},
+                "touchpoints": {"type": "array", "items": {"type": "string"},
+                                "description": "Files/globs/modules this item affects (for related-work clustering)."},
                 "effort": {"type": "integer", "description": _EFFORT_DESC},
                 "blocker": {"type": "string", "description": "Free-text blocker; empty string clears it."},
             },
@@ -170,6 +175,29 @@ TOOLS: list[dict[str, Any]] = [
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
+        "name": "related_work",
+        "description": (
+            "Items related to a given item by shared touchpoints (files/globs/modules it affects) "
+            "and typed links, best-first — the code-neighborhood around a task. Read-only."
+        ),
+        "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]},
+    },
+    {
+        "name": "next_cluster",
+        "description": (
+            "Claim a whole code-neighborhood in one call: claims the best ready item plus its "
+            "related ready items (up to max_items), all assigned to you. Returns the claimed batch "
+            "(seed first). Use this to pull multiple related pieces of work simultaneously."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "agent_id": {"type": "string"},
+                "max_items": {"type": "integer", "description": "Max items to claim in the cluster (default 3)."},
+            },
+        },
+    },
+    {
         "name": "claim_next",
         "description": (
             "Atomically claim the best ready item (unblocked backlog/next), assign it to you, and "
@@ -211,7 +239,7 @@ TOOLS: list[dict[str, Any]] = [
 # Project-scoped tools accept an optional `project_id` that overrides the key's project.
 _PROJECT_SCOPED = {
     "create_item", "search_items", "add_memory", "search_memory",
-    "get_backlog", "suggest_next", "generate_digest", "link_items", "claim_next",
+    "get_backlog", "suggest_next", "generate_digest", "link_items", "claim_next", "next_cluster",
 }
 # Creates accept an idempotency key so a retried call returns the original resource.
 _IDEMPOTENT_CREATES = {"create_item", "add_memory", "link_items"}
@@ -220,7 +248,7 @@ _PAGED = {"search_items", "get_backlog"}
 # Read-only tools never mutate state.
 _READ_ONLY = {
     "get_context", "list_projects", "search_items", "search_memory",
-    "get_backlog", "get_item_details", "suggest_next", "generate_digest",
+    "get_backlog", "get_item_details", "suggest_next", "generate_digest", "related_work",
 }
 
 _PAGE_META = {  # shared output shape for paged reads (#9)
@@ -327,6 +355,11 @@ _OUTPUT_SCHEMAS: dict[str, dict] = {
     },
     "heartbeat": _ITEM_SCHEMA,
     "release_item": _ITEM_SCHEMA,
+    "related_work": {"type": "object", "properties": {"results": {"type": "array"}}},
+    "next_cluster": {
+        "type": "object",
+        "properties": {"claimed": {"type": "integer"}, "cluster": {"type": "array"}},
+    },
 }
 
 for _t in TOOLS:
@@ -437,6 +470,7 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
             effort=args.get("effort", 0),
             status=args.get("status", "backlog"),
             project_id=pid,
+            touchpoints=args.get("touchpoints"),
             reporter={"name": "Agent", "handle": "mcp", "avatar": "#a78bfa"},
         )
         _idempotent_remember(db, args, "create_item", item.id)
@@ -451,6 +485,7 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
             tags=args.get("tags"),
             effort=args.get("effort"),
             blocker=args.get("blocker"),
+            touchpoints=args.get("touchpoints"),
         )
         if item is None:
             raise ValueError(f"item not found: {args['id']}")
@@ -496,6 +531,22 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
     if name == "suggest_next":
         item = items_svc.suggest_next(db, project_id=pid)
         return _item_dict(item) if item else None
+    if name == "related_work":
+        item = db.get(Item, args["id"])
+        if item is None:
+            raise ValueError(f"item not found: {args['id']}")
+        rel = cluster_svc.related_items(db, item, item.project_id)
+        return {"results": [
+            {**_item_dict(r["item"]), "score": r["score"], "shared": r["shared"], "link_types": r["link_types"]}
+            for r in rel
+        ]}
+    if name == "next_cluster":
+        agent = args.get("agent_id") or key.name or key.id
+        batch = cluster_svc.next_cluster(db, agent, project_id=pid, max_items=args.get("max_items", 3))
+        return {"claimed": len(batch), "cluster": [
+            {**_item_dict(b["item"]), "seed": b["seed"], "shared": b["shared"], "link_types": b["link_types"]}
+            for b in batch
+        ]}
     if name == "link_items":
         cached = _idempotent_get(db, args, Link)
         if cached is not None:

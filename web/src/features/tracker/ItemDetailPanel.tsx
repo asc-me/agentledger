@@ -66,6 +66,31 @@ export function ItemDetailPanel({
             </p>
           </Section>
 
+          {(item.touchpoints?.length > 0 || item.claimed_by) && (
+            <Section label="Code neighborhood">
+              {item.claimed_by && (
+                <div className="mb-2 flex items-center gap-1.5 font-mono text-[11px] text-accent">
+                  <span className="blink h-1.5 w-1.5 rounded-full bg-accent" />
+                  claimed by {item.claimed_by}
+                </div>
+              )}
+              {item.touchpoints?.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {item.touchpoints.map((tp) => (
+                    <span
+                      key={tp}
+                      className="rounded-md border border-line-2 bg-surface-2 px-1.5 py-0.5 font-mono text-[10.5px] text-muted-2"
+                    >
+                      {tp}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[12px] text-faint">No touchpoints declared.</p>
+              )}
+            </Section>
+          )}
+
           {item.pr && (
             <Section label="Pull request">
               <div className="rounded-[11px] border border-line-2 bg-surface-2 p-3">

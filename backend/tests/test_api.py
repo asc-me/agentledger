@@ -103,7 +103,7 @@ def test_mcp_tools_and_call(client, auth):
         "get_backlog", "get_item_details", "suggest_next", "link_items", "extract_lessons",
         "generate_digest",
     }
-    assert len(names) == 16
+    assert len(names) == 18
 
     call = client.post(
         "/api/mcp",
@@ -202,7 +202,7 @@ def test_mcp_get_context_and_list_projects(client, auth):
     ctx = _mcp(client, key, "get_context", {})
     assert ctx["project_id"] == "core"
     assert ctx["key_project_id"] == "core"
-    assert ctx["tool_count"] == 16
+    assert ctx["tool_count"] == 18
     assert ctx["project_count"] >= 1
 
     projects = _mcp(client, key, "list_projects", {})["results"]
@@ -253,7 +253,7 @@ def test_mcp_returns_structured_content(client, auth):
                     "params": {"name": "get_context", "arguments": {}}},
                     headers={"X-API-Key": key})
     result = r.json()["result"]
-    assert result["structuredContent"]["tool_count"] == 16  # typed, not JSON-in-text
+    assert result["structuredContent"]["tool_count"] == 18  # typed, not JSON-in-text
 
 
 def test_mcp_errors_are_structured_not_500(client, auth):

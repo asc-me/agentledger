@@ -65,6 +65,7 @@ class ItemCreate(BaseModel):
     title: str
     description: str = ""
     tags: list[str] = []
+    touchpoints: list[str] = []
     effort: int = 0
     status: str = "backlog"
     project_id: str = "core"
@@ -79,6 +80,7 @@ class ItemUpdate(BaseModel):
     blocker: str | None = None
     github_url: str | None = None
     assignee: str | None = None
+    touchpoints: list[str] | None = None
 
 
 class ReorderIn(BaseModel):
@@ -92,6 +94,7 @@ class ItemOut(ORMModel):
     description: str
     status: str
     tags: list[str]
+    touchpoints: list[str] = []
     effort: int
     sort_order: int
     blocker: str
@@ -103,6 +106,11 @@ class ItemOut(ORMModel):
     claimed_by: str | None = None
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("touchpoints", mode="before")
+    @classmethod
+    def _tp_default(cls, v):
+        return v or []
 
 
 # ---- Memory ----

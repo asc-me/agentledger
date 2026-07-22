@@ -113,6 +113,7 @@ class Item(Base):
     description: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String, default="backlog")
     tags: Mapped[list] = mapped_column(JSON, default=list)
+    touchpoints: Mapped[list] = mapped_column(JSON, default=list)  # files/globs/modules the item affects
     effort: Mapped[int] = mapped_column(Integer, default=0)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     blocker: Mapped[str] = mapped_column(String, default="")

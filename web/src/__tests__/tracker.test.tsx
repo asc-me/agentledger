@@ -11,13 +11,13 @@ import type { Item } from "@/lib/types";
 const items: Item[] = [
   {
     id: "AL-01", project_id: "core", title: "In progress thing", description: "",
-    status: "in_progress", tags: ["ai"], effort: 5, sort_order: 0, blocker: "", date: "Jul 19",
+    status: "in_progress", tags: ["ai"], touchpoints: [], effort: 5, sort_order: 0, blocker: "", date: "Jul 19",
     reporter: { name: "Alex Cain", handle: "ascme", avatar: "#a78bfa" }, pr: null, github_url: "", assignee: "", claimed_by: null,
     created_at: "", updated_at: "",
   },
   {
     id: "AL-02", project_id: "core", title: "Finished thing", description: "",
-    status: "done", tags: ["ui"], effort: 8, sort_order: 1, blocker: "", date: "Jul 14",
+    status: "done", tags: ["ui"], touchpoints: [], effort: 8, sort_order: 1, blocker: "", date: "Jul 14",
     reporter: { name: "Dana Ruiz", handle: "dev_ren", avatar: "#7ca2ff" }, pr: null, github_url: "", assignee: "", claimed_by: null,
     created_at: "", updated_at: "",
   },

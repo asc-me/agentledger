@@ -50,6 +50,7 @@ def create_item(
     project_id: str = "core",
     reporter: dict | None = None,
     date: str = "",
+    touchpoints: list[str] | None = None,
 ) -> Item:
     if status not in STATUSES:
         raise ValueError(f"invalid status: {status}")
@@ -62,6 +63,7 @@ def create_item(
         title=title,
         description=description or "",
         tags=tags or [],
+        touchpoints=touchpoints or [],
         effort=int(effort or 0),
         status=status,
         sort_order=max_order + 1,
@@ -71,6 +73,9 @@ def create_item(
     db.add(item)
     db.commit()
     db.refresh(item)
+    if item.touchpoints:
+        from app.services.clustering import sync_code_links
+        sync_code_links(db, item)
     return item
 
 
@@ -83,11 +88,15 @@ def update_item(db: Session, item_id: str, **fields) -> Item | None:
             raise ValueError(f"invalid status: {fields['status']}")
     prev_status = item.status
     for key in ("title", "description", "status", "tags", "effort", "blocker", "pr", "date",
-                "github_url", "assignee"):
+                "github_url", "assignee", "touchpoints"):
         if key in fields and fields[key] is not None:
             setattr(item, key, fields[key])
     db.commit()
     db.refresh(item)
+
+    if "touchpoints" in fields and fields["touchpoints"] is not None and item.touchpoints:
+        from app.services.clustering import sync_code_links
+        sync_code_links(db, item)
 
     if item.status == "done" and prev_status != "done":
         _auto_extract_lessons(db, item)
@@ -246,24 +255,40 @@ def claim_next(
     Concurrency-safe: the UPDATE guard means only one caller wins a given row, so two agents
     never claim the same item. Returns the claimed item, or None if nothing is ready.
     """
-    now = utcnow()
     for cand in _ready_candidates(db, project_id, lease_seconds):
-        # Optimistic-concurrency guard: only win the row if `claimed_by` is still what we read
-        # (None for a fresh item, the stale holder for a reclaim). Dialect-safe — no time math in SQL.
-        stmt = update(Item).where(Item.id == cand.id)
-        stmt = (
-            stmt.where(Item.claimed_by.is_(None))
-            if cand.claimed_by is None
-            else stmt.where(Item.claimed_by == cand.claimed_by)
-        )
-        stmt = stmt.values(claimed_by=agent_id, claimed_at=now, assignee=agent_id, status="in_progress")
-        result = db.execute(stmt)
-        db.commit()
-        if result.rowcount == 1:
-            db.expire_all()
-            return db.get(Item, cand.id)
+        claimed = _try_claim(db, cand, agent_id)
+        if claimed is not None:
+            return claimed
         # Lost the race for this candidate — try the next.
     return None
+
+
+def _try_claim(db: Session, cand: Item, agent_id: str) -> Item | None:
+    """Atomically claim `cand` for `agent_id`. Optimistic-concurrency guard: only win the row
+    if `claimed_by` is still what we observed (None for fresh, the stale holder for a reclaim),
+    so two agents never take the same item. Dialect-safe — no time math in SQL."""
+    stmt = update(Item).where(Item.id == cand.id)
+    stmt = (
+        stmt.where(Item.claimed_by.is_(None))
+        if cand.claimed_by is None
+        else stmt.where(Item.claimed_by == cand.claimed_by)
+    )
+    stmt = stmt.values(claimed_by=agent_id, claimed_at=utcnow(), assignee=agent_id, status="in_progress")
+    if db.execute(stmt).rowcount == 1:
+        db.commit()
+        db.expire_all()
+        return db.get(Item, cand.id)
+    db.commit()
+    return None
+
+
+def claim_item(db: Session, item_id: str, agent_id: str, lease_seconds: int = DEFAULT_LEASE_SECONDS) -> Item | None:
+    """Claim one specific item if it's currently claimable. Used to grab a related cluster."""
+    cutoff = utcnow() - timedelta(seconds=lease_seconds)
+    it = db.get(Item, item_id)
+    if it is None or not _is_claimable(it, cutoff):
+        return None
+    return _try_claim(db, it, agent_id)
 
 
 def heartbeat(db: Session, item_id: str, agent_id: str) -> Item | None:

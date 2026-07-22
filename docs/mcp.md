@@ -21,17 +21,19 @@ agent's writes are identical to a user's and appear instantly in the UI.
 - **Metering** — every `tools/call` increments a per-tool counter (the `mcp_tool_stats`
   table) surfaced on the **MCP Tools** view.
 
-## The 16 tools
+## The 18 tools
 
 | Tool | Params | Does |
 | --- | --- | --- |
 | `get_context` | — | Orient: the key's project, scopes, project/tool counts. Call this first. |
 | `list_projects` | — | All projects (`id`, `name`, `accent`, `description`) — ids for the `project_id` override |
+| `next_cluster` | `agent_id`, `max_items`, `project_id` | **Claim a code-neighborhood at once** — the best ready item plus its related ready items, all assigned to you. |
+| `related_work` | `id` | Items related to a task by shared touchpoints + typed links, best-first (read-only) |
 | `claim_next` | `agent_id`, `lease_seconds`, `project_id` | **Atomically** claim the best ready item, assign it to you, move it to in_progress. Returns `{claimed, item}`. |
 | `heartbeat` | `id`, `agent_id` | Extend the lease on an item you hold (so it isn't reclaimed while you work) |
 | `release_item` | `id`, `agent_id`, `to_status` | Return a claimed item to the queue |
-| `create_item` | `title`, `description`, `tags`, `effort`, `status`, `project_id` | Create a tracker item (returns its `project_id`) |
-| `update_item` | `id`, `status`, `title`, `description`, `tags`, `effort`, `blocker`, `assignee`, `github_url` | Patch / advance an item |
+| `create_item` | `title`, `description`, `tags`, `touchpoints`, `effort`, `status`, `project_id` | Create a tracker item (returns its `project_id`) |
+| `update_item` | `id`, `status`, `title`, `description`, `tags`, `touchpoints`, `effort`, `blocker`, `assignee`, `github_url` | Patch / advance an item |
 | `search_items` | `query`, `tags`, `status`, `project_id` | Query the stream (query matches title, description, **and** tags) |
 | `add_memory` | `text`, `scope`, `item_id`, `project_id` | Attach a memory shard |
 | `search_memory` | `query`, `top_k`, `project_id` | Semantic search over shards (returns `item_id`, `source`) |
@@ -45,6 +47,19 @@ agent's writes are identical to a user's and appear instantly in the UI.
 `status` fields accept only `backlog · next · in_progress · review · done · blocked` (enforced in
 the schema). Tool failures return `isError: true` with a machine-readable
 `structuredContent.error.code` (`invalid_request` or `internal_error`) — never a raw HTTP 500.
+
+### Code-locality clustering (pick up related work at once)
+
+Give items **touchpoints** — the files/globs/modules they affect (`backend/app/routers/*`,
+`web/src/lib/api.ts`, a symbol name) — on `create_item`/`update_item`. Two items relate when
+their touchpoints overlap (exact, glob, or same directory), and sharing a touchpoint
+**auto-creates a `code` link** between them. Then:
+
+- `related_work(id)` shows the code-neighborhood around a task (shared touchpoints + link types),
+  best-first — read-only.
+- `next_cluster(agent_id, max_items)` **claims the whole neighborhood in one call**: the best ready
+  item plus its related ready items, all assigned to you. This is how an agent pulls several
+  pieces of related work simultaneously instead of context-switching.
 
 ### Task claiming (safe multi-agent loops)
 

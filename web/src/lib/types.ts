@@ -46,6 +46,7 @@ export interface Item {
   description: string;
   status: Status;
   tags: string[];
+  touchpoints: string[];
   effort: number;
   sort_order: number;
   blocker: string;
