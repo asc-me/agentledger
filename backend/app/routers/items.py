@@ -37,6 +37,8 @@ def create_item(
             status=body.status,
             project_id=body.project_id,
             touchpoints=body.touchpoints,
+            prd_id=body.prd_id,
+            prd_section=body.prd_section,
             reporter=reporter,
         )
     except ValueError as e:

@@ -6,9 +6,12 @@ import re
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from collections import Counter
+
 from app.config import settings
 from app.models import Prd, PrdVersion
 from app.providers import get_chat_model
+from app.services import items as items_svc
 
 STATUSES = ["draft", "review", "approved"]
 
@@ -162,3 +165,85 @@ def _stub_command(command: str, prd: Prd) -> str:
         "\n_Expanded draft placeholder. Configure a chat provider (CHAT_PROVIDER=ollama|anthropic) "
         "to generate real prose here._\n"
     )
+
+
+# ---- Spec-to-task traceability & coverage (feature D) ----
+
+_SECTION_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
+
+
+def parse_sections(body: str) -> list[str]:
+    """Level-2 headings (`## …`) — the PRD's sections, in order."""
+    return [m.group(1).strip() for m in _SECTION_RE.finditer(body or "")]
+
+
+def section_bodies(body: str) -> dict[str, str]:
+    """Map each `## section` to the markdown beneath it (until the next `## `)."""
+    out: dict[str, str] = {}
+    cur, buf = None, []
+    for line in (body or "").splitlines():
+        m = re.match(r"^##\s+(.+?)\s*$", line)
+        if m:
+            if cur is not None:
+                out[cur] = "\n".join(buf).strip()
+            cur, buf = m.group(1).strip(), []
+        elif cur is not None:
+            buf.append(line)
+    if cur is not None:
+        out[cur] = "\n".join(buf).strip()
+    return out
+
+
+def coverage(db: Session, prd: Prd) -> dict:
+    """Per-section task rollup + gaps for a PRD."""
+    sections = parse_sections(prd.body)
+    items = [it for it in items_svc.list_items(db, project_id=prd.project_id) if it.prd_id == prd.id]
+    by_section: dict[str, list] = {}
+    for it in items:
+        by_section.setdefault(it.prd_section or "", []).append(it)
+    per = []
+    for s in sections:
+        its = by_section.get(s, [])
+        counts = Counter(it.status for it in its)
+        per.append({
+            "section": s,
+            "item_count": len(its),
+            "done": counts.get("done", 0),
+            "by_status": dict(counts),
+            "gap": len(its) == 0,
+            "item_ids": [it.id for it in its],
+        })
+    total = len(items)
+    done = sum(1 for it in items if it.status == "done")
+    return {
+        "prd_id": prd.id, "title": prd.title, "status": prd.status,
+        "sections": per,
+        "section_count": len(sections),
+        "sections_with_tasks": sum(1 for p in per if not p["gap"]),
+        "gaps": [p["section"] for p in per if p["gap"]],
+        "total_items": total, "done_items": done,
+        "percent_done": round(100 * done / total) if total else 0,
+    }
+
+
+def decompose(db: Session, prd: Prd, create: bool = False) -> dict:
+    """Propose one tracked task per un-covered section (gap). With create=True, creates them
+    as backlog items linked to the PRD + section, so the spec drives the tracker."""
+    cov = coverage(db, prd)
+    bodies = section_bodies(prd.body)
+    proposals = [
+        {"section": p["section"], "title": f"Implement: {p['section']}",
+         "description": bodies.get(p["section"], "").strip()}
+        for p in cov["sections"] if p["gap"]
+    ]
+    created = []
+    if create:
+        for pr in proposals:
+            item = items_svc.create_item(
+                db, title=pr["title"], description=pr["description"],
+                project_id=prd.project_id, status="backlog", tags=["prd"],
+                prd_id=prd.id, prd_section=pr["section"],
+                reporter={"name": "Spec", "handle": "prd", "avatar": "#c9b8ff"},
+            )
+            created.append(item.id)
+    return {"prd_id": prd.id, "proposals": proposals, "created": created}

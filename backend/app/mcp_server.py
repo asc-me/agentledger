@@ -29,6 +29,7 @@ from app.services import items as items_svc
 from app.services import links as links_svc
 from app.services import mcp_stats
 from app.services import memory as mem_svc
+from app.services import prds as prd_svc
 from app.services import prioritization as prio_svc
 from app.services.projects import resolve_project_id
 
@@ -68,6 +69,8 @@ TOOLS: list[dict[str, Any]] = [
                                 "description": "Files/globs/modules this item affects, e.g. backend/app/routers/*. Powers related-work clustering."},
                 "effort": {"type": "integer", "description": _EFFORT_DESC},
                 "status": {"type": "string", "enum": _STATUS_ENUM, "description": "Defaults to backlog."},
+                "prd_id": {"type": "string", "description": "The PRD this task implements (traceability)."},
+                "prd_section": {"type": "string", "description": "The PRD section this task implements."},
             },
             "required": ["title"],
         },
@@ -87,6 +90,8 @@ TOOLS: list[dict[str, Any]] = [
                                 "description": "Files/globs/modules this item affects (for related-work clustering)."},
                 "effort": {"type": "integer", "description": _EFFORT_DESC},
                 "blocker": {"type": "string", "description": "Free-text blocker; empty string clears it."},
+                "prd_id": {"type": "string"},
+                "prd_section": {"type": "string"},
             },
             "required": ["id"],
         },
@@ -180,6 +185,29 @@ TOOLS: list[dict[str, Any]] = [
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
+        "name": "prd_coverage",
+        "description": (
+            "Spec-to-task rollup for a PRD: per-section task counts by status, coverage %, and "
+            "`gaps` (sections with no tasks yet). Read-only."
+        ),
+        "inputSchema": {"type": "object", "properties": {"prd_id": {"type": "string"}}, "required": ["prd_id"]},
+    },
+    {
+        "name": "decompose_prd",
+        "description": (
+            "Propose one tracked task per un-covered PRD section (the gaps). With create=true, "
+            "creates them as backlog items linked to the PRD + section — the spec drives the tracker."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "prd_id": {"type": "string"},
+                "create": {"type": "boolean", "description": "Create the proposed tasks (default false = dry-run)."},
+            },
+            "required": ["prd_id"],
+        },
+    },
+    {
         "name": "related_work",
         "description": (
             "Items related to a given item by shared touchpoints (files/globs/modules it affects) "
@@ -254,6 +282,7 @@ _PAGED = {"search_items", "get_backlog"}
 _READ_ONLY = {
     "get_context", "list_projects", "search_items", "search_memory",
     "get_backlog", "get_item_details", "suggest_next", "generate_digest", "related_work",
+    "prd_coverage",
 }
 
 _PAGE_META = {  # shared output shape for paged reads (#9)
@@ -282,6 +311,8 @@ _ITEM_SCHEMA = {
         "effort": {"type": "integer"},
         "assignee": _STR,
         "claimed_by": _NULLABLE_STR,
+        "prd_id": _NULLABLE_STR,
+        "prd_section": _STR,
     },
 }
 _SHARD_SCHEMA = {
@@ -366,6 +397,18 @@ _OUTPUT_SCHEMAS: dict[str, dict] = {
         "type": "object",
         "properties": {"claimed": {"type": "integer"}, "cluster": {"type": "array"}},
     },
+    "prd_coverage": {
+        "type": "object",
+        "properties": {
+            "prd_id": _STR, "sections": {"type": "array"}, "gaps": {"type": "array"},
+            "total_items": {"type": "integer"}, "done_items": {"type": "integer"},
+            "percent_done": {"type": "integer"},
+        },
+    },
+    "decompose_prd": {
+        "type": "object",
+        "properties": {"prd_id": _STR, "proposals": {"type": "array"}, "created": {"type": "array"}},
+    },
 }
 
 for _t in TOOLS:
@@ -411,6 +454,8 @@ def _item_dict(item) -> dict:
         "effort": item.effort,
         "assignee": item.assignee,
         "claimed_by": item.claimed_by,
+        "prd_id": item.prd_id,
+        "prd_section": item.prd_section,
     }
 
 
@@ -478,6 +523,8 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
             status=args.get("status", "backlog"),
             project_id=pid,
             touchpoints=args.get("touchpoints"),
+            prd_id=args.get("prd_id"),
+            prd_section=args.get("prd_section", ""),
             reporter={"name": "Agent", "handle": "mcp", "avatar": "#a78bfa"},
         )
         _idempotent_remember(db, args, "create_item", item.id)
@@ -493,6 +540,8 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
             effort=args.get("effort"),
             blocker=args.get("blocker"),
             touchpoints=args.get("touchpoints"),
+            prd_id=args.get("prd_id"),
+            prd_section=args.get("prd_section"),
         )
         if item is None:
             raise ValueError(f"item not found: {args['id']}")
@@ -592,6 +641,16 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
         return {"results": insights_svc.extract_lessons(db, args["id"])}
     if name == "generate_digest":
         return {"digest": insights_svc.generate_digest(db, project_id=pid)}
+    if name == "prd_coverage":
+        prd = prd_svc.get_prd(db, args["prd_id"])
+        if prd is None:
+            raise ValueError(f"prd not found: {args['prd_id']}")
+        return prd_svc.coverage(db, prd)
+    if name == "decompose_prd":
+        prd = prd_svc.get_prd(db, args["prd_id"])
+        if prd is None:
+            raise ValueError(f"prd not found: {args['prd_id']}")
+        return prd_svc.decompose(db, prd, create=bool(args.get("create", False)))
     raise ValueError(f"unknown tool: {name}")
 
 

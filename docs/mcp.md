@@ -48,6 +48,16 @@ agent's writes are identical to a user's and appear instantly in the UI.
 the schema). Tool failures return `isError: true` with a machine-readable
 `structuredContent.error.code` (`invalid_request` or `internal_error`) — never a raw HTTP 500.
 
+### Spec → task traceability
+
+Items can link to a **PRD + section** (`prd_id` / `prd_section` on `create_item`/`update_item`),
+so the spec and the tracker stay joined. `decompose_prd(prd_id, create=true)` proposes one
+tracked task per un-covered PRD section (the gaps) and, with `create`, creates them as backlog
+items linked back to the section — the spec drives the tracker. `prd_coverage(prd_id)` returns
+the per-section rollup (task counts by status, `percent_done`, and `gaps`) so an agent knows
+what's specced-but-unbuilt. Completing an item then updates coverage; ask `get_backlog`/
+`next_cluster` for what to pick up next — the loop.
+
 ### Dependency-aware prioritization
 
 Readiness comes from the **dependency graph**, not just the free-text `blocker`: create a

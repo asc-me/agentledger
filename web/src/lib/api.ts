@@ -14,6 +14,7 @@ import type {
   Member,
   PlatformConfig,
   Prd,
+  PrdCoverage,
   PrdStatus,
   PrdSummary,
   PrdVersion,
@@ -187,6 +188,12 @@ export const api = {
   prds: (projectId?: string) =>
     request<PrdSummary[]>(`/prds${projectId ? `?project_id=${projectId}` : ""}`),
   prd: (id: string) => request<Prd>(`/prds/${id}`),
+  prdCoverage: (id: string) => request<PrdCoverage>(`/prds/${id}/coverage`),
+  decomposePrd: (id: string, create: boolean) =>
+    request<{ prd_id: string; proposals: { section: string; title: string }[]; created: string[] }>(
+      `/prds/${id}/decompose?create=${create}`,
+      { method: "POST" },
+    ),
   createPrd: (title: string, template = "standard", body?: string) =>
     request<Prd>("/prds", {
       method: "POST",

@@ -46,6 +46,13 @@ export function ItemDetailPanel({
 
           <h2 className="text-[17px] font-semibold leading-snug text-fg">{item.title}</h2>
 
+          {item.prd_id && (
+            <div className="font-mono text-[11px] text-purple-2">
+              Implements {item.prd_id}
+              {item.prd_section ? ` · ${item.prd_section}` : ""}
+            </div>
+          )}
+
           <div className="flex flex-wrap items-center gap-1.5">
             {item.tags.map((t) => (
               <span

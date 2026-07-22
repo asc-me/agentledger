@@ -125,6 +125,9 @@ class Item(Base):
     assignee: Mapped[str] = mapped_column(String, default="")  # durable owner (human or agent)
     claimed_by: Mapped[str | None] = mapped_column(String, nullable=True)  # agent holding the lease
     claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Spec traceability (feature D): the PRD + section this item implements.
+    prd_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    prd_section: Mapped[str] = mapped_column(String, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow

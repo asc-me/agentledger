@@ -69,6 +69,8 @@ class ItemCreate(BaseModel):
     effort: int = 0
     status: str = "backlog"
     project_id: str = "core"
+    prd_id: str | None = None
+    prd_section: str = ""
 
 
 class ItemUpdate(BaseModel):
@@ -81,6 +83,8 @@ class ItemUpdate(BaseModel):
     github_url: str | None = None
     assignee: str | None = None
     touchpoints: list[str] | None = None
+    prd_id: str | None = None
+    prd_section: str | None = None
 
 
 class ReorderIn(BaseModel):
@@ -104,6 +108,8 @@ class ItemOut(ORMModel):
     github_url: str = ""
     assignee: str = ""
     claimed_by: str | None = None
+    prd_id: str | None = None
+    prd_section: str = ""
     created_at: datetime
     updated_at: datetime
 

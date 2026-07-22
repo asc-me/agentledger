@@ -56,6 +56,8 @@ export interface Item {
   github_url: string;
   assignee: string;
   claimed_by: string | null;
+  prd_id: string | null;
+  prd_section: string;
   created_at: string;
   updated_at: string;
 }
@@ -155,6 +157,28 @@ export interface Prd extends PrdSummary {
   body: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface PrdCoverageSection {
+  section: string;
+  item_count: number;
+  done: number;
+  by_status: Record<string, number>;
+  gap: boolean;
+  item_ids: string[];
+}
+
+export interface PrdCoverage {
+  prd_id: string;
+  title: string;
+  status: PrdStatus;
+  sections: PrdCoverageSection[];
+  section_count: number;
+  sections_with_tasks: number;
+  gaps: string[];
+  total_items: number;
+  done_items: number;
+  percent_done: number;
 }
 
 export interface PrdVersion {

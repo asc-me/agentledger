@@ -51,6 +51,8 @@ def create_item(
     reporter: dict | None = None,
     date: str = "",
     touchpoints: list[str] | None = None,
+    prd_id: str | None = None,
+    prd_section: str = "",
 ) -> Item:
     if status not in STATUSES:
         raise ValueError(f"invalid status: {status}")
@@ -69,6 +71,8 @@ def create_item(
         sort_order=max_order + 1,
         reporter=reporter or {},
         date=date,
+        prd_id=prd_id,
+        prd_section=prd_section or "",
     )
     db.add(item)
     db.commit()
@@ -88,7 +92,7 @@ def update_item(db: Session, item_id: str, **fields) -> Item | None:
             raise ValueError(f"invalid status: {fields['status']}")
     prev_status = item.status
     for key in ("title", "description", "status", "tags", "effort", "blocker", "pr", "date",
-                "github_url", "assignee", "touchpoints"):
+                "github_url", "assignee", "touchpoints", "prd_id", "prd_section"):
         if key in fields and fields[key] is not None:
             setattr(item, key, fields[key])
     db.commit()

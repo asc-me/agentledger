@@ -32,6 +32,22 @@ def create_prd(body: PrdCreate, db: Session = Depends(get_db), _: User = Depends
     )
 
 
+@router.get("/{prd_id}/coverage")
+def prd_coverage(prd_id: str, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    prd = prd_svc.get_prd(db, prd_id)
+    if prd is None:
+        raise HTTPException(404, "prd not found")
+    return prd_svc.coverage(db, prd)
+
+
+@router.post("/{prd_id}/decompose")
+def decompose_prd(prd_id: str, create: bool = False, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    prd = prd_svc.get_prd(db, prd_id)
+    if prd is None:
+        raise HTTPException(404, "prd not found")
+    return prd_svc.decompose(db, prd, create=create)
+
+
 @router.get("/{prd_id}", response_model=PrdOut)
 def get_prd(prd_id: str, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     prd = prd_svc.get_prd(db, prd_id)

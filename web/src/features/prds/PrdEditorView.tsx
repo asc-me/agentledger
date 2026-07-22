@@ -1,5 +1,5 @@
-import { useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ChevronDown, Eye, History, Link2, Save, Sparkles } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, ChevronDown, Eye, History, Link2, ListChecks, Save, Sparkles } from "lucide-react";
 import * as React from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
@@ -35,7 +35,7 @@ export function PrdEditorView() {
 
   const [title, setTitle] = React.useState("");
   const [body, setBody] = React.useState("");
-  const [rightTab, setRightTab] = React.useState<"preview" | "history">("preview");
+  const [rightTab, setRightTab] = React.useState<"preview" | "history" | "coverage">("preview");
   const [diffVersion, setDiffVersion] = React.useState<PrdVersion | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [aiBusy, setAiBusy] = React.useState<string | null>(null);
@@ -137,6 +137,7 @@ export function PrdEditorView() {
           <LinkItemsMenu prdId={id} linked={prd.linked} onChange={refresh} />
           <div className="flex items-center gap-1 rounded-lg border border-line-2 bg-surface-2 p-0.5">
             <TabBtn active={rightTab === "preview"} onClick={() => setRightTab("preview")} icon={<Eye size={12} />} label="Preview" />
+            <TabBtn active={rightTab === "coverage"} onClick={() => setRightTab("coverage")} icon={<ListChecks size={12} />} label="Coverage" />
             <TabBtn active={rightTab === "history"} onClick={() => setRightTab("history")} icon={<History size={12} />} label="History" />
           </div>
         </div>
@@ -153,6 +154,8 @@ export function PrdEditorView() {
         <div className="min-h-0 overflow-y-auto p-5">
           {rightTab === "preview" ? (
             <Markdown source={body} />
+          ) : rightTab === "coverage" ? (
+            <CoveragePanel prdId={id} onDecomposed={refresh} />
           ) : (
             <VersionHistory
               versions={versions}
@@ -311,6 +314,73 @@ function VersionHistory({
       {diffVersion && !diffVersion.body && (
         <p className="mt-3 text-[12px] text-faint">This historical version has no stored body snapshot.</p>
       )}
+    </div>
+  );
+}
+
+function CoveragePanel({ prdId, onDecomposed }: { prdId: string; onDecomposed: () => void }) {
+  const qc = useQueryClient();
+  const [busy, setBusy] = React.useState(false);
+  const { data: cov } = useQuery({
+    queryKey: ["prd-coverage", prdId],
+    queryFn: () => api.prdCoverage(prdId),
+  });
+
+  async function fillGaps() {
+    setBusy(true);
+    try {
+      await api.decomposePrd(prdId, true);
+      await qc.invalidateQueries({ queryKey: ["prd-coverage", prdId] });
+      qc.invalidateQueries({ queryKey: keys.items });
+      onDecomposed();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!cov) return <p className="text-[13px] text-muted">Loading coverage…</p>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-[13px] text-fg-2">
+            {cov.sections_with_tasks}/{cov.section_count} sections covered · {cov.percent_done}% done
+          </div>
+          <div className="mt-1 h-1.5 w-48 overflow-hidden rounded-full bg-surface-4">
+            <div className="h-full rounded-full bg-accent" style={{ width: `${cov.percent_done}%` }} />
+          </div>
+        </div>
+        {cov.gaps.length > 0 && (
+          <Button size="sm" onClick={fillGaps} disabled={busy}>
+            <ListChecks size={13} />
+            {busy ? "Creating…" : `Fill ${cov.gaps.length} gap${cov.gaps.length > 1 ? "s" : ""}`}
+          </Button>
+        )}
+      </div>
+
+      <div className="space-y-1.5">
+        {cov.sections.map((s) => (
+          <div
+            key={s.section}
+            className="flex items-center gap-2 rounded-[10px] border border-line-2 bg-surface-2 px-3 py-2"
+          >
+            <span className="min-w-0 flex-1 truncate text-[13px] text-fg-2">{s.section}</span>
+            {s.gap ? (
+              <span className="rounded border border-[rgba(224,179,74,0.3)] px-1.5 py-px font-mono text-[9.5px] uppercase tracking-wide text-[#e0b34a]">
+                no tasks
+              </span>
+            ) : (
+              <span className="font-mono text-[10.5px] text-muted">
+                {s.done}/{s.item_count} done
+              </span>
+            )}
+          </div>
+        ))}
+        {cov.section_count === 0 && (
+          <p className="text-[12.5px] text-faint">No `##` sections in this PRD yet.</p>
+        )}
+      </div>
     </div>
   );
 }
