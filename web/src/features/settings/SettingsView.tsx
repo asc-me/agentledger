@@ -5,6 +5,7 @@ import * as React from "react";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
+import { McpInstall } from "@/features/settings/McpInstall";
 import { useProjectCtx } from "@/features/ProjectContext";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
@@ -381,7 +382,7 @@ function ProjectPanel() {
       <div className="mb-4 space-y-2">
         {flags.map((fl) => (
           <label key={fl.key} className="flex cursor-pointer items-center gap-2.5 text-[12.5px] text-fg-2">
-            <input type="checkbox" checked={!!form[fl.key]} onChange={(e) => setForm((f) => ({ ...f, [fl.key]: e.target.checked }))} />
+            <input type="checkbox" className="accent-accent" checked={!!form[fl.key]} onChange={(e) => setForm((f) => ({ ...f, [fl.key]: e.target.checked }))} />
             {fl.label}
           </label>
         ))}
@@ -449,6 +450,7 @@ function ApiKeysPanel() {
               {copied ? <Check size={13} className="text-accent" /> : <Copy size={13} />}
             </button>
           </div>
+          <McpInstall apiKey={created} />
         </div>
       )}
       <div className="mb-2 flex items-center gap-2">
