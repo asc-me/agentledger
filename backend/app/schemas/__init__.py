@@ -378,3 +378,104 @@ class ChatIn(BaseModel):
 class ChatOut(BaseModel):
     reply: str
     shards: list[ShardHit]
+
+
+class CodeNodeOut(ORMModel):
+    id: str
+    path: str
+    kind: str
+    name: str
+    lang: str
+    summary: str
+    fresh: bool
+
+
+class CodeHit(BaseModel):
+    node: CodeNodeOut
+    score: float
+
+
+class CodeAnswerOut(BaseModel):
+    reply: str
+    nodes: list[CodeHit]
+
+
+class CodeEdgeOut(BaseModel):
+    src: str
+    dst: str
+    type: str
+
+
+class CodeMapOut(BaseModel):
+    nodes: list[CodeNodeOut]
+    edges: list[CodeEdgeOut]
+    node_count: int
+    edge_count: int
+
+
+class CodeOutEdge(BaseModel):
+    dst: str
+    type: str
+
+
+class CodeInEdge(BaseModel):
+    src: str
+    type: str
+
+
+class CodeItemRef(BaseModel):
+    id: str
+    title: str
+    status: str
+
+
+class CodeLinkedItem(BaseModel):
+    id: str
+    title: str
+    status: str
+    relation: str
+
+
+class CodeLinkedRequest(BaseModel):
+    id: str
+    title: str
+    type: str
+    status: str
+    relation: str
+
+
+class CodeNeighborsOut(BaseModel):
+    path: str
+    node: CodeNodeOut | None
+    outgoing: list[CodeOutEdge]
+    incoming: list[CodeInEdge]
+    items_touching: list[CodeItemRef]
+    linked_items: list[CodeLinkedItem]
+    linked_requests: list[CodeLinkedRequest]
+
+
+class CodeRefIn(BaseModel):
+    ref_id: str
+    path: str
+    relation: str = "affects"
+    ref_type: str | None = None
+
+
+class CodeRefOut(BaseModel):
+    id: int
+    ref_type: str
+    ref_id: str
+    path: str
+    relation: str
+
+
+class CodeUnlinkIn(BaseModel):
+    ref_id: str
+    path: str
+    relation: str | None = None
+
+
+class CodeForRefRow(BaseModel):
+    path: str
+    relation: str
+    node: CodeNodeOut | None

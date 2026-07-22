@@ -23,6 +23,7 @@ from app.db import get_db
 from app.models import ApiKey, Item, Link, MemoryShard, Project
 from app.security.deps import get_agent_key
 from app.services import clustering as cluster_svc
+from app.services import code_graph as code_svc
 from app.services import idempotency as idem_svc
 from app.services import insights as insights_svc
 from app.services import items as items_svc
@@ -267,22 +268,144 @@ TOOLS: list[dict[str, Any]] = [
             "required": ["id"],
         },
     },
+    {
+        "name": "describe_code",
+        "description": (
+            "Record the codebase's structure and relations as a queryable graph. You (the "
+            "coding agent) have the repo in context, so you are the source of truth: upsert "
+            "`nodes` (module/file/symbol, each with a one-paragraph summary of what it is and "
+            "owns) and `edges` (imports/calls/owns/tested_by/references between paths). "
+            "Idempotent per path — re-describe a file after you change it, passing its new "
+            "`content_hash`, to keep the map fresh. Pass `prune=true` when you've described a "
+            "whole subtree to mark nodes you no longer saw as stale."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "nodes": {
+                    "type": "array",
+                    "description": "Code units to upsert.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "path": {"type": "string", "description": "Repo-relative, e.g. app/services/items.py or app/services/items.py::create_item"},
+                            "kind": {"type": "string", "enum": code_svc.NODE_KINDS, "description": "module | file | symbol (default file)."},
+                            "name": {"type": "string", "description": "Short label, e.g. the module or symbol name."},
+                            "lang": {"type": "string", "description": "python | ts | ... (optional)."},
+                            "summary": {"type": "string", "description": "One paragraph: what it is, does, and owns."},
+                            "content_hash": {"type": "string", "description": "Hash of the source (e.g. git blob sha) — powers staleness."},
+                        },
+                        "required": ["path"],
+                    },
+                },
+                "edges": {
+                    "type": "array",
+                    "description": "Directed, typed relations between paths. A dst need not be a described node yet.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "src": {"type": "string"},
+                            "dst": {"type": "string"},
+                            "type": {"type": "string", "enum": code_svc.EDGE_TYPES},
+                        },
+                        "required": ["src", "dst"],
+                    },
+                },
+                "prune": {"type": "boolean", "description": "Mark project nodes absent from this batch as stale (default false)."},
+            },
+        },
+    },
+    {
+        "name": "get_code_map",
+        "description": (
+            "The project's code graph: every described node (path, kind, summary, fresh) and the "
+            "typed edges between them. Optionally filter by `kind`. Read-only — the map an agent "
+            "or the connected LLM reads to understand the codebase without a checkout."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {"kind": {"type": "string", "enum": code_svc.NODE_KINDS}},
+        },
+    },
+    {
+        "name": "code_neighbors",
+        "description": (
+            "The neighborhood around a code path: outgoing and incoming edges grouped by type, "
+            "plus the work items whose touchpoints touch it. Answers 'what depends on this / what "
+            "does it depend on / what work touches it'. Read-only; works even for a path that "
+            "isn't a described node yet (shows what points at it)."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}},
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "search_code",
+        "description": "Semantic search over code-node summaries (pgvector cosine). Returns ranked nodes with scores.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "top_k": {"type": "integer"},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "link_code",
+        "description": (
+            "Bridge a tracker item OR request to a code path — the explicit, typed link between "
+            "the work (idea/bug/feature) and the code graph. Use when a bug affects a module, a "
+            "feature implements one, or a test covers it. `ref_id` is an item id (AL-12) or "
+            "request id (R-31); the type is inferred. Idempotent. Surfaces both ways: on the "
+            "code node (code_neighbors) and on the item/request."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "ref_id": {"type": "string", "description": "Item id (e.g. AL-12) or request id (e.g. R-31)."},
+                "path": {"type": "string", "description": "Code path to link to (need not be a described node yet)."},
+                "relation": {"type": "string", "enum": code_svc.REF_RELATIONS, "description": "Defaults to affects."},
+                "ref_type": {"type": "string", "enum": code_svc.REF_TYPES, "description": "Usually inferred from the id; set to disambiguate."},
+            },
+            "required": ["ref_id", "path"],
+        },
+    },
+    {
+        "name": "unlink_code",
+        "description": "Remove links from an item/request to a code path. Omit `relation` to remove all relations for that pair.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "ref_id": {"type": "string"},
+                "path": {"type": "string"},
+                "relation": {"type": "string", "enum": code_svc.REF_RELATIONS},
+            },
+            "required": ["ref_id", "path"],
+        },
+    },
 ]
 
 # Project-scoped tools accept an optional `project_id` that overrides the key's project.
 _PROJECT_SCOPED = {
     "create_item", "search_items", "add_memory", "search_memory",
     "get_backlog", "suggest_next", "generate_digest", "link_items", "claim_next", "next_cluster",
+    "describe_code", "get_code_map", "code_neighbors", "search_code",
+    "link_code", "unlink_code",
 }
 # Creates accept an idempotency key so a retried call returns the original resource.
 _IDEMPOTENT_CREATES = {"create_item", "add_memory", "link_items"}
+# Writes that are idempotent by their own natural key (no idempotency token needed).
+_IDEMPOTENT_WRITES = {"describe_code", "link_code"}
 # Paged reads accept limit + offset and return {results, total, limit, offset, has_more}.
 _PAGED = {"search_items", "get_backlog"}
 # Read-only tools never mutate state.
 _READ_ONLY = {
     "get_context", "list_projects", "search_items", "search_memory",
     "get_backlog", "get_item_details", "suggest_next", "generate_digest", "related_work",
-    "prd_coverage",
+    "prd_coverage", "get_code_map", "code_neighbors", "search_code",
 }
 
 _PAGE_META = {  # shared output shape for paged reads (#9)
@@ -409,6 +532,46 @@ _OUTPUT_SCHEMAS: dict[str, dict] = {
         "type": "object",
         "properties": {"prd_id": _STR, "proposals": {"type": "array"}, "created": {"type": "array"}},
     },
+    "describe_code": {
+        "type": "object",
+        "properties": {
+            "nodes_upserted": {"type": "integer"},
+            "edges_upserted": {"type": "integer"},
+            "marked_stale": {"type": "integer"},
+        },
+    },
+    "get_code_map": {
+        "type": "object",
+        "properties": {
+            "nodes": {"type": "array"}, "edges": {"type": "array"},
+            "node_count": {"type": "integer"}, "edge_count": {"type": "integer"},
+        },
+    },
+    "code_neighbors": {
+        "type": "object",
+        "properties": {
+            "path": _STR, "node": {"type": ["object", "null"]},
+            "outgoing": {"type": "array"}, "incoming": {"type": "array"},
+            "items_touching": {"type": "array"},
+            "linked_items": {"type": "array"}, "linked_requests": {"type": "array"},
+        },
+    },
+    "search_code": {
+        "type": "object",
+        "properties": {
+            "results": {"type": "array"}, "returned": {"type": "integer"}, "top_k": {"type": "integer"},
+        },
+    },
+    "link_code": {
+        "type": "object",
+        "properties": {
+            "id": {"type": "integer"}, "ref_type": _STR, "ref_id": _STR, "path": _STR, "relation": _STR,
+        },
+    },
+    "unlink_code": {
+        "type": "object",
+        "properties": {"removed": {"type": "integer"}},
+    },
 }
 
 for _t in TOOLS:
@@ -436,7 +599,7 @@ for _t in TOOLS:
         "readOnlyHint": _ro,
         "destructiveHint": _name == "update_item",
         # read-only + update_item are naturally idempotent; creates become idempotent with a key.
-        "idempotentHint": _ro or _name in ({"update_item"} | _IDEMPOTENT_CREATES),
+        "idempotentHint": _ro or _name in ({"update_item"} | _IDEMPOTENT_CREATES | _IDEMPOTENT_WRITES),
         "openWorldHint": False,
     }
 
@@ -651,6 +814,33 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
         if prd is None:
             raise ValueError(f"prd not found: {args['prd_id']}")
         return prd_svc.decompose(db, prd, create=bool(args.get("create", False)))
+    if name == "describe_code":
+        return code_svc.describe_code(
+            db, project_id=pid,
+            nodes=args.get("nodes", []),
+            edges=args.get("edges", []),
+            prune=bool(args.get("prune", False)),
+        )
+    if name == "get_code_map":
+        return code_svc.get_code_map(db, pid, kind=args.get("kind"))
+    if name == "code_neighbors":
+        return code_svc.neighbors(db, pid, args["path"])
+    if name == "search_code":
+        top_k = args.get("top_k", 5)
+        hits = code_svc.search_code(db, args["query"], project_id=pid, top_k=top_k)
+        results = [{**code_svc.node_dict(n), "score": round(score, 4)} for n, score in hits]
+        return {"results": results, "returned": len(results), "top_k": top_k}
+    if name == "link_code":
+        ref = code_svc.link_code(
+            db, project_id=pid, ref_id=args["ref_id"], path=args["path"],
+            relation=args.get("relation", "affects"), ref_type=args.get("ref_type"),
+        )
+        return code_svc.ref_dict(ref)
+    if name == "unlink_code":
+        removed = code_svc.unlink_code(
+            db, project_id=pid, ref_id=args["ref_id"], path=args["path"], relation=args.get("relation"),
+        )
+        return {"removed": removed}
     raise ValueError(f"unknown tool: {name}")
 
 

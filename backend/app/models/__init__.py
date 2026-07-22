@@ -17,6 +17,7 @@ from sqlalchemy import (
     LargeBinary,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeDecorator
@@ -215,6 +216,77 @@ class Link(Base):
     confidence: Mapped[float] = mapped_column(default=1.0)
     reason: Mapped[str] = mapped_column(String, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class CodeNode(Base):
+    """A described unit of the codebase — module / file / symbol — with an agent- or
+    LLM-written summary, embedded for semantic search over structure.
+
+    The *producer* is normally the external coding agent (it has the repo in context);
+    AgentLedger's connected LLM is the *consumer* that reasons over what's stored. Keyed
+    by (project_id, path) so a re-describe upserts. `content_hash` + `fresh` are the
+    staleness handle: when a file's hash changes, the agent re-describes and the node is
+    marked fresh again; a `prune` pass marks nodes it no longer saw as stale (fresh=False).
+    """
+
+    __tablename__ = "code_nodes"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # cn_...
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"))
+    path: Mapped[str] = mapped_column(String)  # app/services/items.py  or  ...items.py::create_item
+    kind: Mapped[str] = mapped_column(String, default="file")  # module | file | symbol
+    name: Mapped[str] = mapped_column(String, default="")  # short label
+    lang: Mapped[str] = mapped_column(String, default="")  # python | ts | ...
+    summary: Mapped[str] = mapped_column(Text, default="")  # what it is / does / owns
+    content_hash: Mapped[str] = mapped_column(String, default="")  # source hash for staleness
+    fresh: Mapped[bool] = mapped_column(Boolean, default=True)  # verified this describe pass
+    embedding = mapped_column(EmbeddingType(settings.embed_dim), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+    __table_args__ = (UniqueConstraint("project_id", "path", name="uq_code_node_path"),)
+
+
+class CodeEdge(Base):
+    """A directed, typed relation between two code paths — imports / calls / owns /
+    tested_by / references. Stored by *path* (not node id) so an edge may point at a node
+    that hasn't been described yet (a dangling target is still information)."""
+
+    __tablename__ = "code_edges"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"))
+    src: Mapped[str] = mapped_column(String)  # path
+    dst: Mapped[str] = mapped_column(String)  # path
+    type: Mapped[str] = mapped_column(String, default="imports")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("project_id", "src", "dst", "type", name="uq_code_edge"),
+    )
+
+
+class CodeRef(Base):
+    """A directed link from a tracker item OR request to a code path — the bridge between
+    the *work* (ideas/bugs/features) and the *code graph*. Distinct from an item's free-text
+    `touchpoints` (fuzzy, glob-matched live): a CodeRef is an explicit, typed, curated edge to
+    a specific path. Stored by path so it can point at a not-yet-described node."""
+
+    __tablename__ = "code_refs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"))
+    ref_type: Mapped[str] = mapped_column(String)  # item | request
+    ref_id: Mapped[str] = mapped_column(String)  # AL-12 / R-31
+    path: Mapped[str] = mapped_column(String)  # code node path (may be undescribed)
+    relation: Mapped[str] = mapped_column(String, default="affects")  # affects|implements|fixes|tests|references
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("project_id", "ref_type", "ref_id", "path", "relation", name="uq_code_ref"),
+    )
 
 
 class Milestone(Base):
