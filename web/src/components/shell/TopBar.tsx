@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/features/auth/AuthContext";
-import { useApiKeys } from "@/lib/queries";
+import { useApiKeys, useMcpTools } from "@/lib/queries";
 
 export function TopBar({
   agentOpen,
@@ -26,8 +26,9 @@ export function TopBar({
 }) {
   const { user, logout } = useAuth();
   const { data: keys } = useApiKeys();
+  const { data: mcp } = useMcpTools();
   const navigate = useNavigate();
-  const liveTools = 11;
+  const liveTools = mcp?.live ?? 0;
 
   return (
     <header className="flex h-14 flex-none items-center gap-4 border-b border-line bg-header px-5 backdrop-blur-md">
