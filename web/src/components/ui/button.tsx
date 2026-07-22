@@ -10,7 +10,9 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "bg-accent text-bg font-semibold hover:bg-accent-hi shadow-[0_6px_18px_rgba(198,242,78,0.18)]",
+          "bg-accent text-bg font-semibold hover:bg-accent-hi shadow-[0_6px_18px_rgba(198,242,78,0.18)] " +
+          // Disabled: a clean neutral look instead of a faded accent (50%-opacity lime muddies to olive).
+          "disabled:opacity-100 disabled:bg-surface-3 disabled:text-faint disabled:shadow-none",
         outline:
           "border border-line-2 bg-surface-2 text-fg hover:border-line-hover hover:bg-surface-3",
         ghost: "text-muted hover:text-fg hover:bg-surface-3",
