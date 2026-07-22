@@ -29,6 +29,7 @@ from app.services import items as items_svc
 from app.services import links as links_svc
 from app.services import mcp_stats
 from app.services import memory as mem_svc
+from app.services import prioritization as prio_svc
 from app.services.projects import resolve_project_id
 
 router = APIRouter(tags=["mcp"])
@@ -129,7 +130,11 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "get_backlog",
-        "description": "Return prioritized backlog for planning.",
+        "description": (
+            "Prioritized backlog for planning: backlog/next items ranked ready-first then by a "
+            "composite score (status, unblocks-many, request votes, effort, staleness). Each item "
+            "carries `ready`, `blocked_by` (unfinished deps), `unblocks`, `votes`, `score`."
+        ),
         "inputSchema": {"type": "object", "properties": {"limit": {"type": "integer"}}},
     },
     {
@@ -523,8 +528,13 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
         ]
         return {"results": results, "returned": len(results), "top_k": top_k}
     if name == "get_backlog":
-        rows = items_svc.get_backlog(db, limit=10_000, project_id=pid)
-        return _paginate([_item_dict(i) for i in rows], args)
+        ranked = prio_svc.prioritized(db, pid, statuses=("backlog", "next"), include_blocked=True)
+        rows = [
+            {**_item_dict(r["item"]), "ready": r["ready"], "blocked_by": r["blocked_by"],
+             "unblocks": r["unblocks"], "votes": r["votes"], "score": r["score"]}
+            for r in ranked
+        ]
+        return _paginate(rows, args)
     if name == "get_item_details":
         details = items_svc.get_item_details(db, args["id"])
         if details is None:

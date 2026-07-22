@@ -1,8 +1,9 @@
 import { GitPullRequest, X } from "lucide-react";
 
 import { Avatar } from "@/components/ui/avatar";
+import { useProjectCtx } from "@/features/ProjectContext";
 import { CHECK_COLOR, PR_STATE_COLOR } from "@/lib/meta";
-import { useShards } from "@/lib/queries";
+import { useItems, useLinks, useShards } from "@/lib/queries";
 import type { Item, Status } from "@/lib/types";
 
 import { StatusMenu } from "./StatusMenu";
@@ -16,8 +17,16 @@ export function ItemDetailPanel({
   onClose: () => void;
   onStatus: (s: Status) => void;
 }) {
-  const { data: shards = [] } = useShards();
+  const { activeId } = useProjectCtx();
+  const { data: shards = [] } = useShards(activeId);
+  const { data: links = [] } = useLinks(activeId);
+  const { data: allItems = [] } = useItems(activeId);
   const linked = shards.filter((s) => s.item_id === item.id);
+
+  const statusOf = (id: string) => allItems.find((i) => i.id === id)?.status;
+  const deps = links.filter((l) => l.type === "dependency" && l.a === item.id).map((l) => l.b);
+  const dependents = links.filter((l) => l.type === "dependency" && l.b === item.id).map((l) => l.a);
+  const blockedBy = deps.filter((id) => statusOf(id) !== "done");
 
   return (
     <>
@@ -87,6 +96,31 @@ export function ItemDetailPanel({
                 </div>
               ) : (
                 <p className="text-[12px] text-faint">No touchpoints declared.</p>
+              )}
+            </Section>
+          )}
+
+          {(deps.length > 0 || dependents.length > 0) && (
+            <Section label="Dependencies">
+              {blockedBy.length > 0 && (
+                <div className="mb-2 flex flex-wrap items-center gap-1.5 text-[12px] text-st-blocked">
+                  <span className="font-mono text-[10px] uppercase tracking-wide">Blocked by ·</span>
+                  {blockedBy.map((id) => (
+                    <span key={id} className="rounded border border-[rgba(255,107,107,0.3)] px-1.5 py-px font-mono text-[10px]">
+                      {id}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {deps.length > blockedBy.length && (
+                <p className="mb-1.5 text-[11px] text-faint">
+                  Depends on {deps.length} item{deps.length > 1 ? "s" : ""} · {deps.length - blockedBy.length} done.
+                </p>
+              )}
+              {dependents.length > 0 && (
+                <p className="text-[12px] text-accent">
+                  Unblocks {dependents.length} item{dependents.length > 1 ? "s" : ""} when done.
+                </p>
               )}
             </Section>
           )}

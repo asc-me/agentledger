@@ -204,16 +204,12 @@ def get_item_details(db: Session, item_id: str) -> dict | None:
 
 
 def suggest_next(db: Session, project_id: str | None = None) -> Item | None:
-    """Rank the best next item: prefer `next`, then `backlog`; skip blocked; lowest effort first."""
-    candidates = [
-        it for it in list_items(db, project_id=project_id)
-        if it.status in ("next", "backlog") and not it.blocker
-    ]
-    if not candidates:
-        return None
-    rank = {"next": 0, "backlog": 1}
-    candidates.sort(key=lambda it: (rank.get(it.status, 9), it.effort or 99, it.sort_order))
-    return candidates[0]
+    """The best item to start now: dependency-ready backlog/next, ranked by the composite
+    priority score (status, unblocks-many, votes, effort, staleness)."""
+    from app.services import prioritization as prio
+
+    ranked = prio.prioritized(db, project_id, statuses=("next", "backlog"), include_blocked=False)
+    return ranked[0]["item"] if ranked else None
 
 
 # ---- Assignment / agent claiming (feature A) ----
@@ -239,11 +235,20 @@ def _is_claimable(it: Item, cutoff) -> bool:
 
 
 def _ready_candidates(db: Session, project_id: str | None, lease_seconds: int) -> list[Item]:
+    from app.services import prioritization as prio
+
+    ctx = prio.context(db, project_id)
     cutoff = utcnow() - timedelta(seconds=lease_seconds)
-    out = [it for it in list_items(db, project_id=project_id) if _is_claimable(it, cutoff)]
-    # Prefer next, then resuming abandoned in-progress work, then backlog; lowest effort first.
-    rank = {"next": 0, "in_progress": 1, "backlog": 2}
-    out.sort(key=lambda it: (rank.get(it.status, 9), it.effort or 99, it.sort_order))
+    out = []
+    for it in ctx.items:
+        if not _is_claimable(it, cutoff):
+            continue
+        # Fresh backlog/next must be dependency-ready; a stale in-progress reclaim is already
+        # underway, so we don't re-gate it on dependencies.
+        if it.status in ("backlog", "next") and not prio.ready(ctx, it):
+            continue
+        out.append(it)
+    out.sort(key=lambda it: (-prio.score(ctx, it), it.sort_order))
     return out
 
 

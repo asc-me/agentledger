@@ -48,6 +48,16 @@ agent's writes are identical to a user's and appear instantly in the UI.
 the schema). Tool failures return `isError: true` with a machine-readable
 `structuredContent.error.code` (`invalid_request` or `internal_error`) — never a raw HTTP 500.
 
+### Dependency-aware prioritization
+
+Readiness comes from the **dependency graph**, not just the free-text `blocker`: create a
+`dependency` link (`link_items(a, b, type="dependency")` — *a depends on b*) and `a` stays
+**blocked until `b` is done**. `claim_next` / `next_cluster` / `suggest_next` never hand out a
+blocked item, and `get_backlog` ranks **ready-first**, then by a composite score — status,
+**dependency fan-out** (items that unblock many rank higher), **request votes** rolled onto the
+linked item, effort, and staleness. Each `get_backlog` row carries `ready`, `blocked_by`,
+`unblocks`, `votes`, and `score`, so an agent can plan against the real graph.
+
 ### Code-locality clustering (pick up related work at once)
 
 Give items **touchpoints** — the files/globs/modules they affect (`backend/app/routers/*`,
