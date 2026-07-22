@@ -48,6 +48,25 @@ const CLIENTS: Client[] = [
       ),
   },
   {
+    id: "hermes",
+    label: "Hermes",
+    file: "~/.hermes/config.yaml",
+    note: "Run /reload-mcp in Hermes after editing the config.",
+    build: (u, k) => `mcp_servers:\n  agentledger:\n    url: "${u}"\n    headers:\n      X-API-Key: "${k}"\n    enabled: true`,
+  },
+  {
+    id: "openclaw",
+    label: "OpenClaw",
+    file: "~/.openclaw/openclaw.json",
+    note: "Or run: openclaw mcp set agentledger '<json>'. Verify with openclaw mcp doctor --probe.",
+    build: (u, k) =>
+      JSON.stringify(
+        { mcp: { servers: { agentledger: { url: u, transport: "streamable-http", headers: { "X-API-Key": k } } } } },
+        null,
+        2,
+      ),
+  },
+  {
     id: "grok",
     label: "Grok CLI",
     file: ".grok/settings.json",

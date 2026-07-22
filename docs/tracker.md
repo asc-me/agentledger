@@ -67,6 +67,48 @@ color used consistently across the app:
 Front-end mutations use optimistic updates (TanStack Query) so status changes and drags feel
 instant.
 
+## Working the backlog with agents
+
+The tracker isn't just a view — it's a work queue. Three ways to put agents on it, in
+order of how you should adopt them:
+
+### 1. The claim loop (start here)
+
+Point any MCP-connected agent session at the backlog and tell it to work. The intended
+cycle is:
+
+```
+claim_next → get_context / get_item_details → work
+  → update_item (status, notes) → heartbeat while working
+  → done, or release_item to hand it back
+```
+
+`claim_next` **atomically** assigns the best ready item and moves it to in_progress, so
+two sessions never grab the same work. Filter by tag to scope a session to a theme
+(e.g. "work the `railway` backlog"). The tracker shows live claim state as agents run.
+
+### 2. Parallel agents, clustered by touchpoints
+
+Fanning out to several agents at once risks two of them editing the same files. That's
+what `next_cluster` is for: it claims the best ready item **plus its related ready
+items** (grouped by touchpoint overlap) in one call, giving each agent a conflict-free
+neighborhood. The pattern:
+
+- An orchestrator calls `next_cluster` per agent → conflict-free batches
+- One agent per cluster, each in an isolated git worktree
+- Agents `heartbeat` their items; a crashed agent's lease expires and its items are
+  automatically freed for the next agent
+
+### 3. Scheduled / autonomous
+
+A cron-style loop that wakes up, runs the claim loop for one item, and stops when
+`claim_next` returns `{claimed: false}`. Adopt this once the interactive pattern is
+proven — the lease + heartbeat semantics are what make it safe to leave unattended.
+
+See [Task claiming](mcp.md#task-claiming-safe-multi-agent-loops) and
+[Code-locality clustering](mcp.md#code-locality-clustering-pick-up-related-work-at-once)
+for the full semantics.
+
 ## Related
 
 - Agents drive items through MCP: `create_item`, `update_item`, `search_items`,

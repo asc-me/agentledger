@@ -22,6 +22,53 @@ agent's writes are identical to a user's and appear instantly in the UI.
 - **Metering** — every `tools/call` increments a per-tool counter (the `mcp_tool_stats`
   table) surfaced on the **MCP Tools** view.
 
+## Connecting clients
+
+**Settings → API Keys** generates ready-to-paste snippets for every supported client the
+moment you create a key (the plaintext is shown once). Supported clients and where their
+config lives:
+
+| Client | Config | Shape |
+| --- | --- | --- |
+| Claude Code | `claude mcp add` (CLI) | `--transport http … --header "X-API-Key: …"` |
+| Cursor | `~/.cursor/mcp.json` | `mcpServers.<name>.{url, headers}` |
+| Codex | `~/.codex/config.toml` | `[mcp_servers.<name>]` with `url` + `http_headers` |
+| opencode | `opencode.json` | `mcp.<name>.{type: "remote", url, headers}` |
+| Hermes | `~/.hermes/config.yaml` | `mcp_servers.<name>.{url, headers}` |
+| OpenClaw | `~/.openclaw/openclaw.json` | `mcp.servers.<name>.{url, transport, headers}` |
+| Grok CLI | `.grok/settings.json` | stdio bridge via `mcp-remote` |
+
+**Hermes** — add under `mcp_servers` in `~/.hermes/config.yaml`, then run `/reload-mcp`:
+
+```yaml
+mcp_servers:
+  agentledger:
+    url: "https://<your-host>/api/mcp"
+    headers:
+      X-API-Key: "al_sk_…"
+    enabled: true
+```
+
+**OpenClaw** — add under `mcp.servers` in `~/.openclaw/openclaw.json` (or one-shot via
+`openclaw mcp set agentledger '<json>'`), then verify with `openclaw mcp doctor --probe`:
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "agentledger": {
+        "url": "https://<your-host>/api/mcp",
+        "transport": "streamable-http",
+        "headers": { "X-API-Key": "al_sk_…" }
+      }
+    }
+  }
+}
+```
+
+Every client authenticates the same way: the key in an `X-API-Key` header (or
+`Authorization: Bearer`), against a URL reachable **from where the agent runs**.
+
 ## The 26 tools
 
 | Tool | Params | Does |

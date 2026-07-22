@@ -1,4 +1,6 @@
-import { Boxes, Brain, CircleDot, FileText, Plug, TriangleAlert } from "lucide-react";
+import { useState } from "react";
+import { Link } from "react-router-dom";
+import { Bot, Boxes, Brain, CircleDot, FileText, Plug, TriangleAlert, X } from "lucide-react";
 
 import { useProjectCtx } from "@/features/ProjectContext";
 import { STATUS_META, STATUS_ORDER, TYPE_META } from "@/lib/meta";
@@ -21,6 +23,8 @@ export function DashboardView() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-6">
+        <AgentLoopInfo />
+
         {/* KPI tiles (hero numbers — no plot, no hover) */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           <Kpi icon={<Boxes size={15} />} label="Items" value={data.items_total} />
@@ -53,6 +57,50 @@ export function DashboardView() {
               ))}
             </div>
           </Panel>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const AGENT_INFO_DISMISSED_KEY = "al.dashboard.agentLoopInfoDismissed";
+
+function AgentLoopInfo() {
+  const [dismissed, setDismissed] = useState(() => localStorage.getItem(AGENT_INFO_DISMISSED_KEY) === "1");
+  if (dismissed) return null;
+  return (
+    <div className="relative mb-6 rounded-[14px] border border-line-2 bg-surface-2 p-4">
+      <button
+        type="button"
+        aria-label="Dismiss"
+        className="absolute right-3 top-3 text-faint transition-colors hover:text-fg-2"
+        onClick={() => {
+          localStorage.setItem(AGENT_INFO_DISMISSED_KEY, "1");
+          setDismissed(true);
+        }}
+      >
+        <X size={14} />
+      </button>
+      <div className="flex items-start gap-3">
+        <span className="mt-0.5 flex-none text-[#c6f24e]">
+          <Bot size={16} />
+        </span>
+        <div className="min-w-0">
+          <div className="text-[13px] font-semibold text-fg">Put agents on the backlog</div>
+          <p className="mt-1 text-[12.5px] leading-relaxed text-muted">
+            Any MCP-connected agent can work the tracker as a queue:{" "}
+            <code className="font-mono text-[11px] text-fg-2">claim_next → work → update_item → done</code>. Claims are
+            atomic, so parallel agents never collide — use <code className="font-mono text-[11px] text-fg-2">next_cluster</code>{" "}
+            to hand each agent a conflict-free batch of related items.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px]">
+            <Link to="/settings" className="text-[#7ca2ff] transition-colors hover:text-fg">
+              Connect an agent →
+            </Link>
+            <Link to="/mcp-tools" className="text-[#7ca2ff] transition-colors hover:text-fg">
+              Browse MCP tools →
+            </Link>
+          </div>
         </div>
       </div>
     </div>
