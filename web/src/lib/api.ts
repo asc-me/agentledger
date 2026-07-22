@@ -4,9 +4,11 @@
  * refresh, then retries the original request.
  */
 import type {
+  AiProvider,
   ApiKey,
   ApiKeyCreated,
   ChatResponse,
+  ProviderConfigUpdate,
   CodeAnswer,
   CodeForRefRow,
   CodeHit,
@@ -228,6 +230,9 @@ export const api = {
 
   platform: () => request<PlatformConfig>(`/platform${projectQuery()}`),
   updatePlatform: (body: Partial<PlatformConfig>) =>
+    request<PlatformConfig>(`/platform${projectQuery()}`, { method: "PATCH", body: JSON.stringify(body) }),
+  aiProviders: () => request<{ providers: AiProvider[] }>("/platform/providers"),
+  saveProviders: (body: { active_chat_provider?: string; providers?: Record<string, ProviderConfigUpdate> }) =>
     request<PlatformConfig>(`/platform${projectQuery()}`, { method: "PATCH", body: JSON.stringify(body) }),
   githubConnect: (account: string, repo: string) =>
     request<PlatformConfig>(`/platform/github/connect${projectQuery()}`, { method: "POST", body: JSON.stringify({ account, repo }) }),

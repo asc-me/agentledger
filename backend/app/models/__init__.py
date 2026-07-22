@@ -314,11 +314,17 @@ class PlatformConfig(Base):
     __tablename__ = "platform_config"
 
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), primary_key=True)
-    llm_mode: Mapped[str] = mapped_column(String, default="stub")  # stub | local | cloud
+    llm_mode: Mapped[str] = mapped_column(String, default="stub")  # legacy: stub | local | cloud
     local_base_url: Mapped[str] = mapped_column(String, default="http://localhost:11434")
     local_model: Mapped[str] = mapped_column(String, default="llama3.1:8b")
     cloud_provider: Mapped[str] = mapped_column(String, default="anthropic")
     cloud_model: Mapped[str] = mapped_column(String, default="claude-opus-4-8")
+
+    # Provider registry (F1 redesign): the active chat provider id + per-provider config
+    # (dict keyed by provider id → {api_key, base_url, chat_model, embed_model}). API keys
+    # are stored here write-only — never returned raw (see provider_config).
+    active_chat_provider: Mapped[str] = mapped_column(String, default="")
+    providers: Mapped[dict] = mapped_column(JSON, default=dict)
 
     github_connected: Mapped[bool] = mapped_column(Boolean, default=False)
     github_account: Mapped[str] = mapped_column(String, default="")
@@ -338,6 +344,19 @@ class PlatformConfig(Base):
     def turnstile_secret_set(self) -> bool:
         """Whether a secret is configured — surfaced to the UI without leaking it."""
         return bool(self.turnstile_secret)
+
+    @property
+    def provider_config(self) -> dict:
+        """Per-provider config for the UI — api keys reduced to a `key_set` bool, never raw."""
+        out: dict = {}
+        for pid, c in (self.providers or {}).items():
+            out[pid] = {
+                "base_url": c.get("base_url", ""),
+                "chat_model": c.get("chat_model", ""),
+                "embed_model": c.get("embed_model", ""),
+                "key_set": bool(c.get("api_key")),
+            }
+        return out
 
 
 class Attachment(Base):

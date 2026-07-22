@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     ollama_embed_model: str = "nomic-embed-text"
     ollama_chat_model: str = "llama3.1:8b"
+    ollama_auth_key: str = ""  # optional bearer for a Caddy-guarded public Ollama endpoint
 
     openai_base_url: str = "https://api.openai.com/v1"
     openai_api_key: str = ""
