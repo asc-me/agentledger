@@ -87,16 +87,23 @@ def check_duplicates(
 @router.post("/requests", response_model=PublicRequestOut, status_code=201)
 def submit_request(
     body: PublicRequestIn,
+    request: FastAPIRequest,
     _rl: None = Depends(rate_limit),
     db: Session = Depends(get_db),
 ):
     _ensure_enabled()
     text = f"{body.title} {body.detail}".strip()
     project_id = resolve_project_id(db, body.project_id)
+    # Capture where it came from: client-sent page URL + custom meta, plus the UA header.
+    meta = dict(body.meta or {})
+    ua = request.headers.get("user-agent")
+    if ua and "user_agent" not in meta:
+        meta["user_agent"] = ua
     try:
         req = req_svc.create_request(
-            db, type_=body.type, title=body.title,
+            db, type_=body.type, title=body.title, detail=body.detail,
             by=body.email or "public", project_id=project_id,
+            source_url=body.source_url, meta=meta,
         )
     except ValueError as e:
         raise HTTPException(422, str(e))

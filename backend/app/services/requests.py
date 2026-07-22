@@ -32,9 +32,12 @@ def create_request(
     *,
     type_: str,
     title: str,
+    detail: str = "",
     by: str = "",
     project_id: str = "core",
     ago: str = "just now",
+    source_url: str = "",
+    meta: dict | None = None,
 ) -> Request:
     if type_ not in REQUEST_TYPES:
         raise ValueError(f"invalid request type: {type_}")
@@ -43,10 +46,13 @@ def create_request(
         project_id=project_id,
         type=type_,
         title=title,
+        detail=detail,
         by=by,
         votes=0,
         status="new",
         ago=ago,
+        source_url=source_url,
+        meta=meta or {},
     )
     db.add(req)
     db.commit()

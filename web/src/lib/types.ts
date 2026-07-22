@@ -77,11 +77,14 @@ export interface RequestItem {
   project_id: string;
   type: RequestType;
   title: string;
+  detail: string;
   by: string;
   votes: number;
   status: string;
   linked_to: string | null;
   ago: string;
+  source_url: string;
+  meta: Record<string, unknown>;
   created_at: string;
 }
 

@@ -7,12 +7,15 @@ export interface PublicSubmitBody {
   detail?: string;
   email?: string;
   project_id?: string;
+  source_url?: string;
+  meta?: Record<string, unknown>;
 }
 
 export const publicApi = {
-  async duplicates(q: string, projectId = "core"): Promise<DuplicateHit[]> {
-    const url = `/api/public/duplicates?q=${encodeURIComponent(q)}&project_id=${projectId}`;
-    const res = await fetch(url);
+  async duplicates(q: string, projectId = ""): Promise<DuplicateHit[]> {
+    const params = new URLSearchParams({ q });
+    if (projectId) params.set("project_id", projectId);
+    const res = await fetch(`/api/public/duplicates?${params.toString()}`);
     if (!res.ok) return [];
     return res.json();
   },

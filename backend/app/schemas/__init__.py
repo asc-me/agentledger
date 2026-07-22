@@ -151,11 +151,14 @@ class RequestOut(ORMModel):
     project_id: str
     type: str
     title: str
+    detail: str = ""
     by: str
     votes: int
     status: str
     linked_to: str | None
     ago: str
+    source_url: str = ""
+    meta: dict = {}
     created_at: datetime
 
 
@@ -307,6 +310,8 @@ class PublicRequestIn(BaseModel):
     detail: str = ""
     email: str = ""
     project_id: str = "core"
+    source_url: str = ""
+    meta: dict = {}
 
 
 class DuplicateHit(BaseModel):

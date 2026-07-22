@@ -51,13 +51,28 @@ needed for multi-instance deployments.)
 
 The **Feedback Kit** view is a no-code generator for the widget above:
 
-- Choose an **accent** color, **corner radius**, enabled **types**, and whether to collect
-  email.
-- A **live preview** renders the widget (with real duplicate detection) as you configure.
-- Copy the generated **`<iframe>` snippet** to embed it.
+- **Embed mode** — **Inline** (an `<iframe>` + a tiny auto-resize listener) or **Launcher**
+  (a self-contained `<script>` that adds a floating button opening the widget in a popover,
+  positioned bottom-left/right).
+- **Theme** — **dark / light / auto** (`auto` follows the host's `prefers-color-scheme`). The
+  widget paints its own surface so it blends on any site; the iframe renders transparent.
+- **Accent** — six presets **or a custom hex** (native color picker). Button text auto-contrasts.
+- **Corner radius**, enabled **types**, collect-email toggle.
+- **Custom copy** — title, subtitle, button label, and thank-you message.
+- A **live preview** in **test mode** — submissions are mocked, so configuring never writes junk
+  to your triage queue (duplicate detection still runs; it's read-only).
+
+**Auto-resize & host events.** The embedded widget `postMessage`s to the parent:
+`{__agentledger:true, type:'resize', height}` (both snippets size the frame to content) and
+`{type:'submitted', id}` (the launcher closes the popover ~1.8s after a successful submit).
+
+**Captured context.** Every submission records the **page URL** it came from (`source_url`, via
+the launcher's `ref` param or `document.referrer`), the submitter's **detail** text, and a
+**`meta`** object (the `user_agent` is added server-side; custom fields pass through). Triage
+shows the origin as a link on each request row.
 
 The generator and the standalone page share the same `FeedbackWidget` component and config
-serialization (`web/src/features/feedback/config.ts`).
+serialization (`web/src/features/feedback/config.ts`); snippet builders live in `snippets.ts`.
 
 ## Inbound GitHub issues → requests/items
 

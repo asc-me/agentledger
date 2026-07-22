@@ -38,6 +38,24 @@ def test_public_submit_creates_request_and_flags_duplicate(client, auth):
     assert any(x["id"] == new_id for x in reqs)
 
 
+def test_public_submit_captures_context(client, auth):
+    r = client.post(
+        "/api/public/requests",
+        json={"type": "bug", "title": "Checkout button dead on mobile",
+              "detail": "Tapping Pay does nothing on iOS Safari.",
+              "source_url": "https://shop.example.com/checkout",
+              "meta": {"app_version": "2.4.1"}},
+        headers={"User-Agent": "TestBrowser/9.9"},
+    )
+    assert r.status_code == 201
+    new_id = r.json()["request"]["id"]
+    got = next(x for x in client.get("/api/requests", headers=auth).json() if x["id"] == new_id)
+    assert got["detail"] == "Tapping Pay does nothing on iOS Safari."  # detail is now persisted
+    assert got["source_url"] == "https://shop.example.com/checkout"    # page captured
+    assert got["meta"]["app_version"] == "2.4.1"                       # custom meta kept
+    assert got["meta"]["user_agent"] == "TestBrowser/9.9"              # UA captured server-side
+
+
 def test_public_submit_rejects_bad_type(client):
     r = client.post("/api/public/requests", json={"type": "banana", "title": "x"})
     assert r.status_code == 422

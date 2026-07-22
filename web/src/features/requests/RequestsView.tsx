@@ -1,4 +1,4 @@
-import { ChevronUp } from "lucide-react";
+import { ChevronUp, ExternalLink } from "lucide-react";
 import * as React from "react";
 import { useOutletContext } from "react-router-dom";
 
@@ -100,6 +100,8 @@ function RequestRow({ request, onVote }: { request: RequestItem; onVote: () => v
 
       <span className="min-w-0 flex-1 truncate text-[13px] text-fg-2">{request.title}</span>
 
+      {request.source_url && <SourceLink url={request.source_url} />}
+
       <span className="flex-none font-mono text-[10.5px] text-faint">{request.by}</span>
       <span className="hidden flex-none font-mono text-[10px] text-faint-2 sm:inline">{request.ago}</span>
 
@@ -116,6 +118,27 @@ function RequestRow({ request, onVote }: { request: RequestItem; onVote: () => v
 
       <LinkDialog request={request} />
     </div>
+  );
+}
+
+function SourceLink({ url }: { url: string }) {
+  let host = url;
+  try {
+    host = new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    /* keep raw */
+  }
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noreferrer noopener"
+      title={`Submitted from ${url}`}
+      className="hidden flex-none items-center gap-1 font-mono text-[10px] text-faint hover:text-accent md:inline-flex"
+    >
+      <ExternalLink size={11} />
+      <span className="max-w-[120px] truncate">{host}</span>
+    </a>
   );
 }
 

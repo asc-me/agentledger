@@ -145,11 +145,14 @@ class Request(Base):
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"))
     type: Mapped[str] = mapped_column(String)  # bug/feature/enhancement/feedback
     title: Mapped[str] = mapped_column(String)
+    detail: Mapped[str] = mapped_column(Text, default="")  # submitter's full description
     by: Mapped[str] = mapped_column(String, default="")
     votes: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String, default="new")  # new/triaging/linked
     linked_to: Mapped[str | None] = mapped_column(ForeignKey("items.id"), nullable=True)
     ago: Mapped[str] = mapped_column(String, default="")  # display string from design
+    source_url: Mapped[str] = mapped_column(String, default="")  # page the widget was on
+    meta: Mapped[dict] = mapped_column(JSON, default=dict)  # user_agent, app_version, custom
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
