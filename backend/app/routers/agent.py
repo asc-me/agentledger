@@ -8,23 +8,47 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import User
 from app.providers import get_chat_model, iter_reply
-from app.schemas import ChatIn, ChatOut, ShardHit, ShardOut
+from app.schemas import (
+    ChatIn,
+    ChatOut,
+    CodeAnswerOut,
+    CodeForRefRow,
+    CodeHit,
+    CodeMapOut,
+    CodeNeighborsOut,
+    CodeNodeOut,
+    CodeRefIn,
+    CodeRefOut,
+    CodeUnlinkIn,
+    ShardHit,
+    ShardOut,
+)
 from app.security.deps import get_current_user
+from app.services import code_graph as code_svc
 from app.services import items as items_svc
 from app.services import memory as mem_svc
+from app.services.projects import resolve_project_id
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
 SYSTEM = (
     "You are AgentLedger's project agent. Answer using the supplied project state and "
     "memory shards. Be concise and cite item ids where relevant."
+)
+
+CODE_SYSTEM = (
+    "You are AgentLedger's codebase agent. Answer questions about the code's structure and "
+    "relations using ONLY the supplied code graph — the described modules/files/symbols and "
+    "their imports / calls / ownership edges. Cite paths. If the graph doesn't cover what's "
+    "asked, say so plainly and suggest the coding agent run describe_code for that area — do "
+    "not guess at code you weren't given."
 )
 
 
@@ -78,6 +102,152 @@ def chat_stream(body: ChatIn, db: Session = Depends(get_db), _: User = Depends(g
     def gen():
         yield _sse("shards", json.dumps(shards))
         for piece in iter_reply(get_chat_model(), system=SYSTEM, context=context, question=body.message):
+            yield _sse("delta", json.dumps({"text": piece}))
+        yield _sse("done", "{}")
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+# ── code-graph agent: the connected-LLM consumer of the code structure graph ──
+
+CODE_TOP_K = 5
+CODE_EXPAND = 3  # how many top hits to expand with their edges + touching items
+
+
+def _build_code_context(db: Session, project_id: str, hits) -> str:
+    """Ground the ChatModel in the code graph: the semantically-matched nodes, then the
+    dependency edges and touching work around the strongest hits — so the model can answer
+    'what depends on X' from real edges instead of prose."""
+    stats = code_svc.get_code_map(db, project_id)
+    parts = [
+        f"Code graph: {stats['node_count']} described nodes, {stats['edge_count']} edges."
+    ]
+    if not hits:
+        parts.append(
+            "No code nodes matched the question — the relevant area may not be described yet."
+        )
+        return "\n".join(parts)
+
+    parts.append("Relevant code (semantic match):")
+    parts += [
+        f"  · ({score:.2f}) [{node.kind}] {node.path} — {node.summary}"
+        for node, score in hits
+    ]
+
+    for node, _ in hits[:CODE_EXPAND]:
+        nb = code_svc.neighbors(db, project_id, node.path)
+        if nb["outgoing"]:
+            parts.append(
+                f"{node.path} depends on: "
+                + ", ".join(f"{e['dst']} ({e['type']})" for e in nb["outgoing"])
+            )
+        if nb["incoming"]:
+            parts.append(
+                f"{node.path} is used by: "
+                + ", ".join(f"{e['src']} ({e['type']})" for e in nb["incoming"])
+            )
+        if nb["items_touching"]:
+            parts.append(
+                f"Work touching {node.path}: "
+                + ", ".join(f"{t['id']} {t['title']}" for t in nb["items_touching"][:3])
+            )
+        linked = nb["linked_items"] + nb["linked_requests"]
+        if linked:
+            parts.append(
+                f"Linked work on {node.path}: "
+                + ", ".join(f"{t['id']} {t['relation']} ({t['title']})" for t in linked[:4])
+            )
+    return "\n".join(parts)
+
+
+def _code_hits(db: Session, message: str, project_id: str):
+    return code_svc.search_code(db, message, project_id=project_id, top_k=CODE_TOP_K)
+
+
+@router.get("/code/map", response_model=CodeMapOut)
+def code_map(project_id: str | None = None, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    """The project's code graph — every described node and typed edge. Powers the graph view."""
+    pid = resolve_project_id(db, project_id)
+    return code_svc.get_code_map(db, pid)
+
+
+@router.get("/code/neighbors", response_model=CodeNeighborsOut)
+def code_neighbors(path: str, project_id: str | None = None, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    """The relations around one code path — in/out edges, work touching it, and items/requests
+    explicitly linked to it. Powers the node inspector."""
+    pid = resolve_project_id(db, project_id)
+    return code_svc.neighbors(db, pid, path)
+
+
+@router.get("/code/for", response_model=list[CodeForRefRow])
+def code_for_ref(ref_id: str, ref_type: str | None = None, project_id: str | None = None,
+                 db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    """The code paths a tracker item/request is linked to — the work→code direction of the
+    bridge. Powers the "Linked code" section on an item/request."""
+    pid = resolve_project_id(db, project_id)
+    try:
+        return code_svc.code_for_ref(db, pid, ref_id, ref_type)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+
+
+@router.post("/code/link", response_model=CodeRefOut, status_code=201)
+def code_link(body: CodeRefIn, db: Session = Depends(get_db),
+              _: User = Depends(get_current_user), project_id: str | None = None):
+    """Link a tracker item/request to a code path (the explicit bridge)."""
+    pid = resolve_project_id(db, project_id)
+    try:
+        ref = code_svc.link_code(
+            db, project_id=pid, ref_id=body.ref_id, path=body.path,
+            relation=body.relation, ref_type=body.ref_type,
+        )
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    return code_svc.ref_dict(ref)
+
+
+@router.post("/code/unlink")
+def code_unlink(body: CodeUnlinkIn, db: Session = Depends(get_db),
+                _: User = Depends(get_current_user), project_id: str | None = None):
+    """Remove a link from an item/request to a code path."""
+    pid = resolve_project_id(db, project_id)
+    removed = code_svc.unlink_code(db, project_id=pid, ref_id=body.ref_id, path=body.path, relation=body.relation)
+    return {"removed": removed}
+
+
+@router.post("/code", response_model=CodeAnswerOut)
+def code_chat(body: ChatIn, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    """Ask about the codebase. The connected LLM answers grounded in the code graph the
+    coding agent described (nodes + typed edges), never from an actual checkout."""
+    pid = resolve_project_id(db, body.project_id)
+    hits = _code_hits(db, body.message, pid)
+    context = _build_code_context(db, pid, hits)
+    reply = get_chat_model().chat(system=CODE_SYSTEM, context=context, question=body.message)
+    return CodeAnswerOut(
+        reply=reply,
+        nodes=[CodeHit(node=CodeNodeOut.model_validate(n), score=round(sc, 4)) for n, sc in hits],
+    )
+
+
+@router.post("/code/stream")
+def code_chat_stream(body: ChatIn, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    """SSE variant: a `nodes` event (the code the answer is grounded in), then `delta`
+    events, then `done`. Mirrors /agent/chat/stream."""
+    pid = resolve_project_id(db, body.project_id)
+    hits = _code_hits(db, body.message, pid)
+    context = _build_code_context(db, pid, hits)
+    nodes = [
+        CodeHit(node=CodeNodeOut.model_validate(n), score=round(sc, 4)).model_dump(mode="json")
+        for n, sc in hits
+    ]
+
+    def gen():
+        yield _sse("nodes", json.dumps(nodes))
+        for piece in iter_reply(get_chat_model(), system=CODE_SYSTEM, context=context, question=body.message):
             yield _sse("delta", json.dumps({"text": piece}))
         yield _sse("done", "{}")
 

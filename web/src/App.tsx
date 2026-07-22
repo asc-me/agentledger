@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { AppFrame } from "@/components/shell/AppFrame";
 import { useAuth } from "@/features/auth/AuthContext";
 import { LoginPage } from "@/features/auth/LoginPage";
+import { CodeGraphView } from "@/features/code/CodeGraphView";
 import { DashboardView } from "@/features/dashboard/DashboardView";
 import { EmbedFeedbackPage } from "@/features/feedback/EmbedFeedbackPage";
 import { FeedbackKitView } from "@/features/feedback/FeedbackKitView";
@@ -48,6 +49,7 @@ function AuthedApp() {
         <Route path="/requests" element={<RequestsView />} />
         <Route path="/dashboard" element={<DashboardView />} />
         <Route path="/links" element={<LinksGraphView />} />
+        <Route path="/code" element={<CodeGraphView />} />
         <Route path="/roadmap" element={<RoadmapView />} />
         <Route path="/mcp-tools" element={<McpToolsView />} />
         <Route path="/prds" element={<PrdListView />} />

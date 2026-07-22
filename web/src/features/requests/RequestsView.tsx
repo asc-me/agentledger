@@ -1,7 +1,8 @@
-import { ChevronUp, ExternalLink } from "lucide-react";
+import { ChevronRight, ChevronUp, ExternalLink } from "lucide-react";
 import * as React from "react";
 import { useOutletContext } from "react-router-dom";
 
+import { LinkedCode } from "@/features/code/LinkedCode";
 import { useProjectCtx } from "@/features/ProjectContext";
 import { cn } from "@/lib/cn";
 import { TYPE_META } from "@/lib/meta";
@@ -66,7 +67,12 @@ export function RequestsView() {
         ) : (
           <div className="space-y-2">
             {visible.map((r) => (
-              <RequestRow key={r.id} request={r} onVote={() => vote.mutate({ id: r.id, delta: 1 })} />
+              <RequestRow
+                key={r.id}
+                request={r}
+                activeId={activeId}
+                onVote={() => vote.mutate({ id: r.id, delta: 1 })}
+              />
             ))}
             {visible.length === 0 && (
               <div className="p-8 text-center text-[13px] text-muted">No requests match.</div>
@@ -78,46 +84,80 @@ export function RequestsView() {
   );
 }
 
-function RequestRow({ request, onVote }: { request: RequestItem; onVote: () => void }) {
+function RequestRow({
+  request,
+  activeId,
+  onVote,
+}: {
+  request: RequestItem;
+  activeId?: string;
+  onVote: () => void;
+}) {
   const meta = TYPE_META[request.type];
+  const [open, setOpen] = React.useState(false);
   return (
-    <div className="flex items-center gap-3 rounded-[12px] border border-line-2 bg-surface-2 px-3 py-2.5 transition-colors hover:border-line-hover">
-      <button
-        onClick={onVote}
-        className="flex flex-none flex-col items-center gap-0.5 rounded-lg border border-line-2 bg-surface px-2 py-1.5 transition-colors hover:border-accent/40"
-        title="Upvote"
-      >
-        <ChevronUp size={13} className="text-accent" />
-        <span className="font-mono text-[11px] text-fg-2">{request.votes}</span>
-      </button>
+    <div className="rounded-[12px] border border-line-2 bg-surface-2 transition-colors hover:border-line-hover">
+      <div className="flex items-center gap-3 px-3 py-2.5">
+        <button
+          onClick={onVote}
+          className="flex flex-none flex-col items-center gap-0.5 rounded-lg border border-line-2 bg-surface px-2 py-1.5 transition-colors hover:border-accent/40"
+          title="Upvote"
+        >
+          <ChevronUp size={13} className="text-accent" />
+          <span className="font-mono text-[11px] text-fg-2">{request.votes}</span>
+        </button>
 
-      <span
-        className="flex-none rounded-md border px-1.5 py-0.5 font-mono text-[9.5px] uppercase tracking-wide"
-        style={{ color: meta.color, background: meta.bg, borderColor: meta.border }}
-      >
-        {meta.label}
-      </span>
-
-      <span className="min-w-0 flex-1 truncate text-[13px] text-fg-2">{request.title}</span>
-
-      {request.attachment_ids?.length > 0 && <Attachments ids={request.attachment_ids} />}
-      {request.source_url && <SourceLink url={request.source_url} />}
-
-      <span className="flex-none font-mono text-[10.5px] text-faint">{request.by}</span>
-      <span className="hidden flex-none font-mono text-[10px] text-faint-2 sm:inline">{request.ago}</span>
-
-      <span
-        className="flex flex-none items-center gap-1.5 font-mono text-[10px] uppercase tracking-wide"
-        style={{ color: STATUS_COLOR[request.status] ?? "#8b949e" }}
-      >
         <span
-          className="h-1.5 w-1.5 rounded-full"
-          style={{ background: STATUS_COLOR[request.status] ?? "#8b949e" }}
-        />
-        {request.status}
-      </span>
+          className="flex-none rounded-md border px-1.5 py-0.5 font-mono text-[9.5px] uppercase tracking-wide"
+          style={{ color: meta.color, background: meta.bg, borderColor: meta.border }}
+        >
+          {meta.label}
+        </span>
 
-      <LinkDialog request={request} />
+        <button
+          onClick={() => setOpen((o) => !o)}
+          className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+          aria-expanded={open}
+          title="Show detail & linked code"
+        >
+          <ChevronRight
+            size={13}
+            className={cn("flex-none text-faint transition-transform", open && "rotate-90")}
+          />
+          <span className="min-w-0 flex-1 truncate text-[13px] text-fg-2">{request.title}</span>
+        </button>
+
+        {request.attachment_ids?.length > 0 && <Attachments ids={request.attachment_ids} />}
+        {request.source_url && <SourceLink url={request.source_url} />}
+
+        <span className="flex-none font-mono text-[10.5px] text-faint">{request.by}</span>
+        <span className="hidden flex-none font-mono text-[10px] text-faint-2 sm:inline">{request.ago}</span>
+
+        <span
+          className="flex flex-none items-center gap-1.5 font-mono text-[10px] uppercase tracking-wide"
+          style={{ color: STATUS_COLOR[request.status] ?? "#8b949e" }}
+        >
+          <span
+            className="h-1.5 w-1.5 rounded-full"
+            style={{ background: STATUS_COLOR[request.status] ?? "#8b949e" }}
+          />
+          {request.status}
+        </span>
+
+        <LinkDialog request={request} />
+      </div>
+
+      {open && (
+        <div className="animate-fade space-y-3 border-t border-line px-3 py-3">
+          {request.detail && (
+            <p className="whitespace-pre-wrap text-[12.5px] leading-relaxed text-fg-2">{request.detail}</p>
+          )}
+          <div>
+            <div className="mb-1.5 font-mono text-[10px] uppercase tracking-wide text-faint">Linked code</div>
+            <LinkedCode refId={request.id} projectId={activeId} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
