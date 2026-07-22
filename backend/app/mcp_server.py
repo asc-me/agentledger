@@ -14,10 +14,13 @@ import json
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request, Response
+import logging
+
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import ApiKey
+from app.models import ApiKey, Project
 from app.security.deps import get_agent_key
 from app.services import insights as insights_svc
 from app.services import items as items_svc
@@ -30,45 +33,66 @@ router = APIRouter(tags=["mcp"])
 
 PROTOCOL_VERSION = "2025-06-18"
 
+logger = logging.getLogger("agentledger.mcp")
+
+_STATUS_ENUM = items_svc.STATUSES
+_EFFORT_DESC = "Relative effort estimate, integer (higher = more work). No fixed unit."
+
 TOOLS: list[dict[str, Any]] = [
     {
+        "name": "get_context",
+        "description": (
+            "Orient yourself: returns the project this API key writes to, your scopes, and how "
+            "many projects and tools exist. Call this first when you start."
+        ),
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "list_projects",
+        "description": "List all projects (id, name, accent, description). Use an id as the `project_id` override.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "create_item",
-        "description": "Create a tracker item with title, description, tags, effort.",
+        "description": "Create a tracker item. Returns the created item incl. its id and project_id.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "title": {"type": "string"},
-                "description": {"type": "string"},
+                "description": {"type": "string", "description": "Markdown body."},
                 "tags": {"type": "array", "items": {"type": "string"}},
-                "effort": {"type": "integer"},
-                "status": {"type": "string"},
+                "effort": {"type": "integer", "description": _EFFORT_DESC},
+                "status": {"type": "string", "enum": _STATUS_ENUM, "description": "Defaults to backlog."},
             },
             "required": ["title"],
         },
     },
     {
         "name": "update_item",
-        "description": "Patch fields or advance status on an existing item.",
+        "description": "Patch fields or advance status on an existing item. Returns the updated item.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "id": {"type": "string"},
-                "status": {"type": "string"},
+                "status": {"type": "string", "enum": _STATUS_ENUM},
                 "title": {"type": "string"},
                 "description": {"type": "string"},
-                "blocker": {"type": "string"},
+                "tags": {"type": "array", "items": {"type": "string"}},
+                "effort": {"type": "integer", "description": _EFFORT_DESC},
+                "blocker": {"type": "string", "description": "Free-text blocker; empty string clears it."},
             },
             "required": ["id"],
         },
     },
     {
         "name": "search_items",
-        "description": "Query the linear stream by text, tag, or status.",
+        "description": "Query the linear stream by free text (matches title, description, and tags), tags, and/or status.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "query": {"type": "string"},
-                "status": {"type": "string"},
+                "query": {"type": "string", "description": "Substring matched against title, description, and tags."},
+                "tags": {"type": "array", "items": {"type": "string"}, "description": "Only items carrying at least one of these tags."},
+                "status": {"type": "string", "enum": _STATUS_ENUM},
             },
         },
     },
@@ -164,6 +188,7 @@ LIVE_TOOL_COUNT = len(TOOLS)
 def _item_dict(item) -> dict:
     return {
         "id": item.id,
+        "project_id": item.project_id,
         "title": item.title,
         "status": item.status,
         "tags": item.tags,
@@ -171,9 +196,25 @@ def _item_dict(item) -> dict:
     }
 
 
-def _call_tool(db: Session, name: str, args: dict[str, Any], project_id: str | None = None) -> Any:
+def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any:
     # The key scopes the agent to a project; a per-call `project_id` argument overrides it.
-    pid = args.get("project_id") or project_id
+    pid = args.get("project_id") or resolve_project_id(db, key.project_id)
+
+    if name == "get_context":
+        proj = db.get(Project, pid) if pid else None
+        return {
+            "project_id": pid,
+            "project_name": proj.name if proj else None,
+            "key_project_id": key.project_id,  # None => global key; agent should pass project_id
+            "scopes": key.scopes,
+            "project_count": db.scalar(select(func.count()).select_from(Project)),
+            "tool_count": LIVE_TOOL_COUNT,
+        }
+    if name == "list_projects":
+        return [
+            {"id": p.id, "name": p.name, "accent": p.accent, "description": p.description}
+            for p in db.scalars(select(Project).order_by(Project.name)).all()
+        ]
     if name == "create_item":
         item = items_svc.create_item(
             db,
@@ -193,13 +234,17 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], project_id: str | N
             status=args.get("status"),
             title=args.get("title"),
             description=args.get("description"),
+            tags=args.get("tags"),
+            effort=args.get("effort"),
             blocker=args.get("blocker"),
         )
         if item is None:
             raise ValueError(f"item not found: {args['id']}")
         return _item_dict(item)
     if name == "search_items":
-        rows = items_svc.search_items(db, args.get("query", ""), status=args.get("status"), project_id=pid)
+        rows = items_svc.search_items(
+            db, args.get("query", ""), status=args.get("status"), project_id=pid, tags=args.get("tags"),
+        )
         return [_item_dict(i) for i in rows]
     if name == "add_memory":
         shard = mem_svc.add_memory(
@@ -209,11 +254,17 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], project_id: str | N
             item_id=args.get("item_id"),
             project_id=pid,
         )
-        return {"id": shard.id, "text": shard.text, "scope": shard.scope}
+        return {
+            "id": shard.id, "text": shard.text, "scope": shard.scope,
+            "item_id": shard.item_id, "project_id": shard.project_id,
+        }
     if name == "search_memory":
         hits = mem_svc.search_memory(db, args["query"], top_k=args.get("top_k", 5), project_id=pid)
         return [
-            {"id": s.id, "text": s.text, "scope": s.scope, "score": round(score, 4)}
+            {
+                "id": s.id, "text": s.text, "scope": s.scope, "score": round(score, 4),
+                "item_id": s.item_id, "source": s.source, "project_id": s.project_id,
+            }
             for s, score in hits
         ]
     if name == "get_backlog":
@@ -245,6 +296,19 @@ def _rpc_result(id_: Any, result: Any) -> dict:
 
 def _rpc_error(id_: Any, code: int, message: str) -> dict:
     return {"jsonrpc": "2.0", "id": id_, "error": {"code": code, "message": message}}
+
+
+def _tool_error(id_: Any, code: str, message: str) -> dict:
+    """A tool-level failure. Reported via isError so the agent sees it, with a stable
+    machine-readable `code` in structuredContent to branch on."""
+    return _rpc_result(
+        id_,
+        {
+            "content": [{"type": "text", "text": f"{code}: {message}"}],
+            "structuredContent": {"error": {"code": code, "message": message}},
+            "isError": True,
+        },
+    )
 
 
 @router.post("/mcp")
@@ -281,13 +345,14 @@ async def mcp_endpoint(
         if name:
             mcp_stats.increment(db, name)  # per-tool metering for the MCP Tools page
         try:
-            project_id = resolve_project_id(db, key.project_id)
-            result = _call_tool(db, name, args, project_id)
+            result = _call_tool(db, name, args, key)
         except (ValueError, KeyError) as e:
-            return _rpc_result(
-                id_,
-                {"content": [{"type": "text", "text": f"error: {e}"}], "isError": True},
-            )
+            # Bad input / not-found: the agent can read the message and correct itself.
+            return _tool_error(id_, "invalid_request", str(e))
+        except Exception:  # noqa: BLE001 — never leak a raw 500 to a JSON-RPC client
+            logger.exception("MCP tool %r failed", name)
+            db.rollback()
+            return _tool_error(id_, "internal_error", f"internal error executing {name!r}")
         return _rpc_result(
             id_,
             {"content": [{"type": "text", "text": json.dumps(result)}]},

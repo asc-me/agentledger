@@ -97,13 +97,13 @@ def test_mcp_tools_and_call(client, auth):
     hk = {"X-API-Key": key}
     tl = client.post("/api/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, headers=hk)
     names = [t["name"] for t in tl.json()["result"]["tools"]]
-    assert names[:5] == ["create_item", "update_item", "search_items", "add_memory", "search_memory"]
     assert set(names) >= {
+        "get_context", "list_projects",
         "create_item", "update_item", "search_items", "add_memory", "search_memory",
         "get_backlog", "get_item_details", "suggest_next", "link_items", "extract_lessons",
         "generate_digest",
     }
-    assert len(names) == 11
+    assert len(names) == 13
 
     call = client.post(
         "/api/mcp",
@@ -111,9 +111,9 @@ def test_mcp_tools_and_call(client, auth):
               "params": {"name": "create_item", "arguments": {"title": "From agent", "effort": 1}}},
         headers=hk,
     )
-    import json
     payload = json.loads(call.json()["result"]["content"][0]["text"])
     assert payload["title"] == "From agent"
+    assert payload["project_id"]  # #5: writes confirm where they landed
 
     # The agent-created item is visible through the web API — shared service layer.
     items = client.get("/api/items", headers=auth).json()
@@ -195,6 +195,40 @@ def test_project_scoped_api_key_targets_its_project(client, auth):
 def test_create_api_key_unknown_project_is_422(client, auth):
     r = client.post("/api/api-keys", json={"name": "x", "project_id": "nope"}, headers=auth)
     assert r.status_code == 422
+
+
+def test_mcp_get_context_and_list_projects(client, auth):
+    key = client.post("/api/api-keys", json={"name": "ctx", "project_id": "core"}, headers=auth).json()["plaintext"]
+    ctx = _mcp(client, key, "get_context", {})
+    assert ctx["project_id"] == "core"
+    assert ctx["key_project_id"] == "core"
+    assert ctx["tool_count"] == 13
+    assert ctx["project_count"] >= 1
+
+    projects = _mcp(client, key, "list_projects", {})
+    assert any(p["id"] == "core" for p in projects)
+    assert all({"id", "name", "accent"} <= set(p) for p in projects)
+
+
+def test_mcp_search_items_matches_tags(client, auth):
+    # Seeded items carry tags; search by tag must find them (was a description/behavior mismatch).
+    key = client.post("/api/api-keys", json={"name": "srch"}, headers=auth).json()["plaintext"]
+    hits = _mcp(client, key, "search_items", {"tags": ["mcp"]})
+    assert hits and all("mcp" in [t.lower() for t in i["tags"]] for i in hits)
+
+
+def test_mcp_errors_are_structured_not_500(client, auth):
+    key = client.post("/api/api-keys", json={"name": "err"}, headers=auth).json()["plaintext"]
+    r = client.post(
+        "/api/mcp",
+        json={"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+              "params": {"name": "update_item", "arguments": {"id": "AL-999"}}},
+        headers={"X-API-Key": key},
+    )
+    assert r.status_code == 200  # never a raw 500
+    result = r.json()["result"]
+    assert result["isError"] is True
+    assert result["structuredContent"]["error"]["code"] == "invalid_request"
 
 
 def test_create_project_slug_collision(client, auth):

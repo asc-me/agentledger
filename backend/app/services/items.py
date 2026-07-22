@@ -133,19 +133,32 @@ def search_items(
     status: str | None = None,
     limit: int = 25,
     project_id: str | None = None,
+    tags: list[str] | None = None,
 ) -> list[Item]:
+    # Status/project are simple column filters (SQL); the free-text query and tag
+    # matching run in Python so `query` can match a tag too and stay dialect-agnostic
+    # (tags is a JSON column). The result set here is small.
     stmt = select(Item)
     if project_id:
         stmt = stmt.where(Item.project_id == project_id)
-    if query:
-        like = f"%{query.lower()}%"
-        stmt = stmt.where(
-            or_(func.lower(Item.title).like(like), func.lower(Item.description).like(like))
-        )
     if status:
         stmt = stmt.where(Item.status == status)
-    stmt = stmt.order_by(Item.sort_order.asc()).limit(limit)
-    return list(db.scalars(stmt).all())
+    rows = list(db.scalars(stmt.order_by(Item.sort_order.asc())).all())
+
+    q = query.lower().strip()
+    want_tags = {t.lower() for t in (tags or [])}
+
+    def matches(it: Item) -> bool:
+        item_tags = {t.lower() for t in (it.tags or [])}
+        if want_tags and not (want_tags & item_tags):
+            return False
+        if q and q not in it.title.lower() and q not in (it.description or "").lower() and not any(
+            q in t for t in item_tags
+        ):
+            return False
+        return True
+
+    return [it for it in rows if matches(it)][:limit]
 
 
 def get_backlog(db: Session, limit: int = 20, project_id: str | None = None) -> list[Item]:

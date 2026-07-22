@@ -21,21 +21,27 @@ agent's writes are identical to a user's and appear instantly in the UI.
 - **Metering** — every `tools/call` increments a per-tool counter (the `mcp_tool_stats`
   table) surfaced on the **MCP Tools** view.
 
-## The 11 tools
+## The 13 tools
 
 | Tool | Params | Does |
 | --- | --- | --- |
-| `create_item` | `title`, `description`, `tags`, `effort`, `status` | Create a tracker item |
-| `update_item` | `id`, `status`, `title`, `description`, `blocker` | Patch / advance an item |
-| `search_items` | `query`, `status` | Query the linear stream |
-| `add_memory` | `text`, `scope`, `item_id` | Attach a memory shard |
-| `search_memory` | `query`, `top_k` | Semantic search over shards |
-| `get_backlog` | `limit` | Prioritized backlog |
+| `get_context` | — | Orient: the key's project, scopes, project/tool counts. Call this first. |
+| `list_projects` | — | All projects (`id`, `name`, `accent`, `description`) — ids for the `project_id` override |
+| `create_item` | `title`, `description`, `tags`, `effort`, `status`, `project_id` | Create a tracker item (returns its `project_id`) |
+| `update_item` | `id`, `status`, `title`, `description`, `tags`, `effort`, `blocker` | Patch / advance an item |
+| `search_items` | `query`, `tags`, `status`, `project_id` | Query the stream (query matches title, description, **and** tags) |
+| `add_memory` | `text`, `scope`, `item_id`, `project_id` | Attach a memory shard |
+| `search_memory` | `query`, `top_k`, `project_id` | Semantic search over shards (returns `item_id`, `source`) |
+| `get_backlog` | `limit`, `project_id` | Prioritized backlog |
 | `get_item_details` | `id` | Item + linked shards + linked requests |
-| `suggest_next` | — | Best next item from state + memory |
+| `suggest_next` | `project_id` | Best next item from state + memory |
 | `link_items` | `a`, `b`, `type`, `reason` | Create a typed relationship |
 | `extract_lessons` | `id` | Distill lessons from an item into memory |
-| `generate_digest` | — | Compose a progress digest across the project |
+| `generate_digest` | `project_id` | Compose a progress digest across the project |
+
+`status` fields accept only `backlog · next · in_progress · review · done · blocked` (enforced in
+the schema). Tool failures return `isError: true` with a machine-readable
+`structuredContent.error.code` (`invalid_request` or `internal_error`) — never a raw HTTP 500.
 
 ## MCP Tools view
 
