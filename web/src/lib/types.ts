@@ -133,6 +133,35 @@ export interface PlatformConfig {
   rate_limit_per_min: number;
   turnstile_sitekey: string;
   turnstile_secret_set: boolean;
+  active_chat_provider: string;
+  provider_config: Record<string, ProviderConfigView>;
+}
+
+export type ProviderKind = "stub" | "anthropic" | "openai" | "ollama";
+
+export interface AiProvider {
+  id: string;
+  label: string;
+  kind: ProviderKind;
+  embeds: boolean;
+  base_url: string;
+  chat_model: string;
+  embed_model: string;
+  auth: boolean;
+}
+
+export interface ProviderConfigView {
+  base_url: string;
+  chat_model: string;
+  embed_model: string;
+  key_set: boolean;
+}
+
+export interface ProviderConfigUpdate {
+  api_key?: string;
+  base_url?: string;
+  chat_model?: string;
+  embed_model?: string;
 }
 
 export interface Member {

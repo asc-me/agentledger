@@ -5,12 +5,13 @@ import * as React from "react";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
+import { AiProvidersPanel } from "@/features/settings/AiProvidersPanel";
 import { McpInstall } from "@/features/settings/McpInstall";
 import { useProjectCtx } from "@/features/ProjectContext";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { keys, useApiKeys, useMembers, usePlatform } from "@/lib/queries";
-import type { LlmMode, PlatformConfig, Project } from "@/lib/types";
+import type { PlatformConfig, Project } from "@/lib/types";
 
 const TABS = ["AI Providers", "Integrations", "Project", "Members", "API Keys"] as const;
 type Tab = (typeof TABS)[number];
@@ -62,84 +63,6 @@ function Section({ title, desc, children }: { title: string; desc?: string; chil
 
 function Label({ children }: { children: React.ReactNode }) {
   return <div className="mb-1.5 font-mono text-[10px] uppercase tracking-wide text-faint">{children}</div>;
-}
-
-const MODES: { key: LlmMode; label: string; hint: string }[] = [
-  { key: "stub", label: "Offline stub", hint: "Deterministic, no external services" },
-  { key: "local", label: "Local (Ollama)", hint: "Private, runs on your machine" },
-  { key: "cloud", label: "Cloud (Claude)", hint: "Needs ANTHROPIC_API_KEY" },
-];
-
-function AiProvidersPanel() {
-  const { data: cfg } = usePlatform();
-  const qc = useQueryClient();
-  const [mode, setMode] = React.useState<LlmMode>("stub");
-  const [localUrl, setLocalUrl] = React.useState("");
-  const [localModel, setLocalModel] = React.useState("");
-  const [cloudModel, setCloudModel] = React.useState("");
-  const [saved, setSaved] = React.useState(false);
-
-  React.useEffect(() => {
-    if (cfg) {
-      setMode(cfg.llm_mode);
-      setLocalUrl(cfg.local_base_url);
-      setLocalModel(cfg.local_model);
-      setCloudModel(cfg.cloud_model);
-    }
-  }, [cfg]);
-
-  async function save() {
-    await api.updatePlatform({ llm_mode: mode, local_base_url: localUrl, local_model: localModel, cloud_model: cloudModel });
-    qc.invalidateQueries({ queryKey: ["platform"] });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 1500);
-  }
-
-  return (
-    <Section title="Chat & extraction provider" desc="Drives the agent chat and auto-extraction. Switches take effect immediately.">
-      <div className="mb-4 grid gap-2 sm:grid-cols-3">
-        {MODES.map((m) => (
-          <button
-            key={m.key}
-            onClick={() => setMode(m.key)}
-            className={cn(
-              "rounded-[11px] border p-3 text-left transition-colors",
-              mode === m.key ? "border-accent/50 bg-surface-3" : "border-line-2 bg-surface-2 hover:border-line-hover",
-            )}
-          >
-            <div className="text-[13px] font-medium text-fg">{m.label}</div>
-            <div className="mt-1 text-[11px] text-muted">{m.hint}</div>
-          </button>
-        ))}
-      </div>
-
-      {mode === "local" && (
-        <div className="mb-4 grid gap-3 sm:grid-cols-2">
-          <div>
-            <Label>Ollama base URL</Label>
-            <Input value={localUrl} onChange={(e) => setLocalUrl(e.target.value)} />
-          </div>
-          <div>
-            <Label>Chat model</Label>
-            <Input value={localModel} onChange={(e) => setLocalModel(e.target.value)} />
-          </div>
-        </div>
-      )}
-      {mode === "cloud" && (
-        <div className="mb-4">
-          <Label>Claude model</Label>
-          <Input value={cloudModel} onChange={(e) => setCloudModel(e.target.value)} className="max-w-xs" />
-        </div>
-      )}
-
-      <div className="flex items-center gap-3">
-        <Button size="sm" onClick={save}>{saved ? "Saved" : "Save provider"}</Button>
-        <span className="text-[11.5px] text-faint">
-          Embedding provider is a deploy-time setting (changing it changes the vector dimension).
-        </span>
-      </div>
-    </Section>
-  );
 }
 
 function IntegrationsPanel() {
