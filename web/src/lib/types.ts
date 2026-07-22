@@ -52,6 +52,7 @@ export interface Item {
   date: string;
   reporter: Reporter;
   pr: PR | null;
+  github_url: string;
   created_at: string;
   updated_at: string;
 }
@@ -85,6 +86,7 @@ export interface RequestItem {
   ago: string;
   source_url: string;
   meta: Record<string, unknown>;
+  attachment_ids: string[];
   created_at: string;
 }
 
@@ -123,6 +125,9 @@ export interface PlatformConfig {
   gdrive_connected: boolean;
   gdrive_account: string;
   gdrive_folder: string;
+  rate_limit_per_min: number;
+  turnstile_sitekey: string;
+  turnstile_secret_set: boolean;
 }
 
 export interface Member {

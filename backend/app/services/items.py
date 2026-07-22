@@ -80,7 +80,7 @@ def update_item(db: Session, item_id: str, **fields) -> Item | None:
         if fields["status"] not in STATUSES:
             raise ValueError(f"invalid status: {fields['status']}")
     prev_status = item.status
-    for key in ("title", "description", "status", "tags", "effort", "blocker", "pr", "date"):
+    for key in ("title", "description", "status", "tags", "effort", "blocker", "pr", "date", "github_url"):
         if key in fields and fields[key] is not None:
             setattr(item, key, fields[key])
     db.commit()

@@ -8,6 +8,15 @@ import pytest
 from fastapi.testclient import TestClient
 
 
+@pytest.fixture(autouse=True)
+def _reset_rate_limit():
+    # The spam limiter keeps in-process state; clear it so tests don't leak counts.
+    from app.services import spam
+
+    spam._hits.clear()
+    yield
+
+
 @pytest.fixture()
 def client():
     from app.db import Base, engine

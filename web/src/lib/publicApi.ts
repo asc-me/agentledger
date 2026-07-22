@@ -9,6 +9,9 @@ export interface PublicSubmitBody {
   project_id?: string;
   source_url?: string;
   meta?: Record<string, unknown>;
+  attachment_ids?: string[];
+  turnstile_token?: string;
+  hp?: string;
 }
 
 export const publicApi = {
@@ -17,6 +20,14 @@ export const publicApi = {
     if (projectId) params.set("project_id", projectId);
     const res = await fetch(`/api/public/duplicates?${params.toString()}`);
     if (!res.ok) return [];
+    return res.json();
+  },
+
+  async uploadAttachment(file: File): Promise<{ id: string; url: string } | null> {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch("/api/public/attachments", { method: "POST", body: form });
+    if (!res.ok) return null;
     return res.json();
   },
 

@@ -1,41 +1,50 @@
 """Public, unauthenticated feedback intake (Phase 2, AL-19 + AL-21).
 
-Powers the embeddable feedback widget. No JWT — protected instead by a simple
-per-IP sliding-window rate limit and a project-scoped enable flag.
+Powers the embeddable feedback widget. No JWT — protected by layered spam control
+(honeypot + per-project rate limit + optional Turnstile) and a project enable flag.
 """
 from __future__ import annotations
 
-import time
-from collections import defaultdict, deque
-
-from fastapi import APIRouter, Depends, HTTPException, Request as FastAPIRequest
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    Request as FastAPIRequest,
+    Response,
+    UploadFile,
+)
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.db import get_db
+from app.models import PlatformConfig
 from app.schemas import DuplicateHit, PublicRequestIn, PublicRequestOut, RequestOut
+from app.services import attachments as att_svc
 from app.services import duplicates as dup_svc
 from app.services import items as items_svc
 from app.services import requests as req_svc
 from app.services import roadmap as roadmap_svc
+from app.services import spam
+from app.services.platform import get_config
 from app.services.projects import default_project_id, resolve_project_id
 
 router = APIRouter(prefix="/public", tags=["public"])
 
-_RATE_WINDOW = 60.0  # seconds
-_RATE_MAX = 20  # requests per window per IP
-_hits: dict[str, deque] = defaultdict(deque)
+_UPLOAD_RATE = 10  # attachment uploads per IP per minute
 
 
-def rate_limit(request: FastAPIRequest) -> None:
-    ip = request.client.host if request.client else "unknown"
-    now = time.monotonic()
-    q = _hits[ip]
-    while q and now - q[0] > _RATE_WINDOW:
-        q.popleft()
-    if len(q) >= _RATE_MAX:
+def _client_ip(request: FastAPIRequest) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+def _rate_or_429(db: Session, request: FastAPIRequest, project_id: str | None, default: int = 20) -> None:
+    limit = default
+    if project_id:
+        limit = get_config(db, project_id).rate_limit_per_min or default
+    if not spam.check_rate(f"{project_id or 'global'}:{_client_ip(request)}", limit):
         raise HTTPException(429, "too many submissions, slow down")
-    q.append(now)
 
 
 def _ensure_enabled() -> None:
@@ -49,61 +58,129 @@ def public_roadmap(project_id: str | None = None, db: Session = Depends(get_db))
     return roadmap_svc.list_roadmap(db, project_id=resolve_project_id(db, project_id))
 
 
+@router.get("/widget-config")
+def widget_config(project_id: str | None = None, db: Session = Depends(get_db)):
+    """Public config the embedded widget needs (e.g. whether to render Turnstile)."""
+    pid = resolve_project_id(db, project_id)
+    cfg = get_config(db, pid) if pid else None
+    return {"turnstile_sitekey": cfg.turnstile_sitekey if cfg else ""}
+
+
 @router.post("/github/webhook")
-async def github_webhook(
-    request: FastAPIRequest, _rl: None = Depends(rate_limit), db: Session = Depends(get_db)
-):
-    """Inbound GitHub issues webhook → new tracker item.
+async def github_webhook(request: FastAPIRequest, db: Session = Depends(get_db)):
+    """Inbound GitHub issues webhook → new tracker item, routed to the project that
+    has this repo connected (falls back to the default project).
 
     (Real deployments verify the X-Hub-Signature-256 HMAC; omitted for the local slice.)
     """
+    _rate_or_429(db, request, None, default=60)
     payload = await request.json()
     if payload.get("action") not in ("opened", "reopened"):
         return {"ignored": True, "action": payload.get("action")}
     issue = payload.get("issue", {}) or {}
+    repo = (payload.get("repository", {}) or {}).get("full_name", "")
+
+    # Route to the project whose platform_config names this repo.
+    project_id = None
+    if repo:
+        match = db.scalar(
+            select(PlatformConfig).where(func.lower(PlatformConfig.github_repo) == repo.lower())
+        )
+        if match is not None:
+            project_id = match.project_id
+    project_id = project_id or default_project_id(db)
+
     item = items_svc.create_item(
         db,
         title=issue.get("title", "Untitled GitHub issue"),
         description=issue.get("body", "") or "",
         tags=["github"],
-        project_id=default_project_id(db),
+        project_id=project_id,
         reporter={"name": "GitHub", "handle": "github", "avatar": "#8b949e"},
     )
-    return {"created_item": item.id}
+    # Link the item back to the originating issue.
+    url = issue.get("html_url", "")
+    if url:
+        items_svc.update_item(db, item.id, github_url=url)
+    return {"created_item": item.id, "project_id": project_id, "github_url": url}
 
 
 @router.get("/duplicates", response_model=list[DuplicateHit])
 def check_duplicates(
     q: str,
+    request: FastAPIRequest,
     project_id: str | None = None,
-    _rl: None = Depends(rate_limit),
     db: Session = Depends(get_db),
 ):
     """Live duplicate check for the widget — before the user submits."""
     _ensure_enabled()
-    return dup_svc.find_duplicates(db, q, project_id=resolve_project_id(db, project_id))
+    pid = resolve_project_id(db, project_id)
+    _rate_or_429(db, request, pid)
+    return dup_svc.find_duplicates(db, q, project_id=pid)
+
+
+@router.post("/attachments", status_code=201)
+async def upload_attachment(
+    request: FastAPIRequest,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    """Upload a screenshot for a feedback submission. Returns its id + public url."""
+    _ensure_enabled()
+    if not spam.check_rate(f"upload:{_client_ip(request)}", _UPLOAD_RATE):
+        raise HTTPException(429, "too many uploads, slow down")
+    data = await file.read()
+    try:
+        att = att_svc.create_attachment(db, content_type=file.content_type or "", data=data)
+    except att_svc.AttachmentError as e:
+        raise HTTPException(422, str(e))
+    return {"id": att.id, "url": f"/api/public/attachments/{att.id}", "size": att.size}
+
+
+@router.get("/attachments/{attachment_id}")
+def get_attachment(attachment_id: str, db: Session = Depends(get_db)):
+    """Serve an attachment's bytes (public-read by unguessable id)."""
+    att = att_svc.get_attachment(db, attachment_id)
+    if att is None:
+        raise HTTPException(404, "attachment not found")
+    return Response(
+        content=att.data,
+        media_type=att.content_type,
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
 
 
 @router.post("/requests", response_model=PublicRequestOut, status_code=201)
 def submit_request(
     body: PublicRequestIn,
     request: FastAPIRequest,
-    _rl: None = Depends(rate_limit),
     db: Session = Depends(get_db),
 ):
     _ensure_enabled()
-    text = f"{body.title} {body.detail}".strip()
+    # 1. Honeypot: a hidden field only bots fill.
+    if body.hp:
+        raise HTTPException(400, "submission rejected")
+
     project_id = resolve_project_id(db, body.project_id)
-    # Capture where it came from: client-sent page URL + custom meta, plus the UA header.
+    # 2. Per-project rate limit.
+    _rate_or_429(db, request, project_id)
+    # 3. Optional Turnstile (only enforced when the project configured a secret).
+    cfg = get_config(db, project_id) if project_id else None
+    if cfg and cfg.turnstile_secret:
+        if not spam.verify_turnstile(cfg.turnstile_secret, body.turnstile_token, _client_ip(request)):
+            raise HTTPException(403, "captcha verification failed")
+
+    text = f"{body.title} {body.detail}".strip()
     meta = dict(body.meta or {})
     ua = request.headers.get("user-agent")
     if ua and "user_agent" not in meta:
         meta["user_agent"] = ua
+    attachment_ids = att_svc.valid_ids(db, body.attachment_ids)
     try:
         req = req_svc.create_request(
             db, type_=body.type, title=body.title, detail=body.detail,
             by=body.email or "public", project_id=project_id,
-            source_url=body.source_url, meta=meta,
+            source_url=body.source_url, meta=meta, attachment_ids=attachment_ids,
         )
     except ValueError as e:
         raise HTTPException(422, str(e))

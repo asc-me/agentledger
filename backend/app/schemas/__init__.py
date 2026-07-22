@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
 
 
 class ORMModel(BaseModel):
@@ -77,6 +77,7 @@ class ItemUpdate(BaseModel):
     tags: list[str] | None = None
     effort: int | None = None
     blocker: str | None = None
+    github_url: str | None = None
 
 
 class ReorderIn(BaseModel):
@@ -96,6 +97,7 @@ class ItemOut(ORMModel):
     date: str
     reporter: dict
     pr: dict | None
+    github_url: str = ""
     created_at: datetime
     updated_at: datetime
 
@@ -159,7 +161,19 @@ class RequestOut(ORMModel):
     ago: str
     source_url: str = ""
     meta: dict = {}
+    attachment_ids: list[str] = []
     created_at: datetime
+
+    # Rows created before these columns existed can hold NULL; coerce to the default.
+    @field_validator("meta", mode="before")
+    @classmethod
+    def _meta_default(cls, v):
+        return v or {}
+
+    @field_validator("attachment_ids", mode="before")
+    @classmethod
+    def _atts_default(cls, v):
+        return v or []
 
 
 # ---- API keys ----
@@ -199,6 +213,9 @@ class PlatformConfigOut(ORMModel):
     gdrive_connected: bool
     gdrive_account: str
     gdrive_folder: str
+    rate_limit_per_min: int = 20
+    turnstile_sitekey: str = ""
+    turnstile_secret_set: bool = False  # never expose the secret itself
 
 
 class PlatformUpdate(BaseModel):
@@ -207,6 +224,9 @@ class PlatformUpdate(BaseModel):
     local_model: str | None = None
     cloud_provider: str | None = None
     cloud_model: str | None = None
+    rate_limit_per_min: int | None = None
+    turnstile_sitekey: str | None = None
+    turnstile_secret: str | None = None
 
 
 class GithubConnectIn(BaseModel):
@@ -312,6 +332,9 @@ class PublicRequestIn(BaseModel):
     project_id: str = "core"
     source_url: str = ""
     meta: dict = {}
+    attachment_ids: list[str] = []
+    hp: str = ""  # honeypot — must stay empty
+    turnstile_token: str = ""
 
 
 class DuplicateHit(BaseModel):

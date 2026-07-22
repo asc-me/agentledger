@@ -20,6 +20,9 @@ export interface FeedbackConfig {
   mode: FeedbackMode;
   launcherLabel: string;
   position: LauncherPosition;
+  // Capabilities
+  attachments: boolean; // allow screenshot upload
+  turnstileSitekey: string; // Cloudflare Turnstile; empty → no captcha
 }
 
 export const ALL_TYPES: RequestType[] = ["bug", "feature", "enhancement", "feedback"];
@@ -38,6 +41,8 @@ export const DEFAULT_CONFIG: FeedbackConfig = {
   mode: "inline",
   launcherLabel: "Feedback",
   position: "bottom-right",
+  attachments: true,
+  turnstileSitekey: "",
 };
 
 // Params the /embed/feedback iframe reads (widget-affecting only; launcher options
@@ -54,6 +59,8 @@ export function toParams(cfg: FeedbackConfig): string {
   if (cfg.subtitle !== DEFAULT_CONFIG.subtitle) p.set("subtitle", cfg.subtitle);
   if (cfg.buttonLabel !== DEFAULT_CONFIG.buttonLabel) p.set("btn", cfg.buttonLabel);
   if (cfg.successText !== DEFAULT_CONFIG.successText) p.set("done", cfg.successText);
+  if (!cfg.attachments) p.set("att", "0");
+  if (cfg.turnstileSitekey) p.set("ts", cfg.turnstileSitekey);
   return p.toString();
 }
 
@@ -78,6 +85,8 @@ export function fromParams(search: URLSearchParams): FeedbackConfig {
     subtitle: search.get("subtitle") ?? DEFAULT_CONFIG.subtitle,
     buttonLabel: search.get("btn") ?? DEFAULT_CONFIG.buttonLabel,
     successText: search.get("done") ?? DEFAULT_CONFIG.successText,
+    attachments: search.get("att") !== "0",
+    turnstileSitekey: search.get("ts") ?? "",
   };
 }
 

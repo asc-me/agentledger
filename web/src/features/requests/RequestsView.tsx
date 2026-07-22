@@ -100,6 +100,7 @@ function RequestRow({ request, onVote }: { request: RequestItem; onVote: () => v
 
       <span className="min-w-0 flex-1 truncate text-[13px] text-fg-2">{request.title}</span>
 
+      {request.attachment_ids?.length > 0 && <Attachments ids={request.attachment_ids} />}
       {request.source_url && <SourceLink url={request.source_url} />}
 
       <span className="flex-none font-mono text-[10.5px] text-faint">{request.by}</span>
@@ -117,6 +118,23 @@ function RequestRow({ request, onVote }: { request: RequestItem; onVote: () => v
       </span>
 
       <LinkDialog request={request} />
+    </div>
+  );
+}
+
+function Attachments({ ids }: { ids: string[] }) {
+  return (
+    <div className="hidden flex-none items-center gap-1 sm:flex">
+      {ids.slice(0, 3).map((id) => (
+        <a key={id} href={`/api/public/attachments/${id}`} target="_blank" rel="noreferrer noopener" title="Screenshot">
+          <img
+            src={`/api/public/attachments/${id}`}
+            alt="attachment"
+            className="h-6 w-6 rounded border border-line-2 object-cover transition-opacity hover:opacity-80"
+          />
+        </a>
+      ))}
+      {ids.length > 3 && <span className="font-mono text-[10px] text-faint">+{ids.length - 3}</span>}
     </div>
   );
 }

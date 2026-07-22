@@ -1,4 +1,4 @@
-import { GitPullRequest, GripVertical } from "lucide-react";
+import { Github, GitPullRequest, GripVertical } from "lucide-react";
 import * as React from "react";
 
 import { Avatar } from "@/components/ui/avatar";
@@ -7,6 +7,17 @@ import { CHECK_COLOR, PR_STATE_COLOR } from "@/lib/meta";
 import type { Item, Status } from "@/lib/types";
 
 import { StatusMenu } from "./StatusMenu";
+
+/** "#42" for an issue/PR URL, else the hostname. */
+function ghRef(url: string): string {
+  const m = url.match(/\/(?:issues|pull)\/(\d+)/);
+  if (m) return `#${m[1]}`;
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "link";
+  }
+}
 
 export function ItemRow({
   item,
@@ -87,6 +98,20 @@ export function ItemRow({
             style={{ background: CHECK_COLOR[item.pr.checks] ?? "#8b949e" }}
           />
         </span>
+      )}
+
+      {item.github_url && !item.pr && (
+        <a
+          href={item.github_url}
+          target="_blank"
+          rel="noreferrer noopener"
+          onClick={(e) => e.stopPropagation()}
+          className="flex flex-none items-center gap-1 font-mono text-[10px] text-muted hover:text-fg"
+          title={`Linked: ${item.github_url}`}
+        >
+          <Github size={11} />
+          {ghRef(item.github_url)}
+        </a>
       )}
 
       <span className="w-[52px] flex-none text-right font-mono text-[10px] text-faint-2">

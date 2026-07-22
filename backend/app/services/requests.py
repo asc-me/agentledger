@@ -38,6 +38,7 @@ def create_request(
     ago: str = "just now",
     source_url: str = "",
     meta: dict | None = None,
+    attachment_ids: list[str] | None = None,
 ) -> Request:
     if type_ not in REQUEST_TYPES:
         raise ValueError(f"invalid request type: {type_}")
@@ -53,6 +54,7 @@ def create_request(
         ago=ago,
         source_url=source_url,
         meta=meta or {},
+        attachment_ids=attachment_ids or [],
     )
     db.add(req)
     db.commit()

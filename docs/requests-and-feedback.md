@@ -71,6 +71,18 @@ the launcher's `ref` param or `document.referrer`), the submitter's **detail** t
 **`meta`** object (the `user_agent` is added server-side; custom fields pass through). Triage
 shows the origin as a link on each request row.
 
+**Screenshots.** With attachments enabled, users can attach or **paste** images (bug
+screenshots). Files upload to `POST /api/public/attachments` (images only, ≤3 MB, rate-limited),
+are referenced by the request's `attachment_ids`, and served public-read by unguessable id.
+Triage shows thumbnails on the request row.
+
+**Spam protection** (configured per project in **Settings → Integrations → Spam protection**):
+1. **Honeypot** — a hidden field bots fill; always on, zero-config.
+2. **Rate limit** — a per-(project, IP) sliding-window cap (`rate_limit_per_min`, default 20).
+3. **Cloudflare Turnstile** *(optional)* — set a site key + secret to require a captcha. The
+   widget renders the challenge automatically; the server verifies the token. Leave blank
+   (default) for no captcha — the app stays fully offline.
+
 The generator and the standalone page share the same `FeedbackWidget` component and config
 serialization (`web/src/features/feedback/config.ts`); snippet builders live in `snippets.ts`.
 

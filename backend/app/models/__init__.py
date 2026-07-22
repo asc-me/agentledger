@@ -14,6 +14,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     Text,
 )
@@ -118,6 +119,7 @@ class Item(Base):
     date: Mapped[str] = mapped_column(String, default="")  # display date from design
     reporter: Mapped[dict] = mapped_column(JSON, default=dict)
     pr: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    github_url: Mapped[str] = mapped_column(String, default="")  # linked issue/PR
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
@@ -153,6 +155,7 @@ class Request(Base):
     ago: Mapped[str] = mapped_column(String, default="")  # display string from design
     source_url: Mapped[str] = mapped_column(String, default="")  # page the widget was on
     meta: Mapped[dict] = mapped_column(JSON, default=dict)  # user_agent, app_version, custom
+    attachment_ids: Mapped[list] = mapped_column(JSON, default=list)  # screenshot ids
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -245,6 +248,29 @@ class PlatformConfig(Base):
     gdrive_connected: Mapped[bool] = mapped_column(Boolean, default=False)
     gdrive_account: Mapped[str] = mapped_column(String, default="")
     gdrive_folder: Mapped[str] = mapped_column(String, default="")
+
+    # Spam protection for the public feedback endpoints.
+    rate_limit_per_min: Mapped[int] = mapped_column(Integer, default=20)
+    turnstile_sitekey: Mapped[str] = mapped_column(String, default="")  # public; rendered in widget
+    turnstile_secret: Mapped[str] = mapped_column(String, default="")  # server-side verify only
+
+    @property
+    def turnstile_secret_set(self) -> bool:
+        """Whether a secret is configured — surfaced to the UI without leaking it."""
+        return bool(self.turnstile_secret)
+
+
+class Attachment(Base):
+    """A public-uploaded image (bug screenshot) referenced by a feedback request.
+    Bytes live in the DB; served public-read by unguessable id."""
+
+    __tablename__ = "attachments"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    content_type: Mapped[str] = mapped_column(String, default="image/png")
+    size: Mapped[int] = mapped_column(Integer, default=0)
+    data: Mapped[bytes] = mapped_column(LargeBinary)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class ApiKey(Base):

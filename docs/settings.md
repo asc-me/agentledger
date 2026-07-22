@@ -20,10 +20,14 @@ Switches the **chat & extraction** provider — takes effect immediately.
 
 ### GitHub
 
-- **Connect** stores account + repo (and shows scope). **Disconnect** clears it.
+- **Connect** stores account + repo (and shows scope) **for this project**. **Disconnect** clears it.
 - The tab shows the **inbound issues webhook** URL (`…/api/public/github/webhook`) with a
   copy button. Point a GitHub *Issues* webhook at it and **opened issues become tracker
   items** (rate-limited; real deployments add HMAC signature verification).
+- **Repo → project routing:** the webhook reads the payload's `repository.full_name` and
+  creates the item **in the project that has that repo connected** (falling back to the
+  default project). Each created item is **linked back** to the originating issue via
+  `github_url`, shown as a GitHub chip on the tracker row.
 - **Note:** connection state and the inbound webhook are fully wired. **Outbound** sync
   (opening real GitHub issues, two-way PR sync) requires a connected token/OAuth and is out
   of scope for the local slice — `POST /api/platform/github/create-issue` creates the local

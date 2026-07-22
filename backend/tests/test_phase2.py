@@ -1,14 +1,4 @@
 """Phase 2: public feedback intake + auto-duplicate detection (stub embedder)."""
-import pytest
-
-
-@pytest.fixture(autouse=True)
-def _reset_rate_limiter():
-    from app.routers import public
-
-    public._hits.clear()
-    yield
-    public._hits.clear()
 
 
 def test_public_duplicates_no_auth(client):
@@ -54,6 +44,53 @@ def test_public_submit_captures_context(client, auth):
     assert got["source_url"] == "https://shop.example.com/checkout"    # page captured
     assert got["meta"]["app_version"] == "2.4.1"                       # custom meta kept
     assert got["meta"]["user_agent"] == "TestBrowser/9.9"              # UA captured server-side
+
+
+_PNG_1x1 = (
+    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00"
+    b"\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00"
+    b"\x00IEND\xaeB`\x82"
+)
+
+
+def test_attachment_upload_link_and_serve(client, auth):
+    up = client.post(
+        "/api/public/attachments",
+        files={"file": ("shot.png", _PNG_1x1, "image/png")},
+    )
+    assert up.status_code == 201, up.text
+    att_id = up.json()["id"]
+
+    # Attach it to a submission, then read it back through triage.
+    sub = client.post(
+        "/api/public/requests",
+        json={"type": "bug", "title": "Broken layout with screenshot", "attachment_ids": [att_id]},
+    )
+    assert sub.status_code == 201
+    new_id = sub.json()["request"]["id"]
+    got = next(x for x in client.get("/api/requests", headers=auth).json() if x["id"] == new_id)
+    assert got["attachment_ids"] == [att_id]
+
+    served = client.get(f"/api/public/attachments/{att_id}")
+    assert served.status_code == 200
+    assert served.headers["content-type"] == "image/png"
+    assert served.content == _PNG_1x1
+
+
+def test_attachment_rejects_non_image(client):
+    r = client.post(
+        "/api/public/attachments",
+        files={"file": ("evil.txt", b"not an image", "text/plain")},
+    )
+    assert r.status_code == 422
+
+
+def test_honeypot_rejects_bot(client):
+    r = client.post(
+        "/api/public/requests",
+        json={"type": "feedback", "title": "spammy", "hp": "http://spam.example"},
+    )
+    assert r.status_code == 400
 
 
 def test_public_submit_rejects_bad_type(client):

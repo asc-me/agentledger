@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, Github, HardDrive, KeyRound, Plus, Trash2 } from "lucide-react";
+import { Check, Copy, Github, HardDrive, KeyRound, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import * as React from "react";
 
 import { Avatar } from "@/components/ui/avatar";
@@ -9,7 +9,7 @@ import { useProjectCtx } from "@/features/ProjectContext";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { keys, useApiKeys, useMembers, usePlatform } from "@/lib/queries";
-import type { LlmMode, Project } from "@/lib/types";
+import type { LlmMode, PlatformConfig, Project } from "@/lib/types";
 
 const TABS = ["AI Providers", "Integrations", "Project", "Members", "API Keys"] as const;
 type Tab = (typeof TABS)[number];
@@ -151,6 +151,29 @@ function IntegrationsPanel() {
   const [drAccount, setDrAccount] = React.useState("");
   const [drFolder, setDrFolder] = React.useState("");
   const [copied, setCopied] = React.useState(false);
+  const [rateLimit, setRateLimit] = React.useState(20);
+  const [sitekey, setSitekey] = React.useState("");
+  const [secret, setSecret] = React.useState("");
+  const [spamSaved, setSpamSaved] = React.useState(false);
+  React.useEffect(() => {
+    if (cfg) {
+      setRateLimit(cfg.rate_limit_per_min);
+      setSitekey(cfg.turnstile_sitekey);
+    }
+  }, [cfg?.project_id, cfg?.rate_limit_per_min, cfg?.turnstile_sitekey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function saveSpam() {
+    const body: Partial<PlatformConfig> & { turnstile_secret?: string } = {
+      rate_limit_per_min: rateLimit,
+      turnstile_sitekey: sitekey,
+    };
+    if (secret) body.turnstile_secret = secret;
+    await api.updatePlatform(body);
+    setSecret("");
+    invalidate();
+    setSpamSaved(true);
+    setTimeout(() => setSpamSaved(false), 1500);
+  }
 
   if (!cfg) return null;
 
@@ -200,7 +223,10 @@ function IntegrationsPanel() {
               {copied ? <Check size={13} className="text-accent" /> : <Copy size={13} />}
             </button>
           </div>
-          <p className="mt-1.5 text-[11px] text-faint">Opened issues become tracker items.</p>
+          <p className="mt-1.5 text-[11px] text-faint">
+            Opened issues from the connected repo become tracker items <em>in this project</em>,
+            each linked back to the GitHub issue.
+          </p>
         </div>
       </div>
 
@@ -230,6 +256,48 @@ function IntegrationsPanel() {
             </Button>
           </div>
         )}
+      </div>
+
+      {/* Spam protection */}
+      <div className="rounded-[13px] border border-line-2 bg-surface-2 p-4">
+        <div className="mb-1 flex items-center gap-2.5">
+          <ShieldCheck size={17} className="text-fg" />
+          <div className="text-[14px] font-semibold">Spam protection</div>
+        </div>
+        <p className="mb-3 text-[12px] text-muted">
+          Applies to the public feedback endpoints for this project. A honeypot is always on.
+        </p>
+        <div className="space-y-3">
+          <div className="max-w-[200px]">
+            <Label>Rate limit (submissions / minute / IP)</Label>
+            <Input type="number" value={rateLimit} onChange={(e) => setRateLimit(Number(e.target.value) || 0)} />
+          </div>
+          <div>
+            <Label>Cloudflare Turnstile site key <span className="text-faint-2">(optional)</span></Label>
+            <Input value={sitekey} onChange={(e) => setSitekey(e.target.value)} placeholder="0x4AAAAAAA…" />
+          </div>
+          <div>
+            <Label>
+              Turnstile secret key{" "}
+              {cfg.turnstile_secret_set ? (
+                <span className="text-accent">· configured</span>
+              ) : (
+                <span className="text-faint-2">(optional; write-only)</span>
+              )}
+            </Label>
+            <Input
+              type="password"
+              value={secret}
+              onChange={(e) => setSecret(e.target.value)}
+              placeholder={cfg.turnstile_secret_set ? "•••••••• (leave blank to keep)" : "0x4AAAAAAA…"}
+            />
+          </div>
+          <Button size="sm" onClick={saveSpam}>{spamSaved ? "Saved" : "Save spam settings"}</Button>
+          <p className="text-[11px] text-faint">
+            When a secret is set, submissions must pass Turnstile. Leave both blank for no captcha
+            (default). The widget renders the challenge automatically.
+          </p>
+        </div>
       </div>
     </div>
   );

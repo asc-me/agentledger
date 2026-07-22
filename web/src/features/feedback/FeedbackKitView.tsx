@@ -4,6 +4,7 @@ import * as React from "react";
 import { useProjectCtx } from "@/features/ProjectContext";
 import { cn } from "@/lib/cn";
 import { TYPE_META } from "@/lib/meta";
+import { usePlatform } from "@/lib/queries";
 import type { RequestType } from "@/lib/types";
 
 import { FeedbackWidget } from "./FeedbackWidget";
@@ -27,6 +28,7 @@ const MODES: FeedbackMode[] = ["inline", "launcher"];
  *  and copy the embed snippet (inline iframe or floating launcher). */
 export function FeedbackKitView() {
   const { activeId } = useProjectCtx();
+  const { data: platform } = usePlatform();
   const [cfg, setCfg] = React.useState<FeedbackConfig>(() => ({ ...DEFAULT_CONFIG, projectId: activeId }));
   const [copied, setCopied] = React.useState(false);
   const set = <K extends keyof FeedbackConfig>(k: K, v: FeedbackConfig[K]) =>
@@ -35,6 +37,13 @@ export function FeedbackKitView() {
   React.useEffect(() => {
     setCfg((c) => (c.projectId ? c : { ...c, projectId: activeId }));
   }, [activeId]);
+
+  // Spam protection is configured per-project in Settings; reflect the Turnstile sitekey
+  // (if any) into the generated snippet.
+  const sitekey = platform?.turnstile_sitekey ?? "";
+  React.useEffect(() => {
+    setCfg((c) => (c.turnstileSitekey === sitekey ? c : { ...c, turnstileSitekey: sitekey }));
+  }, [sitekey]);
 
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const embedUrl = `${origin}/embed/feedback?${toParams(cfg)}`;
@@ -161,10 +170,21 @@ export function FeedbackKitView() {
           </Section>
 
           <Section label="Options">
-            <label className="flex cursor-pointer items-center gap-2 text-[12.5px] text-fg-2">
-              <input type="checkbox" checked={cfg.showEmail} onChange={(e) => set("showEmail", e.target.checked)} />
-              Collect email
-            </label>
+            <div className="flex flex-col gap-2">
+              <label className="flex cursor-pointer items-center gap-2 text-[12.5px] text-fg-2">
+                <input type="checkbox" checked={cfg.showEmail} onChange={(e) => set("showEmail", e.target.checked)} />
+                Collect email
+              </label>
+              <label className="flex cursor-pointer items-center gap-2 text-[12.5px] text-fg-2">
+                <input type="checkbox" checked={cfg.attachments} onChange={(e) => set("attachments", e.target.checked)} />
+                Allow screenshot attachments
+              </label>
+            </div>
+            <p className="mt-2 text-[11px] text-faint">
+              {cfg.turnstileSitekey ? "Cloudflare Turnstile is on for this project. " : ""}
+              Spam protection (rate limit, captcha) is configured in{" "}
+              <span className="text-muted">Settings → Integrations</span>.
+            </p>
           </Section>
 
           <Section label="Embed snippet">
