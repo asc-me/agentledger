@@ -3,6 +3,7 @@ import * as React from "react";
 
 import { Button } from "@/components/ui/button";
 import { useProjectCtx } from "@/features/ProjectContext";
+import { copyText } from "@/lib/clipboard";
 import { useRoadmap } from "@/lib/queries";
 
 import { RoadmapBoard } from "./RoadmapBoard";
@@ -14,7 +15,7 @@ export function RoadmapView() {
 
   async function copyPublic() {
     const url = `${window.location.origin}/embed/roadmap?project=${encodeURIComponent(activeId)}`;
-    await navigator.clipboard.writeText(url);
+    if (!(await copyText(url))) return;
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   }

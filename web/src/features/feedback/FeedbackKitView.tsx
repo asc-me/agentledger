@@ -2,6 +2,7 @@ import { Check, Copy } from "lucide-react";
 import * as React from "react";
 
 import { useProjectCtx } from "@/features/ProjectContext";
+import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/cn";
 import { TYPE_META } from "@/lib/meta";
 import { usePlatform } from "@/lib/queries";
@@ -57,7 +58,7 @@ export function FeedbackKitView() {
   }
 
   async function copy() {
-    await navigator.clipboard.writeText(snippet);
+    if (!(await copyText(snippet))) return;
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   }
