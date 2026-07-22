@@ -17,6 +17,7 @@ from app.routers import (
     prds,
     projects,
     public,
+    reports,
     requests,
 )
 
@@ -82,6 +83,7 @@ app.include_router(prds.router, prefix=API)
 app.include_router(analytics.router, prefix=API)
 app.include_router(platform.router, prefix=API)
 app.include_router(public.router, prefix=API)
+app.include_router(reports.router, prefix=API)
 app.include_router(mcp_router, prefix=API)
 
 

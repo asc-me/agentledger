@@ -14,6 +14,7 @@ import json
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request, Response
+from starlette.concurrency import run_in_threadpool
 import logging
 
 from sqlalchemy import func, select
@@ -32,7 +33,10 @@ from app.services import mcp_stats
 from app.services import memory as mem_svc
 from app.services import prds as prd_svc
 from app.services import prioritization as prio_svc
+from app.services import upstream as up_svc
 from app.services.projects import resolve_project_id
+
+import httpx
 
 router = APIRouter(tags=["mcp"])
 
@@ -386,6 +390,24 @@ TOOLS: list[dict[str, Any]] = [
             "required": ["ref_id", "path"],
         },
     },
+    {
+        "name": "report_agentledger_issue",
+        "description": (
+            "Report a bug or idea about AgentLedger ITSELF (the tool you're using), not about the "
+            "project you're working on. Sends it upstream to AgentLedger's maintainers — use when "
+            "you hit a limitation, a broken tool, or think of an improvement to AgentLedger. "
+            "Deduped on arrival. Returns the created upstream request id (or matched duplicates)."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "type": {"type": "string", "enum": ["bug", "feature", "enhancement", "feedback"], "description": "Defaults to feedback."},
+                "title": {"type": "string"},
+                "detail": {"type": "string", "description": "What happened / what you'd want. Include repro if it's a bug."},
+            },
+            "required": ["title"],
+        },
+    },
 ]
 
 # Project-scoped tools accept an optional `project_id` that overrides the key's project.
@@ -571,6 +593,13 @@ _OUTPUT_SCHEMAS: dict[str, dict] = {
     "unlink_code": {
         "type": "object",
         "properties": {"removed": {"type": "integer"}},
+    },
+    "report_agentledger_issue": {
+        "type": "object",
+        "properties": {
+            "ok": {"type": "boolean"}, "request_id": _NULLABLE_STR,
+            "target": _STR, "duplicates": {"type": "array"},
+        },
     },
 }
 
@@ -841,6 +870,19 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
             db, project_id=pid, ref_id=args["ref_id"], path=args["path"], relation=args.get("relation"),
         )
         return {"removed": removed}
+    if name == "report_agentledger_issue":
+        try:
+            result = up_svc.submit_upstream(
+                type_=args.get("type", "feedback"), title=args["title"],
+                detail=args.get("detail", ""), source="mcp-agent",
+            )
+        except httpx.HTTPError as e:
+            raise ValueError(f"upstream unreachable: {e}")
+        req = result.get("request", {})
+        return {
+            "ok": True, "request_id": req.get("id"),
+            "target": up_svc.target_host(), "duplicates": result.get("duplicates", []),
+        }
     raise ValueError(f"unknown tool: {name}")
 
 
@@ -908,7 +950,10 @@ async def mcp_endpoint(
         if name:
             mcp_stats.increment(db, name)  # per-tool metering for the MCP Tools page
         try:
-            result = _call_tool(db, name, args, key)
+            # Run tool dispatch (sync DB + any outbound IO like report_agentledger_issue) off
+            # the event loop, so a slow/hanging tool never blocks the async server — and a
+            # same-host upstream loop-back can still be served concurrently.
+            result = await run_in_threadpool(_call_tool, db, name, args, key)
         except (ValueError, KeyError) as e:
             # Bad input / not-found: the agent can read the message and correct itself.
             return _tool_error(id_, "invalid_request", str(e))

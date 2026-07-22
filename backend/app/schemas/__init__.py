@@ -479,3 +479,9 @@ class CodeForRefRow(BaseModel):
     path: str
     relation: str
     node: CodeNodeOut | None
+
+
+class UpstreamReportIn(BaseModel):
+    type: str = "feedback"
+    title: str
+    detail: str = ""
