@@ -256,6 +256,21 @@ function IntegrationsPanel() {
             </Button>
           </div>
         )}
+        <div className="mt-4 border-t border-line pt-3">
+          <Label>How the folder is organized</Label>
+          <p className="mb-2 text-[11px] text-faint">
+            The folder is this project's root. On sync it's split into typed subfolders (live sync
+            is planned — for now, import markdown from the PRDs page):
+          </p>
+          <pre className="overflow-x-auto rounded-md border border-line-2 bg-surface px-2.5 py-2 font-mono text-[10.5px] leading-relaxed text-muted-2">{`<folder>/
+  PRDs/         PRD markdown — drop a .md here to import a draft
+  Digests/      generated progress digests
+  Exports/      memory & item snapshots (JSON)
+  Attachments/  feedback screenshots`}</pre>
+          <p className="mt-1.5 text-[11px] text-faint">
+            Files outside these subfolders are ignored; deleting a mirror never deletes the PRD.
+          </p>
+        </div>
       </div>
 
       {/* Spam protection */}

@@ -6,7 +6,12 @@ preview**, **version history + diff**, **AI drafting commands**, and **item link
 ## PRD list (`/prds`)
 
 Each PRD row shows its id, title, linked-item chips, current version, status, and updated
-date. **New PRD** opens a dialog to create one from a template.
+date. **New PRD** opens a dialog to create one from a template (`standard` / `blank`) **or
+import a `.md` file** — choose *Import a .md file* and the whole markdown becomes the PRD body
+verbatim (no template applied). The title defaults to the file's first `# heading`, falling
+back to the file name; the initial version snapshot is noted "Imported from markdown." This is
+the same path a future Google Drive sync uses for files dropped into the `PRDs/` subfolder
+(see [Settings → Google Drive](settings.md#google-drive)).
 
 | Field | Notes |
 | --- | --- |

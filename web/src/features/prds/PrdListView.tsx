@@ -1,4 +1,4 @@
-import { FileText, Plus } from "lucide-react";
+import { FileText, Plus, Upload, X } from "lucide-react";
 import * as React from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
 
@@ -89,22 +89,45 @@ export function PrdListView() {
   );
 }
 
+/** Title from the markdown's first `# heading`, else the file name without extension. */
+function titleFromMarkdown(md: string, fileName: string): string {
+  const heading = md.split("\n").find((l) => /^#\s+/.test(l));
+  if (heading) return heading.replace(/^#\s+/, "").trim();
+  return fileName.replace(/\.(md|markdown|txt)$/i, "").replace(/[-_]+/g, " ").trim();
+}
+
 function NewPrdDialog({ onCreated }: { onCreated: (id: string) => void }) {
   const qc = useQueryClient();
   const [open, setOpen] = React.useState(false);
   const [title, setTitle] = React.useState("");
   const [template, setTemplate] = React.useState("standard");
+  const [imported, setImported] = React.useState<{ name: string; body: string } | null>(null);
   const [busy, setBusy] = React.useState(false);
+
+  function reset() {
+    setTitle("");
+    setTemplate("standard");
+    setImported(null);
+  }
+
+  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const body = await file.text();
+    setImported({ name: file.name, body });
+    setTitle((t) => t.trim() || titleFromMarkdown(body, file.name));
+    e.target.value = ""; // allow re-selecting the same file
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim()) return;
     setBusy(true);
     try {
-      const prd = await api.createPrd(title.trim(), template);
+      const prd = await api.createPrd(title.trim(), template, imported?.body);
       qc.invalidateQueries({ queryKey: keys.prds });
       setOpen(false);
-      setTitle("");
+      reset();
       onCreated(prd.id);
     } finally {
       setBusy(false);
@@ -112,7 +135,7 @@ function NewPrdDialog({ onCreated }: { onCreated: (id: string) => void }) {
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) reset(); }}>
       <DialogTrigger asChild>
         <Button size="sm">
           <Plus size={14} />
@@ -121,27 +144,49 @@ function NewPrdDialog({ onCreated }: { onCreated: (id: string) => void }) {
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>New PRD</DialogTitle>
+          <DialogTitle>{imported ? "Import PRD" : "New PRD"}</DialogTitle>
         </DialogHeader>
         <form onSubmit={submit} className="space-y-3">
           <Input placeholder="PRD title" value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
-          <div className="flex gap-2">
-            {["standard", "blank"].map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => setTemplate(t)}
-                className={
-                  "flex-1 rounded-lg border px-3 py-2 text-[12.5px] capitalize transition-colors " +
-                  (template === t
-                    ? "border-line-hover bg-surface-3 text-fg"
-                    : "border-line-2 bg-surface-2 text-muted hover:text-fg-2")
-                }
-              >
-                {t} template
+
+          {imported ? (
+            <div className="flex items-center gap-2 rounded-lg border border-line-2 bg-surface-2 px-3 py-2 text-[12.5px]">
+              <FileText size={14} className="flex-none text-accent" />
+              <span className="min-w-0 flex-1 truncate text-fg-2">{imported.name}</span>
+              <span className="flex-none font-mono text-[10px] text-faint">
+                {imported.body.split("\n").length} lines
+              </span>
+              <button type="button" onClick={() => setImported(null)} className="flex-none text-faint hover:text-fg">
+                <X size={13} />
               </button>
-            ))}
-          </div>
+            </div>
+          ) : (
+            <>
+              <div className="flex gap-2">
+                {["standard", "blank"].map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setTemplate(t)}
+                    className={
+                      "flex-1 rounded-lg border px-3 py-2 text-[12.5px] capitalize transition-colors " +
+                      (template === t
+                        ? "border-line-hover bg-surface-3 text-fg"
+                        : "border-line-2 bg-surface-2 text-muted hover:text-fg-2")
+                    }
+                  >
+                    {t} template
+                  </button>
+                ))}
+              </div>
+              <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-line-2 bg-surface-2 px-3 py-2 text-[12.5px] text-muted hover:border-line-hover hover:text-fg-2">
+                <Upload size={14} />
+                Import a .md file
+                <input type="file" accept=".md,.markdown,.txt,text/markdown" className="hidden" onChange={onFile} />
+              </label>
+            </>
+          )}
+
           <div className="flex justify-end gap-2 pt-1">
             <DialogClose asChild>
               <Button type="button" variant="outline" size="sm">
@@ -149,7 +194,7 @@ function NewPrdDialog({ onCreated }: { onCreated: (id: string) => void }) {
               </Button>
             </DialogClose>
             <Button type="submit" size="sm" disabled={!title.trim() || busy}>
-              Create
+              {imported ? "Import" : "Create"}
             </Button>
           </div>
         </form>

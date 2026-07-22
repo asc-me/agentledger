@@ -27,7 +27,9 @@ def list_prds(project_id: str | None = None, db: Session = Depends(get_db), _: U
 
 @router.post("", response_model=PrdOut, status_code=201)
 def create_prd(body: PrdCreate, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    return prd_svc.create_prd(db, title=body.title, template=body.template, project_id=body.project_id)
+    return prd_svc.create_prd(
+        db, title=body.title, template=body.template, project_id=body.project_id, body=body.body,
+    )
 
 
 @router.get("/{prd_id}", response_model=PrdOut)

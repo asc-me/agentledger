@@ -51,14 +51,26 @@ def get_prd(db: Session, prd_id: str) -> Prd | None:
 
 
 def create_prd(
-    db: Session, *, title: str, template: str = "standard", project_id: str = "core"
+    db: Session,
+    *,
+    title: str,
+    template: str = "standard",
+    project_id: str = "core",
+    body: str | None = None,
 ) -> Prd:
-    body = TEMPLATES.get(template, TEMPLATES["blank"]).format(title=title)
+    # An imported markdown body wins over the template.
+    imported = body is not None
+    if imported:
+        content = body
+        note = "Imported from markdown."
+    else:
+        content = TEMPLATES.get(template, TEMPLATES["blank"]).format(title=title)
+        note = "Initial draft."
     prd = Prd(id=next_prd_id(db), project_id=project_id, title=title, status="draft",
-              version="v0.1", body=body, linked=[], updated="just now")
+              version="v0.1", body=content, linked=[], updated="just now")
     db.add(prd)
     db.flush()
-    db.add(PrdVersion(prd_id=prd.id, version="v0.1", date="just now", note="Initial draft.", body=body))
+    db.add(PrdVersion(prd_id=prd.id, version="v0.1", date="just now", note=note, body=content))
     db.commit()
     db.refresh(prd)
     return prd

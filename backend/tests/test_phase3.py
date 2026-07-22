@@ -32,6 +32,17 @@ def test_create_from_template(client, auth):
     assert len(versions) == 1
 
 
+def test_import_markdown_prd(client, auth):
+    md = "# Imported Spec\n\n## Goals\n- ship it\n"
+    r = client.post("/api/prds", json={"title": "Imported Spec", "body": md}, headers=auth)
+    assert r.status_code == 201
+    prd = r.json()
+    assert prd["body"] == md  # raw markdown kept verbatim (no template applied)
+    assert "## Success Metrics" not in prd["body"]
+    v = client.get(f"/api/prds/{prd['id']}/versions", headers=auth).json()
+    assert v[0]["note"] == "Imported from markdown."
+
+
 def test_edit_and_status(client, auth):
     client.patch("/api/prds/PRD-3", json={"body": "# Rewritten\n\nfresh content"}, headers=auth)
     up = client.patch("/api/prds/PRD-3", json={"status": "review"}, headers=auth).json()

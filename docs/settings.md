@@ -35,8 +35,37 @@ Switches the **chat & extraction** provider — takes effect immediately.
 
 ### Google Drive
 
-A connect form (account + folder) that stores connection config. Live import/sync is a
-follow-on (no third-party credentials in the local slice).
+A connect form (account + folder) that stores connection config. **Live import/sync is not
+wired in the local slice** (no third-party OAuth); the layout below is the **intended design**
+for when sync ships.
+
+**Folder structure.** The connection is per-project, so the folder you pick *is* that project's
+root. AgentLedger organizes it into typed subfolders (created on first sync):
+
+```
+<connected folder>/
+├── PRDs/          Each PRD mirrored as "AL-PRD-1 — Title.md" (front-matter carries id/status/version)
+├── Digests/       Generated progress digests, dated: "2026-07-21 — digest.md"
+├── Exports/       Data snapshots — memory shards & items as JSON
+└── Attachments/   Feedback screenshots, by request id
+```
+
+Only these known subfolders are managed; anything else in the root is left untouched.
+
+**Manually-added files.** The design is a two-way, folder-as-source-of-truth sync:
+
+- Drop a `.md` file into **`PRDs/`** → it's imported as a new **draft PRD** on the next sync,
+  taking its title from the first `# heading` (or the file name). This is the same import path
+  the [PRD page](prds.md) exposes via **Import a .md file** — Drive just automates it.
+- Editing a file that mirrors an existing PRD updates that PRD and snapshots a new version;
+  a conflicting edit on both sides is flagged rather than silently overwritten (last-writer
+  never clobbers).
+- Files placed **outside** the known subfolders (or with unrecognized extensions) are ignored,
+  so the folder is safe to use for your own notes.
+- Deleting a mirrored file does **not** delete the PRD (archival is explicit) — it just detaches
+  the mirror.
+
+Until sync ships, use **PRDs → Import a .md file** to bring markdown in directly.
 
 ## Project tab
 

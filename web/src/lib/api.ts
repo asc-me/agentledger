@@ -187,10 +187,10 @@ export const api = {
   prds: (projectId?: string) =>
     request<PrdSummary[]>(`/prds${projectId ? `?project_id=${projectId}` : ""}`),
   prd: (id: string) => request<Prd>(`/prds/${id}`),
-  createPrd: (title: string, template = "standard") =>
+  createPrd: (title: string, template = "standard", body?: string) =>
     request<Prd>("/prds", {
       method: "POST",
-      body: JSON.stringify({ title, template, project_id: activeProjectId }),
+      body: JSON.stringify({ title, template, project_id: activeProjectId, body }),
     }),
   updatePrd: (id: string, body: { title?: string; status?: PrdStatus; body?: string }) =>
     request<Prd>(`/prds/${id}`, { method: "PATCH", body: JSON.stringify(body) }),

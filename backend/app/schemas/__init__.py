@@ -298,6 +298,7 @@ class PrdCreate(BaseModel):
     title: str
     template: str = "standard"
     project_id: str = "core"
+    body: str | None = None  # raw markdown when importing a .md file
 
 
 class PrdUpdate(BaseModel):
