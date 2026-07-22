@@ -1,6 +1,7 @@
 import { GitPullRequest, X } from "lucide-react";
 
 import { Avatar } from "@/components/ui/avatar";
+import { LinkedCode } from "@/features/code/LinkedCode";
 import { useProjectCtx } from "@/features/ProjectContext";
 import { CHECK_COLOR, PR_STATE_COLOR } from "@/lib/meta";
 import { useItems, useLinks, useShards } from "@/lib/queries";
@@ -106,6 +107,10 @@ export function ItemDetailPanel({
               )}
             </Section>
           )}
+
+          <Section label="Linked code">
+            <LinkedCode refId={item.id} projectId={activeId} />
+          </Section>
 
           {(deps.length > 0 || dependents.length > 0) && (
             <Section label="Dependencies">

@@ -211,6 +211,84 @@ export interface GraphLink {
   reason: string;
 }
 
+// ── Code structure graph ──────────────────────────────────────────────────
+export type CodeKind = "module" | "file" | "symbol";
+export type CodeEdgeType = "imports" | "calls" | "owns" | "tested_by" | "references";
+
+export interface CodeNode {
+  id: string;
+  path: string;
+  kind: string;
+  name: string;
+  lang: string;
+  summary: string;
+  fresh: boolean;
+}
+
+export interface CodeEdge {
+  src: string;
+  dst: string;
+  type: CodeEdgeType;
+}
+
+export interface CodeHit {
+  node: CodeNode;
+  score: number;
+}
+
+export interface CodeAnswer {
+  reply: string;
+  nodes: CodeHit[];
+}
+
+export interface CodeMap {
+  nodes: CodeNode[];
+  edges: CodeEdge[];
+  node_count: number;
+  edge_count: number;
+}
+
+export interface CodeLinkedItem {
+  id: string;
+  title: string;
+  status: string;
+  relation: string;
+}
+
+export interface CodeLinkedRequest {
+  id: string;
+  title: string;
+  type: string;
+  status: string;
+  relation: string;
+}
+
+export interface CodeNeighbors {
+  path: string;
+  node: CodeNode | null;
+  outgoing: { dst: string; type: CodeEdgeType }[];
+  incoming: { src: string; type: CodeEdgeType }[];
+  items_touching: { id: string; title: string; status: string }[];
+  linked_items: CodeLinkedItem[];
+  linked_requests: CodeLinkedRequest[];
+}
+
+export type CodeRelation = "affects" | "implements" | "fixes" | "tests" | "references";
+
+export interface CodeRef {
+  id: number;
+  ref_type: string;
+  ref_id: string;
+  path: string;
+  relation: string;
+}
+
+export interface CodeForRefRow {
+  path: string;
+  relation: string;
+  node: CodeNode | null;
+}
+
 export interface McpToolInfo {
   name: string;
   description: string;

@@ -1,0 +1,412 @@
+import * as React from "react";
+
+import { useProjectCtx } from "@/features/ProjectContext";
+import { api } from "@/lib/api";
+import { cn } from "@/lib/cn";
+import { useCodeMap } from "@/lib/queries";
+import type { CodeEdge, CodeEdgeType, CodeNeighbors } from "@/lib/types";
+
+import { CodeChat } from "./CodeChat";
+
+const KIND_META: Record<string, { label: string; color: string }> = {
+  module: { label: "Module", color: "#c6f24e" },
+  file: { label: "File", color: "#7ca2ff" },
+  symbol: { label: "Symbol", color: "#a78bfa" },
+};
+const kindMeta = (kind: string) => KIND_META[kind] ?? { label: kind || "node", color: "#8b949e" };
+
+const EDGE_META: Record<CodeEdgeType, { label: string; color: string }> = {
+  imports: { label: "imports", color: "#7ca2ff" },
+  calls: { label: "calls", color: "#c6f24e" },
+  owns: { label: "owns", color: "#a78bfa" },
+  tested_by: { label: "tested by", color: "#5fd07a" },
+  references: { label: "references", color: "#e0b34a" },
+};
+const EDGE_TYPES = Object.keys(EDGE_META) as CodeEdgeType[];
+
+const W = 900;
+const H = 560;
+const R = 7;
+
+interface Pos {
+  x: number;
+  y: number;
+}
+
+/** Short label for a node: its name, else the last path segment (after `/` or `::`). */
+function label(path: string, name: string): string {
+  if (name) return name;
+  const seg = path.split("::").pop() ?? path;
+  return seg.split("/").pop() ?? seg;
+}
+
+/** Deterministic force-directed layout (no randomness — stable across renders). */
+function computeLayout(ids: string[], edges: CodeEdge[]): Record<string, Pos> {
+  const n = ids.length;
+  const cx = W / 2;
+  const cy = H / 2;
+  const r = Math.min(W, H) / 2.6;
+  const pos: Record<string, Pos> = {};
+  ids.forEach((id, i) => {
+    const a = (2 * Math.PI * i) / Math.max(1, n);
+    pos[id] = { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
+  });
+
+  const REST = 150;
+  for (let iter = 0; iter < 300; iter++) {
+    const disp: Record<string, Pos> = {};
+    ids.forEach((id) => (disp[id] = { x: 0, y: 0 }));
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        const u = ids[i];
+        const v = ids[j];
+        let dx = pos[u].x - pos[v].x;
+        let dy = pos[u].y - pos[v].y;
+        const d2 = dx * dx + dy * dy || 0.01;
+        const f = 26000 / d2;
+        const d = Math.sqrt(d2);
+        dx /= d;
+        dy /= d;
+        disp[u].x += dx * f;
+        disp[u].y += dy * f;
+        disp[v].x -= dx * f;
+        disp[v].y -= dy * f;
+      }
+    }
+    for (const e of edges) {
+      if (!pos[e.src] || !pos[e.dst]) continue;
+      let dx = pos[e.dst].x - pos[e.src].x;
+      let dy = pos[e.dst].y - pos[e.src].y;
+      const d = Math.hypot(dx, dy) || 0.01;
+      const f = (d - REST) * 0.06;
+      dx = (dx / d) * f;
+      dy = (dy / d) * f;
+      disp[e.src].x += dx;
+      disp[e.src].y += dy;
+      disp[e.dst].x -= dx;
+      disp[e.dst].y -= dy;
+    }
+    for (const id of ids) {
+      disp[id].x += (cx - pos[id].x) * 0.02;
+      disp[id].y += (cy - pos[id].y) * 0.02;
+      const step = 0.6;
+      pos[id].x += Math.max(-14, Math.min(14, disp[id].x * step));
+      pos[id].y += Math.max(-14, Math.min(14, disp[id].y * step));
+    }
+  }
+  return pos;
+}
+
+export function CodeGraphView() {
+  const { activeId } = useProjectCtx();
+  const { data: map, isLoading } = useCodeMap(activeId);
+  const [enabled, setEnabled] = React.useState<Record<CodeEdgeType, boolean>>({
+    imports: true, calls: true, owns: true, tested_by: true, references: true,
+  });
+  const [selPath, setSelPath] = React.useState<string | null>(null);
+  const [nb, setNb] = React.useState<CodeNeighbors | null>(null);
+
+  const nodes = map?.nodes ?? [];
+  const edges = React.useMemo(() => (map?.edges ?? []).filter((e) => enabled[e.type]), [map, enabled]);
+
+  // Node ids are paths; include edge endpoints even if a node wasn't described (dangling).
+  const ids = React.useMemo(() => {
+    const s = new Set<string>();
+    nodes.forEach((nd) => s.add(nd.path));
+    (map?.edges ?? []).forEach((e) => {
+      s.add(e.src);
+      s.add(e.dst);
+    });
+    return [...s].sort();
+  }, [nodes, map]);
+
+  const nodeByPath = React.useMemo(() => {
+    const m: Record<string, (typeof nodes)[number]> = {};
+    nodes.forEach((nd) => (m[nd.path] = nd));
+    return m;
+  }, [nodes]);
+
+  const pos = React.useMemo(() => computeLayout(ids, edges), [ids, edges]);
+
+  // Fetch the rich neighborhood for the selected node (edges + touching items).
+  React.useEffect(() => {
+    if (!selPath) {
+      setNb(null);
+      return;
+    }
+    let cancelled = false;
+    setNb(null);
+    api
+      .codeNeighbors(selPath, activeId)
+      .then((res) => !cancelled && setNb(res))
+      .catch(() => !cancelled && setNb(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [selPath, activeId]);
+
+  // Highlight set: the selected node, its edges, and their other endpoints.
+  const hl = React.useMemo(() => {
+    if (!selPath) return null;
+    const hlNodes = new Set<string>([selPath]);
+    const hlEdges = new Set<string>();
+    edges.forEach((e, i) => {
+      if (e.src === selPath || e.dst === selPath) {
+        hlEdges.add(String(i));
+        hlNodes.add(e.src);
+        hlNodes.add(e.dst);
+      }
+    });
+    return { hlNodes, hlEdges };
+  }, [selPath, edges]);
+
+  const empty = !isLoading && nodes.length === 0;
+
+  return (
+    <div className="flex h-full min-h-0">
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex flex-none flex-wrap items-center gap-3 border-b border-line px-5 py-4">
+          <div>
+            <h1 className="text-[18px] font-semibold tracking-tight">Code graph</h1>
+            <p className="mt-0.5 text-[12.5px] text-muted">
+              The codebase as agents described it — modules, files, and symbols with typed
+              relations. {map ? `${map.node_count} nodes · ${map.edge_count} edges.` : ""}
+            </p>
+          </div>
+          <div className="ml-auto flex flex-wrap gap-1.5">
+            {EDGE_TYPES.map((t) => (
+              <button
+                key={t}
+                onClick={() => setEnabled((e) => ({ ...e, [t]: !e[t] }))}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11.5px] transition-colors",
+                  enabled[t] ? "border-line-hover bg-surface-3 text-fg" : "border-line-2 bg-surface-2 text-faint",
+                )}
+              >
+                <span
+                  className="h-2 w-2 rounded-full"
+                  style={{ background: EDGE_META[t].color, opacity: enabled[t] ? 1 : 0.35 }}
+                />
+                {EDGE_META[t].label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="relative min-h-0 flex-1 overflow-hidden">
+          {isLoading ? (
+            <div className="p-8 text-center text-[13px] text-muted">Loading graph…</div>
+          ) : empty ? (
+            <div className="flex h-full flex-col items-center justify-center gap-2 px-8 text-center">
+              <div className="text-[14px] font-semibold text-fg-2">No code described yet</div>
+              <p className="max-w-[420px] text-[12.5px] leading-relaxed text-muted">
+                A coding agent populates this graph by calling the{" "}
+                <span className="font-mono text-accent">describe_code</span> MCP tool as it works —
+                upserting module/file/symbol nodes and their imports/calls/ownership edges. Ask a
+                question on the right and the agent will tell you what it knows so far.
+              </p>
+            </div>
+          ) : (
+            <svg viewBox={`0 0 ${W} ${H}`} className="h-full w-full" onClick={() => setSelPath(null)}>
+              <defs>
+                {EDGE_TYPES.map((t) => (
+                  <marker
+                    key={t}
+                    id={`code-arrow-${t}`}
+                    viewBox="0 0 10 10"
+                    refX="9"
+                    refY="5"
+                    markerWidth="6"
+                    markerHeight="6"
+                    orient="auto-start-reverse"
+                  >
+                    <path d="M0,0 L10,5 L0,10 z" fill={EDGE_META[t].color} />
+                  </marker>
+                ))}
+              </defs>
+
+              {edges.map((e, i) => {
+                const a = pos[e.src];
+                const b = pos[e.dst];
+                if (!a || !b) return null;
+                const active = !hl || hl.hlEdges.has(String(i));
+                // Trim the endpoint back so the arrowhead sits at the node edge, not under it.
+                const dx = b.x - a.x;
+                const dy = b.y - a.y;
+                const d = Math.hypot(dx, dy) || 1;
+                const bx = b.x - (dx / d) * (R + 4);
+                const by = b.y - (dy / d) * (R + 4);
+                return (
+                  <line
+                    key={i}
+                    x1={a.x}
+                    y1={a.y}
+                    x2={bx}
+                    y2={by}
+                    stroke={EDGE_META[e.type].color}
+                    strokeWidth={2}
+                    strokeOpacity={active ? 0.65 : 0.1}
+                    markerEnd={active ? `url(#code-arrow-${e.type})` : undefined}
+                  />
+                );
+              })}
+
+              {ids.map((id) => {
+                const p = pos[id];
+                if (!p) return null;
+                const node = nodeByPath[id];
+                const active = !hl || hl.hlNodes.has(id);
+                const meta = kindMeta(node?.kind ?? "");
+                const described = !!node;
+                const stale = described && !node.fresh;
+                return (
+                  <g
+                    key={id}
+                    transform={`translate(${p.x},${p.y})`}
+                    className="cursor-pointer"
+                    opacity={active ? 1 : 0.22}
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      setSelPath(id);
+                    }}
+                  >
+                    <circle
+                      r={R}
+                      fill={described ? meta.color : "#0d1114"}
+                      stroke={described ? "#0a0c0e" : meta.color}
+                      strokeWidth={2}
+                      strokeDasharray={!described || stale ? "2 2" : undefined}
+                      opacity={described ? 1 : 0.7}
+                    />
+                    {selPath === id && (
+                      <circle r={R + 4} fill="none" stroke={meta.color} strokeWidth={1.5} opacity={0.5} />
+                    )}
+                    <text x={11} y={4} fontSize={11} fontFamily="IBM Plex Mono, monospace" fill="#8b949e">
+                      {node ? label(id, node.name) : label(id, "")}
+                    </text>
+                  </g>
+                );
+              })}
+            </svg>
+          )}
+
+          {selPath && <NodeInspector path={selPath} nb={nb} onClose={() => setSelPath(null)} />}
+        </div>
+      </div>
+
+      <aside className="flex w-[360px] flex-none flex-col border-l border-line bg-surface/50">
+        <CodeChat projectId={activeId} onSelectPath={setSelPath} />
+      </aside>
+    </div>
+  );
+}
+
+function NodeInspector({
+  path,
+  nb,
+  onClose,
+}: {
+  path: string;
+  nb: CodeNeighbors | null;
+  onClose: () => void;
+}) {
+  const node = nb?.node ?? null;
+  const meta = kindMeta(node?.kind ?? "");
+  const stale = node ? !node.fresh : false;
+  return (
+    <div className="absolute bottom-4 left-4 w-[340px] animate-fade rounded-[13px] border border-line-hover bg-surface-3/95 p-4 shadow-[0_20px_48px_rgba(0,0,0,0.5)]">
+      <div className="mb-1.5 flex items-center gap-2">
+        <span
+          className="rounded border px-1.5 py-px font-mono text-[9px] uppercase tracking-wide"
+          style={{ borderColor: meta.color, color: meta.color }}
+        >
+          {meta.label}
+        </span>
+        {stale && (
+          <span className="rounded border border-st-review/50 px-1.5 py-px font-mono text-[9px] uppercase tracking-wide text-st-review">
+            stale
+          </span>
+        )}
+        {!node && (
+          <span className="font-mono text-[10px] text-faint">not described</span>
+        )}
+        <button onClick={onClose} className="ml-auto text-faint hover:text-fg">
+          ×
+        </button>
+      </div>
+      <div className="mb-2 break-all font-mono text-[11.5px] text-fg-2">{path}</div>
+      {node?.summary && <p className="mb-3 text-[12.5px] leading-relaxed text-muted">{node.summary}</p>}
+
+      {!nb ? (
+        <div className="font-mono text-[10px] text-faint">loading…</div>
+      ) : (
+        <div className="space-y-2.5">
+          <EdgeList title="Depends on" rows={nb.outgoing.map((e) => ({ path: e.dst, type: e.type }))} />
+          <EdgeList title="Used by" rows={nb.incoming.map((e) => ({ path: e.src, type: e.type }))} />
+
+          {(nb.linked_items.length > 0 || nb.linked_requests.length > 0) && (
+            <div>
+              <div className="mb-1 font-mono text-[10px] uppercase tracking-wide text-faint">
+                Linked work
+              </div>
+              <div className="space-y-1">
+                {nb.linked_items.map((it) => (
+                  <WorkRow key={`i-${it.id}`} id={it.id} title={it.title} relation={it.relation} color="#c6f24e" />
+                ))}
+                {nb.linked_requests.map((rq) => (
+                  <WorkRow key={`r-${rq.id}`} id={rq.id} title={rq.title} relation={rq.relation} color="#c9b8ff" />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {nb.items_touching.length > 0 && (
+            <div>
+              <div className="mb-1 font-mono text-[10px] uppercase tracking-wide text-faint">
+                Touching this <span className="text-faint-2">(by touchpoints)</span>
+              </div>
+              <div className="space-y-1">
+                {nb.items_touching.map((it) => (
+                  <div key={it.id} className="flex items-center gap-2 text-[12px]">
+                    <span className="font-mono text-[10px] text-accent">{it.id}</span>
+                    <span className="min-w-0 flex-1 truncate text-muted">{it.title}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WorkRow({ id, title, relation, color }: { id: string; title: string; relation: string; color: string }) {
+  return (
+    <div className="flex items-center gap-2 text-[12px]">
+      <span className="font-mono text-[10px]" style={{ color }}>{id}</span>
+      <span className="min-w-0 flex-1 truncate text-muted">{title}</span>
+      <span className="flex-none font-mono text-[9px] uppercase tracking-wide text-faint">{relation}</span>
+    </div>
+  );
+}
+
+function EdgeList({ title, rows }: { title: string; rows: { path: string; type: CodeEdgeType }[] }) {
+  if (rows.length === 0) return null;
+  return (
+    <div>
+      <div className="mb-1 font-mono text-[10px] uppercase tracking-wide text-faint">{title}</div>
+      <div className="space-y-1">
+        {rows.map((r, i) => (
+          <div key={i} className="flex items-center gap-2 text-[12px]">
+            <span className="h-1.5 w-1.5 flex-none rounded-full" style={{ background: EDGE_META[r.type].color }} />
+            <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-muted">{r.path}</span>
+            <span className="flex-none font-mono text-[9px] uppercase tracking-wide text-faint">
+              {EDGE_META[r.type].label}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

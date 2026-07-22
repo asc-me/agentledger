@@ -7,6 +7,12 @@ import type {
   ApiKey,
   ApiKeyCreated,
   ChatResponse,
+  CodeAnswer,
+  CodeForRefRow,
+  CodeHit,
+  CodeMap,
+  CodeNeighbors,
+  CodeRef,
   DashboardData,
   GraphLink,
   Item,
@@ -285,6 +291,74 @@ export const api = {
         if (!event || data === undefined) continue;
         if (event === "delta") handlers.onDelta(JSON.parse(data).text);
         else if (event === "shards") handlers.onShards?.(JSON.parse(data));
+      }
+    }
+  },
+
+  // ── Code structure graph ──────────────────────────────────────────────
+  codeMap: (projectId?: string) =>
+    request<CodeMap>(`/agent/code/map${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ""}`),
+  codeNeighbors: (path: string, projectId?: string) =>
+    request<CodeNeighbors>(
+      `/agent/code/neighbors?path=${encodeURIComponent(path)}${projectId ? `&project_id=${encodeURIComponent(projectId)}` : ""}`,
+    ),
+  codeChat: (message: string, projectId?: string) =>
+    request<CodeAnswer>("/agent/code", {
+      method: "POST",
+      body: JSON.stringify({ message, project_id: projectId }),
+    }),
+
+  // ── item/request ↔ code bridge ────────────────────────────────────────
+  codeForRef: (refId: string, projectId?: string) =>
+    request<CodeForRefRow[]>(
+      `/agent/code/for?ref_id=${encodeURIComponent(refId)}${projectId ? `&project_id=${encodeURIComponent(projectId)}` : ""}`,
+    ),
+  codeLink: (body: { ref_id: string; path: string; relation?: string }, projectId?: string) =>
+    request<CodeRef>(`/agent/code/link${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ""}`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  codeUnlink: (body: { ref_id: string; path: string; relation?: string }, projectId?: string) =>
+    request<{ removed: number }>(`/agent/code/unlink${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ""}`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  /** Stream a code-graph answer over SSE. Emits a `nodes` event, then `delta`s, then `done`. */
+  async codeChatStream(
+    message: string,
+    handlers: { onDelta: (text: string) => void; onNodes?: (nodes: CodeHit[]) => void },
+    projectId?: string,
+    retry = true,
+  ): Promise<void> {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+    const res = await fetch("/api/agent/code/stream", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ message, project_id: projectId }),
+    });
+    if (res.status === 401 && retry && (await refresh())) {
+      return this.codeChatStream(message, handlers, projectId, false);
+    }
+    if (!res.ok || !res.body) throw new Error(`stream failed: ${res.status}`);
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let idx: number;
+      while ((idx = buf.indexOf("\n\n")) >= 0) {
+        const frame = buf.slice(0, idx);
+        buf = buf.slice(idx + 2);
+        const event = frame.match(/^event: (.*)$/m)?.[1];
+        const data = frame.match(/^data: ([\s\S]*)$/m)?.[1];
+        if (!event || data === undefined) continue;
+        if (event === "delta") handlers.onDelta(JSON.parse(data).text);
+        else if (event === "nodes") handlers.onNodes?.(JSON.parse(data));
       }
     }
   },
