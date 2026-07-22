@@ -114,6 +114,23 @@ export function ItemRow({
         </a>
       )}
 
+      {item.claimed_by ? (
+        <span
+          className="flex flex-none items-center gap-1 rounded-md border border-[rgba(198,242,78,0.3)] bg-[rgba(198,242,78,0.06)] px-1.5 py-0.5 font-mono text-[9.5px] text-accent"
+          title={`Claimed by ${item.claimed_by}`}
+        >
+          <span className="blink h-1.5 w-1.5 rounded-full bg-accent" />
+          <span className="max-w-[80px] truncate">{item.claimed_by}</span>
+        </span>
+      ) : item.assignee ? (
+        <span
+          className="flex-none rounded-md border border-line-2 px-1.5 py-0.5 font-mono text-[9.5px] text-muted"
+          title={`Assigned to ${item.assignee}`}
+        >
+          {item.assignee}
+        </span>
+      ) : null}
+
       <span className="w-[52px] flex-none text-right font-mono text-[10px] text-faint-2">
         {item.date}
       </span>

@@ -169,12 +169,49 @@ TOOLS: list[dict[str, Any]] = [
         "description": "Compose a periodic progress digest across the project.",
         "inputSchema": {"type": "object", "properties": {}},
     },
+    {
+        "name": "claim_next",
+        "description": (
+            "Atomically claim the best ready item (unblocked backlog/next), assign it to you, and "
+            "move it to in_progress. Two agents never get the same item — call this to pull work in "
+            "a loop. Returns {claimed, item}; item is null when nothing is ready."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "agent_id": {"type": "string", "description": "Who is claiming; defaults to this API key's name."},
+                "lease_seconds": {"type": "integer", "description": "Lease length; a claim with no heartbeat within this window is reclaimable (default 600)."},
+            },
+        },
+    },
+    {
+        "name": "heartbeat",
+        "description": "Extend the lease on an item you've claimed so it isn't reclaimed while you work.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"id": {"type": "string"}, "agent_id": {"type": "string"}},
+            "required": ["id"],
+        },
+    },
+    {
+        "name": "release_item",
+        "description": "Return a claimed item to the queue (e.g. you can't finish it); moves it back to `next` by default.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"},
+                "agent_id": {"type": "string"},
+                "to_status": {"type": "string", "enum": items_svc.STATUSES},
+            },
+            "required": ["id"],
+        },
+    },
 ]
 
 # Project-scoped tools accept an optional `project_id` that overrides the key's project.
 _PROJECT_SCOPED = {
     "create_item", "search_items", "add_memory", "search_memory",
-    "get_backlog", "suggest_next", "generate_digest",
+    "get_backlog", "suggest_next", "generate_digest", "link_items", "claim_next",
 }
 # Creates accept an idempotency key so a retried call returns the original resource.
 _IDEMPOTENT_CREATES = {"create_item", "add_memory", "link_items"}
@@ -209,6 +246,8 @@ _ITEM_SCHEMA = {
         "status": {"type": "string", "enum": _STATUS_ENUM},
         "tags": {"type": "array", "items": _STR},
         "effort": {"type": "integer"},
+        "assignee": _STR,
+        "claimed_by": _NULLABLE_STR,
     },
 }
 _SHARD_SCHEMA = {
@@ -282,6 +321,12 @@ _OUTPUT_SCHEMAS: dict[str, dict] = {
         "type": "object",
         "properties": {"digest": _STR},
     },
+    "claim_next": {
+        "type": "object",
+        "properties": {"claimed": {"type": "boolean"}, "item": {"type": ["object", "null"]}},
+    },
+    "heartbeat": _ITEM_SCHEMA,
+    "release_item": _ITEM_SCHEMA,
 }
 
 for _t in TOOLS:
@@ -324,6 +369,8 @@ def _item_dict(item) -> dict:
         "status": item.status,
         "tags": item.tags,
         "effort": item.effort,
+        "assignee": item.assignee,
+        "claimed_by": item.claimed_by,
     }
 
 
@@ -455,10 +502,29 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
             return {"id": cached.id, "a": cached.a, "b": cached.b, "type": cached.type}
         link = links_svc.create_link(
             db, a=args["a"], b=args["b"], type_=args.get("type", "dependency"),
-            reason=args.get("reason", ""),
+            reason=args.get("reason", ""), project_id=pid,
         )
         _idempotent_remember(db, args, "link_items", link.id)
         return {"id": link.id, "a": link.a, "b": link.b, "type": link.type}
+    if name == "claim_next":
+        agent = args.get("agent_id") or key.name or key.id
+        item = items_svc.claim_next(
+            db, agent, project_id=pid,
+            lease_seconds=args.get("lease_seconds", items_svc.DEFAULT_LEASE_SECONDS),
+        )
+        return {"claimed": item is not None, "item": _item_dict(item) if item else None}
+    if name == "heartbeat":
+        agent = args.get("agent_id") or key.name or key.id
+        item = items_svc.heartbeat(db, args["id"], agent)
+        if item is None:
+            raise ValueError(f"not the lease holder, or unknown item: {args['id']}")
+        return _item_dict(item)
+    if name == "release_item":
+        agent = args.get("agent_id") or key.name or key.id
+        item = items_svc.release_item(db, args["id"], agent, to_status=args.get("to_status", "next"))
+        if item is None:
+            raise ValueError(f"not the lease holder, or unknown item: {args['id']}")
+        return _item_dict(item)
     if name == "extract_lessons":
         return {"results": insights_svc.extract_lessons(db, args["id"])}
     if name == "generate_digest":

@@ -53,6 +53,8 @@ export interface Item {
   reporter: Reporter;
   pr: PR | null;
   github_url: string;
+  assignee: string;
+  claimed_by: string | null;
   created_at: string;
   updated_at: string;
 }

@@ -78,6 +78,7 @@ class ItemUpdate(BaseModel):
     effort: int | None = None
     blocker: str | None = None
     github_url: str | None = None
+    assignee: str | None = None
 
 
 class ReorderIn(BaseModel):
@@ -98,6 +99,8 @@ class ItemOut(ORMModel):
     reporter: dict
     pr: dict | None
     github_url: str = ""
+    assignee: str = ""
+    claimed_by: str | None = None
     created_at: datetime
     updated_at: datetime
 

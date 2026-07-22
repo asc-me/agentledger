@@ -21,14 +21,17 @@ agent's writes are identical to a user's and appear instantly in the UI.
 - **Metering** — every `tools/call` increments a per-tool counter (the `mcp_tool_stats`
   table) surfaced on the **MCP Tools** view.
 
-## The 13 tools
+## The 16 tools
 
 | Tool | Params | Does |
 | --- | --- | --- |
 | `get_context` | — | Orient: the key's project, scopes, project/tool counts. Call this first. |
 | `list_projects` | — | All projects (`id`, `name`, `accent`, `description`) — ids for the `project_id` override |
+| `claim_next` | `agent_id`, `lease_seconds`, `project_id` | **Atomically** claim the best ready item, assign it to you, move it to in_progress. Returns `{claimed, item}`. |
+| `heartbeat` | `id`, `agent_id` | Extend the lease on an item you hold (so it isn't reclaimed while you work) |
+| `release_item` | `id`, `agent_id`, `to_status` | Return a claimed item to the queue |
 | `create_item` | `title`, `description`, `tags`, `effort`, `status`, `project_id` | Create a tracker item (returns its `project_id`) |
-| `update_item` | `id`, `status`, `title`, `description`, `tags`, `effort`, `blocker` | Patch / advance an item |
+| `update_item` | `id`, `status`, `title`, `description`, `tags`, `effort`, `blocker`, `assignee`, `github_url` | Patch / advance an item |
 | `search_items` | `query`, `tags`, `status`, `project_id` | Query the stream (query matches title, description, **and** tags) |
 | `add_memory` | `text`, `scope`, `item_id`, `project_id` | Attach a memory shard |
 | `search_memory` | `query`, `top_k`, `project_id` | Semantic search over shards (returns `item_id`, `source`) |
@@ -42,6 +45,16 @@ agent's writes are identical to a user's and appear instantly in the UI.
 `status` fields accept only `backlog · next · in_progress · review · done · blocked` (enforced in
 the schema). Tool failures return `isError: true` with a machine-readable
 `structuredContent.error.code` (`invalid_request` or `internal_error`) — never a raw HTTP 500.
+
+### Task claiming (safe multi-agent loops)
+
+Run an agent as a loop: `claim_next` **atomically** assigns the best ready item (unblocked
+`backlog`/`next`, best-first) to you and flips it to `in_progress` — an optimistic
+`claimed_by` guard means **two agents never claim the same item**. `agent_id` defaults to the
+API key's name, so one key = one agent. While working, call `heartbeat(id)` to keep the lease;
+if you go silent past `lease_seconds` (default 600) the item becomes reclaimable, so a crashed
+agent's work is automatically freed and picked up by another. `release_item(id)` hands it back.
+Completing is just `update_item(id, status="done")` (which also auto-extracts lessons to memory).
 
 ### Built for agents
 

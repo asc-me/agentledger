@@ -120,6 +120,10 @@ class Item(Base):
     reporter: Mapped[dict] = mapped_column(JSON, default=dict)
     pr: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     github_url: Mapped[str] = mapped_column(String, default="")  # linked issue/PR
+    # Assignment / agent claiming (feature A).
+    assignee: Mapped[str] = mapped_column(String, default="")  # durable owner (human or agent)
+    claimed_by: Mapped[str | None] = mapped_column(String, nullable=True)  # agent holding the lease
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
