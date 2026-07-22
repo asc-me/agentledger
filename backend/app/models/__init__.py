@@ -260,3 +260,15 @@ class ApiKey(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     user: Mapped[User] = relationship(back_populates="api_keys")
+
+
+class IdempotencyKey(Base):
+    """Maps an agent-supplied idempotency key to the resource a create tool produced,
+    so a retried call returns the original resource instead of a duplicate."""
+
+    __tablename__ = "idempotency_keys"
+
+    key: Mapped[str] = mapped_column(String, primary_key=True)
+    tool: Mapped[str] = mapped_column(String)
+    resource_id: Mapped[str] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

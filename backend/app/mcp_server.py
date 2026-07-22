@@ -20,8 +20,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import ApiKey, Project
+from app.models import ApiKey, Item, Link, MemoryShard, Project
 from app.security.deps import get_agent_key
+from app.services import idempotency as idem_svc
 from app.services import insights as insights_svc
 from app.services import items as items_svc
 from app.services import links as links_svc
@@ -46,11 +47,23 @@ TOOLS: list[dict[str, Any]] = [
             "many projects and tools exist. Call this first when you start."
         ),
         "inputSchema": {"type": "object", "properties": {}},
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": ["string", "null"]},
+                "project_name": {"type": ["string", "null"]},
+                "key_project_id": {"type": ["string", "null"]},
+                "scopes": {"type": "array", "items": {"type": "string"}},
+                "project_count": {"type": "integer"},
+                "tool_count": {"type": "integer"},
+            },
+        },
     },
     {
         "name": "list_projects",
         "description": "List all projects (id, name, accent, description). Use an id as the `project_id` override.",
         "inputSchema": {"type": "object", "properties": {}},
+        "outputSchema": {"type": "object", "properties": {"results": {"type": "array"}}},
     },
     {
         "name": "create_item",
@@ -175,12 +188,53 @@ _PROJECT_SCOPED = {
     "create_item", "search_items", "add_memory", "search_memory",
     "get_backlog", "suggest_next", "generate_digest",
 }
+# Creates accept an idempotency key so a retried call returns the original resource.
+_IDEMPOTENT_CREATES = {"create_item", "add_memory", "link_items"}
+# Paged reads accept limit + offset and return {results, total, limit, offset, has_more}.
+_PAGED = {"search_items", "get_backlog"}
+# Read-only tools never mutate state.
+_READ_ONLY = {
+    "get_context", "list_projects", "search_items", "search_memory",
+    "get_backlog", "get_item_details", "suggest_next", "generate_digest",
+}
+
+_PAGE_META = {  # shared output shape for paged reads (#9)
+    "type": "object",
+    "properties": {
+        "results": {"type": "array"},
+        "total": {"type": "integer"},
+        "limit": {"type": "integer"},
+        "offset": {"type": "integer"},
+        "has_more": {"type": "boolean"},
+    },
+}
+
 for _t in TOOLS:
-    if _t["name"] in _PROJECT_SCOPED:
-        _t["inputSchema"].setdefault("properties", {})["project_id"] = {
+    _name = _t["name"]
+    props = _t["inputSchema"].setdefault("properties", {})
+    if _name in _PROJECT_SCOPED:
+        props["project_id"] = {
             "type": "string",
             "description": "Override the key's project. Defaults to the API key's project.",
         }
+    if _name in _IDEMPOTENT_CREATES:
+        props["idempotency_key"] = {
+            "type": "string",
+            "description": "Opaque token; a repeat call with the same key returns the original resource.",
+        }
+    if _name in _PAGED:
+        props["limit"] = {"type": "integer", "description": "Max results (default 25)."}
+        props["offset"] = {"type": "integer", "description": "Results to skip for paging (default 0)."}
+        _t["outputSchema"] = _PAGE_META
+    # MCP annotations so an agent can reason about safety (#7).
+    _ro = _name in _READ_ONLY
+    _t["annotations"] = {
+        "readOnlyHint": _ro,
+        "destructiveHint": _name == "update_item",
+        # read-only + update_item are naturally idempotent; creates become idempotent with a key.
+        "idempotentHint": _ro or _name in ({"update_item"} | _IDEMPOTENT_CREATES),
+        "openWorldHint": False,
+    }
 
 LIVE_TOOL_COUNT = len(TOOLS)
 
@@ -194,6 +248,38 @@ def _item_dict(item) -> dict:
         "tags": item.tags,
         "effort": item.effort,
     }
+
+
+def _shard_dict(shard) -> dict:
+    return {
+        "id": shard.id, "text": shard.text, "scope": shard.scope,
+        "item_id": shard.item_id, "project_id": shard.project_id,
+    }
+
+
+def _paginate(rows: list, args: dict) -> dict:
+    """Slice a full result list to a page and report totals (#9)."""
+    limit = int(args.get("limit", 25))
+    offset = int(args.get("offset", 0))
+    total = len(rows)
+    page = rows[offset : offset + limit]
+    return {
+        "results": page,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "has_more": offset + limit < total,
+    }
+
+
+def _idempotent_get(db: Session, args: dict, model) -> Any | None:
+    """If the call carries an idempotency_key already seen, return the original resource."""
+    prior = idem_svc.lookup(db, args.get("idempotency_key") or "")
+    return db.get(model, prior.resource_id) if prior is not None else None
+
+
+def _idempotent_remember(db: Session, args: dict, tool: str, resource_id: str) -> None:
+    idem_svc.remember(db, args.get("idempotency_key") or "", tool, resource_id)
 
 
 def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any:
@@ -211,11 +297,14 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
             "tool_count": LIVE_TOOL_COUNT,
         }
     if name == "list_projects":
-        return [
+        return {"results": [
             {"id": p.id, "name": p.name, "accent": p.accent, "description": p.description}
             for p in db.scalars(select(Project).order_by(Project.name)).all()
-        ]
+        ]}
     if name == "create_item":
+        cached = _idempotent_get(db, args, Item)
+        if cached is not None:
+            return _item_dict(cached)
         item = items_svc.create_item(
             db,
             title=args["title"],
@@ -226,6 +315,7 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
             project_id=pid,
             reporter={"name": "Agent", "handle": "mcp", "avatar": "#a78bfa"},
         )
+        _idempotent_remember(db, args, "create_item", item.id)
         return _item_dict(item)
     if name == "update_item":
         item = items_svc.update_item(
@@ -243,10 +333,14 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
         return _item_dict(item)
     if name == "search_items":
         rows = items_svc.search_items(
-            db, args.get("query", ""), status=args.get("status"), project_id=pid, tags=args.get("tags"),
+            db, args.get("query", ""), status=args.get("status"), project_id=pid,
+            tags=args.get("tags"), limit=10_000,
         )
-        return [_item_dict(i) for i in rows]
+        return _paginate([_item_dict(i) for i in rows], args)
     if name == "add_memory":
+        cached = _idempotent_get(db, args, MemoryShard)
+        if cached is not None:
+            return _shard_dict(cached)
         shard = mem_svc.add_memory(
             db,
             text_body=args["text"],
@@ -254,21 +348,22 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
             item_id=args.get("item_id"),
             project_id=pid,
         )
-        return {
-            "id": shard.id, "text": shard.text, "scope": shard.scope,
-            "item_id": shard.item_id, "project_id": shard.project_id,
-        }
+        _idempotent_remember(db, args, "add_memory", shard.id)
+        return _shard_dict(shard)
     if name == "search_memory":
-        hits = mem_svc.search_memory(db, args["query"], top_k=args.get("top_k", 5), project_id=pid)
-        return [
+        top_k = args.get("top_k", 5)
+        hits = mem_svc.search_memory(db, args["query"], top_k=top_k, project_id=pid)
+        results = [
             {
                 "id": s.id, "text": s.text, "scope": s.scope, "score": round(score, 4),
                 "item_id": s.item_id, "source": s.source, "project_id": s.project_id,
             }
             for s, score in hits
         ]
+        return {"results": results, "returned": len(results), "top_k": top_k}
     if name == "get_backlog":
-        return [_item_dict(i) for i in items_svc.get_backlog(db, limit=args.get("limit", 20), project_id=pid)]
+        rows = items_svc.get_backlog(db, limit=10_000, project_id=pid)
+        return _paginate([_item_dict(i) for i in rows], args)
     if name == "get_item_details":
         details = items_svc.get_item_details(db, args["id"])
         if details is None:
@@ -278,13 +373,17 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
         item = items_svc.suggest_next(db, project_id=pid)
         return _item_dict(item) if item else None
     if name == "link_items":
+        cached = _idempotent_get(db, args, Link)
+        if cached is not None:
+            return {"id": cached.id, "a": cached.a, "b": cached.b, "type": cached.type}
         link = links_svc.create_link(
             db, a=args["a"], b=args["b"], type_=args.get("type", "dependency"),
             reason=args.get("reason", ""),
         )
+        _idempotent_remember(db, args, "link_items", link.id)
         return {"id": link.id, "a": link.a, "b": link.b, "type": link.type}
     if name == "extract_lessons":
-        return insights_svc.extract_lessons(db, args["id"])
+        return {"results": insights_svc.extract_lessons(db, args["id"])}
     if name == "generate_digest":
         return {"digest": insights_svc.generate_digest(db, project_id=pid)}
     raise ValueError(f"unknown tool: {name}")
@@ -296,6 +395,15 @@ def _rpc_result(id_: Any, result: Any) -> dict:
 
 def _rpc_error(id_: Any, code: int, message: str) -> dict:
     return {"jsonrpc": "2.0", "id": id_, "error": {"code": code, "message": message}}
+
+
+def _success(id_: Any, result: Any) -> dict:
+    """Wrap a tool result. Objects are also returned as `structuredContent` (typed,
+    no JSON-in-a-text-block); text mirrors it for back-compat (#8)."""
+    payload: dict[str, Any] = {"content": [{"type": "text", "text": json.dumps(result)}]}
+    if isinstance(result, dict):
+        payload["structuredContent"] = result
+    return _rpc_result(id_, payload)
 
 
 def _tool_error(id_: Any, code: str, message: str) -> dict:
@@ -353,9 +461,6 @@ async def mcp_endpoint(
             logger.exception("MCP tool %r failed", name)
             db.rollback()
             return _tool_error(id_, "internal_error", f"internal error executing {name!r}")
-        return _rpc_result(
-            id_,
-            {"content": [{"type": "text", "text": json.dumps(result)}]},
-        )
+        return _success(id_, result)
 
     return _rpc_error(id_, -32601, f"method not found: {method}")

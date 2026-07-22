@@ -81,7 +81,8 @@ def test_mcp_all_new_tools(client, auth):
     key = _key(client, auth)
 
     backlog = _call(client, key, "get_backlog", {"limit": 5})
-    assert all(i["status"] in ("backlog", "next") for i in backlog)
+    assert all(i["status"] in ("backlog", "next") for i in backlog["results"])
+    assert backlog["limit"] == 5 and "total" in backlog and "has_more" in backlog
 
     details = _call(client, key, "get_item_details", {"id": "AL-08"})
     assert details["id"] == "AL-08"
@@ -94,7 +95,7 @@ def test_mcp_all_new_tools(client, auth):
     assert link["a"] == "AL-12" and link["type"] == "dependency"
 
     lessons = _call(client, key, "extract_lessons", {"id": "AL-11"})
-    assert isinstance(lessons, list) and len(lessons) >= 1
+    assert isinstance(lessons["results"], list) and len(lessons["results"]) >= 1
 
     digest = _call(client, key, "generate_digest", {})
     assert "digest" in digest and "Status:" in digest["digest"]

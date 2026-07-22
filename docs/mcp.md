@@ -43,6 +43,20 @@ agent's writes are identical to a user's and appear instantly in the UI.
 the schema). Tool failures return `isError: true` with a machine-readable
 `structuredContent.error.code` (`invalid_request` or `internal_error`) — never a raw HTTP 500.
 
+### Built for agents
+
+- **Typed results** — every tool returns `structuredContent` (a JSON object) alongside the
+  text block, so you consume typed data instead of parsing JSON out of prose. List/search
+  tools wrap their rows under `results`.
+- **Annotations** — each tool carries `readOnlyHint` / `destructiveHint` / `idempotentHint`,
+  so you can tell a safe read from a mutation.
+- **Idempotent creates** — pass an `idempotency_key` to `create_item` / `add_memory` /
+  `link_items`; a retried call with the same key returns the original resource, never a
+  duplicate.
+- **Pagination** — `search_items` and `get_backlog` take `limit` + `offset` and return
+  `{results, total, limit, offset, has_more}`; `search_memory` returns `{results, returned,
+  top_k}`.
+
 ## MCP Tools view
 
 The **MCP Tools** view (`/mcp-tools`) is a live card grid of all tools: name, `LIVE` status,

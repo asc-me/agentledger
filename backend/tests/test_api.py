@@ -205,7 +205,7 @@ def test_mcp_get_context_and_list_projects(client, auth):
     assert ctx["tool_count"] == 13
     assert ctx["project_count"] >= 1
 
-    projects = _mcp(client, key, "list_projects", {})
+    projects = _mcp(client, key, "list_projects", {})["results"]
     assert any(p["id"] == "core" for p in projects)
     assert all({"id", "name", "accent"} <= set(p) for p in projects)
 
@@ -213,8 +213,38 @@ def test_mcp_get_context_and_list_projects(client, auth):
 def test_mcp_search_items_matches_tags(client, auth):
     # Seeded items carry tags; search by tag must find them (was a description/behavior mismatch).
     key = client.post("/api/api-keys", json={"name": "srch"}, headers=auth).json()["plaintext"]
-    hits = _mcp(client, key, "search_items", {"tags": ["mcp"]})
+    page = _mcp(client, key, "search_items", {"tags": ["mcp"]})
+    hits = page["results"]
     assert hits and all("mcp" in [t.lower() for t in i["tags"]] for i in hits)
+    assert page["total"] >= len(hits) and page["has_more"] in (True, False)
+
+
+def test_mcp_idempotent_create(client, auth):
+    key = client.post("/api/api-keys", json={"name": "idem"}, headers=auth).json()["plaintext"]
+    a = _mcp(client, key, "create_item", {"title": "once", "idempotency_key": "abc-123"})
+    b = _mcp(client, key, "create_item", {"title": "once again", "idempotency_key": "abc-123"})
+    assert a["id"] == b["id"]  # retry returns the original, no duplicate
+    matches = [i for i in client.get("/api/items", headers=auth).json() if i["id"] == a["id"]]
+    assert len(matches) == 1
+
+
+def test_mcp_tools_carry_annotations(client, auth):
+    key = client.post("/api/api-keys", json={"name": "ann"}, headers=auth).json()["plaintext"]
+    tl = client.post("/api/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+                     headers={"X-API-Key": key})
+    by = {t["name"]: t for t in tl.json()["result"]["tools"]}
+    assert by["search_items"]["annotations"]["readOnlyHint"] is True
+    assert by["create_item"]["annotations"]["readOnlyHint"] is False
+    assert by["update_item"]["annotations"]["destructiveHint"] is True
+
+
+def test_mcp_returns_structured_content(client, auth):
+    key = client.post("/api/api-keys", json={"name": "sc"}, headers=auth).json()["plaintext"]
+    r = client.post("/api/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                    "params": {"name": "get_context", "arguments": {}}},
+                    headers={"X-API-Key": key})
+    result = r.json()["result"]
+    assert result["structuredContent"]["tool_count"] == 13  # typed, not JSON-in-text
 
 
 def test_mcp_errors_are_structured_not_500(client, auth):
