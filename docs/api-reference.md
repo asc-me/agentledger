@@ -62,6 +62,19 @@ Interactive OpenAPI docs are at **`/docs`**.
 | POST | `/api/memory/import` | JWT |
 | POST | `/api/agent/chat` | JWT |
 | POST | `/api/agent/chat/stream` | JWT (SSE) |
+| POST | `/api/agent/code` | JWT |
+| POST | `/api/agent/code/stream` | JWT (SSE) |
+| GET | `/api/agent/code/map` | JWT |
+| GET | `/api/agent/code/neighbors` | JWT |
+| GET | `/api/agent/code/for` | JWT — code linked to an item/request (work→code) |
+| POST | `/api/agent/code/link` | JWT — link an item/request to a code path |
+| POST | `/api/agent/code/unlink` | JWT |
+
+`/api/agent/code` is the code-graph consumer: it grounds the configured ChatModel in the
+code structure the coding agent described via MCP (`search_code` + `code_neighbors`), so the
+connected LLM can answer "what depends on X" from real edges — never from a checkout it
+doesn't have. Returns `{reply, nodes:[{node, score}]}`; the `/stream` variant emits a `nodes`
+SSE event, then `delta`s, then `done`. Body is `{message, project_id?}`.
 
 ## PRDs
 

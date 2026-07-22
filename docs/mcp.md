@@ -16,12 +16,13 @@ agent's writes are identical to a user's and appear instantly in the UI.
 - **Project scope** — each key targets one **project** by default (the active project when
   you create it), so an agent's writes land in the right workspace. Tick *global* at creation
   to leave it unscoped. Any project-scoped tool call (`create_item`, `add_memory`,
-  `search_items`, `search_memory`, `get_backlog`, `suggest_next`, `generate_digest`) also
-  accepts an optional `project_id` argument that overrides the key's project for that call.
+  `search_items`, `search_memory`, `get_backlog`, `suggest_next`, `generate_digest`,
+  `describe_code`, `get_code_map`, `code_neighbors`, `search_code`) also accepts an optional
+  `project_id` argument that overrides the key's project for that call.
 - **Metering** — every `tools/call` increments a per-tool counter (the `mcp_tool_stats`
   table) surfaced on the **MCP Tools** view.
 
-## The 18 tools
+## The 26 tools
 
 | Tool | Params | Does |
 | --- | --- | --- |
@@ -43,6 +44,14 @@ agent's writes are identical to a user's and appear instantly in the UI.
 | `link_items` | `a`, `b`, `type`, `reason` | Create a typed relationship |
 | `extract_lessons` | `id` | Distill lessons from an item into memory |
 | `generate_digest` | `project_id` | Compose a progress digest across the project |
+| `prd_coverage` | `prd_id` | Spec-to-task rollup: per-section counts, coverage %, gaps (read-only) |
+| `decompose_prd` | `prd_id`, `create` | Propose (or create) one task per un-covered PRD section |
+| `describe_code` | `nodes`, `edges`, `prune`, `project_id` | **Record code structure** — upsert code nodes (module/file/symbol + summary) and typed edges. Idempotent by path; re-describe on change |
+| `get_code_map` | `kind`, `project_id` | The project's code graph — described nodes + typed edges (read-only) |
+| `code_neighbors` | `path`, `project_id` | Edges around a path (in/out by type) + work items touching it (read-only) |
+| `search_code` | `query`, `top_k`, `project_id` | Semantic search over code-node summaries (read-only) |
+| `link_code` | `ref_id`, `path`, `relation`, `ref_type`, `project_id` | **Bridge a tracker item/request to a code path** (affects/implements/fixes/tests/references). Idempotent; surfaces both ways |
+| `unlink_code` | `ref_id`, `path`, `relation`, `project_id` | Remove an item/request ↔ code link |
 
 `status` fields accept only `backlog · next · in_progress · review · done · blocked` (enforced in
 the schema). Tool failures return `isError: true` with a machine-readable
@@ -80,6 +89,35 @@ their touchpoints overlap (exact, glob, or same directory), and sharing a touchp
 - `next_cluster(agent_id, max_items)` **claims the whole neighborhood in one call**: the best ready
   item plus its related ready items, all assigned to you. This is how an agent pulls several
   pieces of related work simultaneously instead of context-switching.
+
+### Code structure graph (agent describes the codebase)
+
+Touchpoints link *work* to files. The **code graph** is the layer above: the code's own
+structure and relations, described once and queried by many. It's a set of **nodes**
+(module / file / symbol, each with a one-paragraph summary, embedded for semantic search)
+joined by typed **edges** (`imports` / `calls` / `owns` / `tested_by` / `references`).
+
+- **Producer / consumer split.** The external **coding agent is the producer** — it has the
+  real repo in context, so it's the source of truth. It calls `describe_code(nodes, edges)`
+  as a byproduct of the work it's already doing. AgentLedger's **connected LLM is the
+  consumer** — `search_code`, `code_neighbors`, and `get_code_map` are what it (and the UI)
+  read to reason about the codebase without holding a checkout. `POST /api/agent/code` is
+  that consumer wired up: it grounds the ChatModel in the graph to answer codebase questions
+  in natural language (see [API reference](api-reference.md)).
+- **Idempotent by path + staleness.** `describe_code` upserts by `(project_id, path)`, so
+  re-describing a file after you change it updates in place — pass its new `content_hash` and
+  the node is marked `fresh` again. A `describe_code(..., prune=true)` pass marks any node it
+  *didn't* see as stale (`fresh=false`) instead of deleting it, so a partial describe never
+  loses history. This is what keeps the map from rotting into confidently-wrong structure.
+- **Reuses touchpoints for item↔code.** `code_neighbors(path)` intersects live item
+  touchpoints rather than storing a second copy of the relation — "what work touches this
+  module" and "what code this item affects" stay one source of truth.
+- **Explicit work↔code bridge.** Beyond fuzzy touchpoint matching, `link_code(ref_id, path,
+  relation)` records a curated, typed link from a tracker **item or request** to a code path
+  (`affects` / `implements` / `fixes` / `tests` / `references`). It surfaces both ways:
+  `code_neighbors` returns `linked_items` + `linked_requests`, and the item/request shows its
+  linked code (`GET /api/agent/code/for`). This is what turns the graph into the bug/feature
+  impact map — "which open bugs touch this module", "what code this feature implements".
 
 ### Task claiming (safe multi-agent loops)
 
