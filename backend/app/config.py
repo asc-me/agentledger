@@ -36,6 +36,12 @@ class Settings(BaseSettings):
     # Public embeddable feedback form (Phase 2).
     public_submit_enabled: bool = True
 
+    # Upstream feedback: where a "Report an issue with AgentLedger" report is forwarded
+    # (always user/agent-initiated — never silent telemetry). Defaults to ASCME's hosted
+    # intake; a deployer can repoint it, or set the URL blank to disable the feature.
+    upstream_feedback_url: str = "https://feedback.asc-me.dev/api/public/requests"
+    upstream_feedback_project: str = "agentledger"  # project_id on the upstream instance
+
     # Drive sync: base directory the filesystem backend syncs into. Mount this at a
     # Google Drive Desktop folder to reach Drive with no OAuth.
     sync_dir: str = "/data/sync"

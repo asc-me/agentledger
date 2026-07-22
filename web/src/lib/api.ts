@@ -308,6 +308,14 @@ export const api = {
       body: JSON.stringify({ message, project_id: projectId }),
     }),
 
+  // ── upstream "report an issue with AgentLedger" ───────────────────────
+  upstreamConfig: () => request<{ enabled: boolean; target: string }>("/reports/upstream"),
+  upstreamReport: (body: { type: string; title: string; detail?: string }) =>
+    request<{ ok: boolean; request_id: string | null; duplicates: unknown[] }>("/reports/upstream", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
   // ── item/request ↔ code bridge ────────────────────────────────────────
   codeForRef: (refId: string, projectId?: string) =>
     request<CodeForRefRow[]>(

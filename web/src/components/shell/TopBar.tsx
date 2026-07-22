@@ -1,4 +1,5 @@
-import { ChevronDown, LogOut, Search, Settings, UserRound } from "lucide-react";
+import { ChevronDown, LogOut, Megaphone, Search, Settings, UserRound } from "lucide-react";
+import * as React from "react";
 import { useNavigate } from "react-router-dom";
 
 import { Avatar } from "@/components/ui/avatar";
@@ -11,6 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/features/auth/AuthContext";
+import { ReportIssueDialog } from "@/features/reports/ReportIssueDialog";
 import { useApiKeys, useMcpTools } from "@/lib/queries";
 
 export function TopBar({
@@ -29,6 +31,7 @@ export function TopBar({
   const { data: mcp } = useMcpTools();
   const navigate = useNavigate();
   const liveTools = mcp?.live ?? 0;
+  const [reportOpen, setReportOpen] = React.useState(false);
 
   return (
     <header className="flex h-14 flex-none items-center gap-4 border-b border-line bg-header px-5 backdrop-blur-md">
@@ -98,6 +101,10 @@ export function TopBar({
               Settings
             </DropdownMenuItem>
             <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => setReportOpen(true)}>
+              <Megaphone size={14} className="text-muted" />
+              Report an issue
+            </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => logout()}>
               <LogOut size={14} className="text-muted" />
               Sign out
@@ -105,6 +112,7 @@ export function TopBar({
           </DropdownMenuContent>
         </DropdownMenu>
       )}
+      <ReportIssueDialog open={reportOpen} onOpenChange={setReportOpen} />
     </header>
   );
 }
