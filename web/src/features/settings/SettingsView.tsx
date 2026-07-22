@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, Github, HardDrive, KeyRound, Plus, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
+import { Check, Copy, Github, HardDrive, KeyRound, Plug, Plus, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
 import * as React from "react";
 
 import { Avatar } from "@/components/ui/avatar";
@@ -8,6 +8,7 @@ import { Input, Textarea } from "@/components/ui/input";
 import { AiProvidersPanel } from "@/features/settings/AiProvidersPanel";
 import { McpInstall } from "@/features/settings/McpInstall";
 import { useProjectCtx } from "@/features/ProjectContext";
+import { copyText } from "@/lib/clipboard";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { keys, useApiKeys, useMembers, usePlatform } from "@/lib/queries";
@@ -149,11 +150,11 @@ function IntegrationsPanel() {
             </code>
             <button
               className="rounded-md border border-line-2 bg-surface-3 p-1.5 text-muted hover:text-fg"
-              onClick={() => {
-                navigator.clipboard.writeText(`${origin}/api/public/github/webhook`);
-                setCopied(true);
-                setTimeout(() => setCopied(false), 1500);
-              }}
+              onClick={() =>
+                copyText(`${origin}/api/public/github/webhook`).then(
+                  (ok) => ok && (setCopied(true), setTimeout(() => setCopied(false), 1500)),
+                )
+              }
             >
               {copied ? <Check size={13} className="text-accent" /> : <Copy size={13} />}
             </button>
@@ -345,6 +346,7 @@ function ApiKeysPanel() {
   const [global, setGlobal] = React.useState(false);
   const [created, setCreated] = React.useState<string | null>(null);
   const [copied, setCopied] = React.useState(false);
+  const [connectId, setConnectId] = React.useState<string | null>(null);
 
   const projectName = (id: string | null) =>
     id ? (projects.find((p) => p.id === id)?.name ?? id) : "All projects";
@@ -369,7 +371,7 @@ function ApiKeysPanel() {
           <div className="flex items-center gap-2">
             <code className="flex-1 overflow-x-auto font-mono text-[12px] text-fg-2">{created}</code>
             <button className="rounded-md border border-line-2 bg-surface-3 p-1.5 text-muted hover:text-fg"
-              onClick={() => { navigator.clipboard.writeText(created); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>
+              onClick={() => copyText(created).then((ok) => ok && (setCopied(true), setTimeout(() => setCopied(false), 1500)))}>
               {copied ? <Check size={13} className="text-accent" /> : <Copy size={13} />}
             </button>
           </div>
@@ -390,24 +392,38 @@ function ApiKeysPanel() {
       </label>
       <div className="space-y-2">
         {apiKeys.map((k) => (
-          <div key={k.id} className="flex items-center gap-3 rounded-[11px] border border-line-2 bg-surface-2 px-3 py-2.5">
-            <KeyRound size={14} className="text-muted" />
-            <span className="text-[13px] text-fg-2">{k.name}</span>
-            <code className="font-mono text-[11px] text-faint">{k.prefix}…</code>
-            <span
-              className={cn(
-                "rounded border px-1.5 py-px font-mono text-[9.5px] uppercase tracking-wide",
-                k.project_id
-                  ? "border-line-2 text-muted"
-                  : "border-[rgba(167,139,250,0.3)] text-purple-2",
-              )}
-            >
-              {projectName(k.project_id)}
-            </span>
-            <span className="ml-auto font-mono text-[10px] text-faint-2">{k.last_used ? "used" : "never used"}</span>
-            <button className="text-faint hover:text-st-blocked" onClick={() => revoke(k.id)} title="Revoke">
-              <Trash2 size={14} />
-            </button>
+          <div key={k.id} className="rounded-[11px] border border-line-2 bg-surface-2">
+            <div className="flex items-center gap-3 px-3 py-2.5">
+              <KeyRound size={14} className="text-muted" />
+              <span className="text-[13px] text-fg-2">{k.name}</span>
+              <code className="font-mono text-[11px] text-faint">{k.prefix}…</code>
+              <span
+                className={cn(
+                  "rounded border px-1.5 py-px font-mono text-[9.5px] uppercase tracking-wide",
+                  k.project_id
+                    ? "border-line-2 text-muted"
+                    : "border-[rgba(167,139,250,0.3)] text-purple-2",
+                )}
+              >
+                {projectName(k.project_id)}
+              </span>
+              <span className="ml-auto font-mono text-[10px] text-faint-2">{k.last_used ? "used" : "never used"}</span>
+              <button
+                className={cn("hover:text-fg", connectId === k.id ? "text-accent" : "text-faint")}
+                onClick={() => setConnectId(connectId === k.id ? null : k.id)}
+                title="Connect an agent (MCP setup)"
+              >
+                <Plug size={14} />
+              </button>
+              <button className="text-faint hover:text-st-blocked" onClick={() => revoke(k.id)} title="Revoke">
+                <Trash2 size={14} />
+              </button>
+            </div>
+            {connectId === k.id && (
+              <div className="border-t border-line px-3 pb-3">
+                <McpInstall apiKey="<YOUR_API_KEY>" keyPrefix={k.prefix} />
+              </div>
+            )}
           </div>
         ))}
         {apiKeys.length === 0 && <p className="text-[12.5px] text-faint">No keys yet.</p>}
