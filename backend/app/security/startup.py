@@ -21,6 +21,16 @@ _BANNER = "=" * 72
 def check_security() -> None:
     if settings.is_sqlite:
         return
+
+    # Hosted (multi-tenant) mode must encrypt BYOK provider keys at rest — refuse to
+    # boot a shared instance that would store tenants' keys in plaintext (AL-73).
+    if settings.hosted_mode and not settings.secret_encryption_key:
+        raise RuntimeError(
+            "refusing to start: HOSTED_MODE is on but SECRET_ENCRYPTION_KEY is unset — "
+            "tenant provider keys would be stored in plaintext. Set a strong "
+            "SECRET_ENCRYPTION_KEY."
+        )
+
     if not settings.jwt_secret_is_weak:
         return
 

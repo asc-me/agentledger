@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.config import settings as app_settings
 from app import providers
 from app.models import PlatformConfig
+from app.security import secrets
 
 
 def get_config(db: Session, project_id: str = "core") -> PlatformConfig:
@@ -36,7 +37,7 @@ def apply_llm(cfg: PlatformConfig) -> None:
         providers.set_active_chat(
             provider=cfg.active_chat_provider,
             base_url=pconf.get("base_url", ""),
-            api_key=pconf.get("api_key", ""),
+            api_key=secrets.decrypt(pconf.get("api_key", "")),
             model=pconf.get("chat_model", ""),
         )
     elif cfg.llm_mode == "local":
@@ -61,7 +62,7 @@ def apply_llm(cfg: PlatformConfig) -> None:
     if ollama_conf.get("embed_model"):
         app_settings.ollama_embed_model = ollama_conf["embed_model"]
     if ollama_conf.get("api_key"):
-        app_settings.ollama_auth_key = ollama_conf["api_key"]
+        app_settings.ollama_auth_key = secrets.decrypt(ollama_conf["api_key"])
     providers.reset()
 
 
@@ -83,8 +84,10 @@ def update_config(db: Session, project_id: str, fields: dict) -> PlatformConfig:
             cur = dict(merged.get(pid, {}))
             for k, v in (incoming or {}).items():
                 if k == "api_key":
+                    # Write-only + encrypted at rest: a blank value keeps the stored
+                    # (encrypted) key; a new value is Fernet-encrypted before storage (AL-73).
                     if v:
-                        cur["api_key"] = v
+                        cur["api_key"] = secrets.encrypt(v)
                 elif v is not None:
                     cur[k] = v
             merged[pid] = cur
