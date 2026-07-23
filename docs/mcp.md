@@ -83,8 +83,8 @@ Every client authenticates the same way: the key in an `X-API-Key` header (or
 | `create_item` | `title`, `description`, `tags`, `touchpoints`, `effort`, `status`, `project_id` | Create a tracker item (returns its `project_id`) |
 | `update_item` | `id`, `status`, `title`, `description`, `tags`, `touchpoints`, `effort`, `blocker`, `prd_id`, `prd_section` | Patch / advance an item |
 | `search_items` | `query`, `tags`, `status`, `project_id` | Query the stream (query matches title, description, **and** tags) |
-| `add_memory` | `text`, `scope`, `item_id`, `project_id` | Attach a memory shard |
-| `search_memory` | `query`, `top_k`, `project_id` | Semantic search over shards (returns `item_id`, `source`) |
+| `add_memory` | `text`, `scope`, `item_id`, `project_id` | Record a memory shard — **enters as a `candidate`** pending human publish (AL-49) |
+| `search_memory` | `query`, `top_k`, `include_candidates`, `project_id` | Semantic search over **published** shards (set `include_candidates` for unreviewed ones); returns `status`, `item_id`, `source` |
 | `get_backlog` | `limit`, `project_id` | Prioritized backlog |
 | `get_item_details` | `id` | Item + linked shards + linked requests |
 | `suggest_next` | `project_id` | Best next item from state + memory |

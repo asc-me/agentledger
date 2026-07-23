@@ -11,12 +11,16 @@ from app.embeddings import cosine_similarity, get_embedder
 from app.models import MemoryShard
 
 
-def list_shards(db: Session, project_id: str | None = None) -> list[MemoryShard]:
+def list_shards(
+    db: Session, project_id: str | None = None, status: str | None = None
+) -> list[MemoryShard]:
     stmt = select(MemoryShard)
     if project_id:
         stmt = stmt.where(
             (MemoryShard.project_id == project_id) | (MemoryShard.project_id.is_(None))
         )
+    if status is not None:
+        stmt = stmt.where(MemoryShard.status == status)
     stmt = stmt.order_by(MemoryShard.created_at.desc())
     return list(db.scalars(stmt).all())
 
@@ -30,6 +34,8 @@ def add_memory(
     item_id: str | None = None,
     project_id: str | None = "core",
     fresh: bool = True,
+    status: str = "published",
+    origin: str = "",
 ) -> MemoryShard:
     embedder = get_embedder()
     shard = MemoryShard(
@@ -41,8 +47,23 @@ def add_memory(
         project_id=project_id,
         embedding=embedder.embed(text_body),
         fresh=fresh,
+        status=status,
+        origin=origin,
     )
     db.add(shard)
+    db.commit()
+    db.refresh(shard)
+    return shard
+
+
+def set_status(db: Session, shard_id: str, status: str) -> MemoryShard | None:
+    """Promote (→published) or reject (→rejected) a candidate shard (AL-49)."""
+    if status not in ("candidate", "published", "rejected"):
+        raise ValueError(f"invalid shard status: {status}")
+    shard = db.get(MemoryShard, shard_id)
+    if shard is None:
+        return None
+    shard.status = status
     db.commit()
     db.refresh(shard)
     return shard
@@ -95,10 +116,16 @@ def _vector_literal(vec: list[float]) -> str:
 
 
 def search_memory(
-    db: Session, query: str, top_k: int = 5, project_id: str | None = None
+    db: Session, query: str, top_k: int = 5, project_id: str | None = None,
+    include_candidates: bool = False,
 ) -> list[tuple[MemoryShard, float]]:
-    """Return (shard, similarity) pairs ranked by cosine similarity, best first."""
+    """Return (shard, similarity) pairs ranked by cosine similarity, best first.
+
+    The trusted-publication boundary (AL-49): only `published` shards surface by
+    default. `include_candidates` also returns unreviewed agent self-reports;
+    `rejected` shards never surface."""
     qvec = get_embedder().embed(query)
+    allowed = ("published", "candidate") if include_candidates else ("published",)
 
     if not settings.is_sqlite:
         # pgvector: cosine distance operator `<=>`; similarity = 1 - distance.
@@ -107,11 +134,16 @@ def search_memory(
         if project_id is not None:
             project_clause = "AND (project_id = :pid OR project_id IS NULL)"
             params["pid"] = project_id
+        # Bind the allowed statuses as an IN-list (never surface `rejected`).
+        status_names = [f":st{i}" for i in range(len(allowed))]
+        for i, st in enumerate(allowed):
+            params[f"st{i}"] = st
         sql = text(
             f"""
             SELECT id, (embedding <=> (:qv)::vector) AS distance
             FROM memory_shards
             WHERE embedding IS NOT NULL
+              AND status IN ({", ".join(status_names)})
               {project_clause}
             ORDER BY distance ASC
             LIMIT :k
@@ -126,7 +158,7 @@ def search_memory(
         return out
 
     # SQLite fallback: cosine in Python over the (small) shard set.
-    shards = list_shards(db, project_id=project_id)
+    shards = [s for s in list_shards(db, project_id=project_id) if s.status in allowed]
     scored = [
         (s, cosine_similarity(qvec, s.embedding)) for s in shards if s.embedding is not None
     ]

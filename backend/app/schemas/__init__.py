@@ -132,6 +132,8 @@ class ShardOut(ORMModel):
     text: str
     scope: str
     source: str
+    status: str
+    origin: str
     item_id: str | None
     project_id: str | None
     fresh: bool

@@ -14,9 +14,23 @@ convention. Each has:
 | `text` | The content |
 | `scope` | `global` (project-wide) or `item` (attached to an item) |
 | `source` | Where it came from, e.g. `from AL-08`, `global`, `lesson from AL-16` |
+| `status` | `candidate` → `published` → (`rejected`) — the trust boundary, below |
+| `origin` | Who wrote it: `user:<handle>`, `agent:<key>`, or `agent:auto-extract` |
 | `item_id` | Set for item-scoped shards |
 | `embedding` | Vector, computed on write |
 | `fresh` | Marks recently added shards |
+
+### The trust boundary (candidate → published)
+
+Agent memory is *telemetry, not truth*. A shard an agent writes — via `add_memory`
+or auto-extracted when an item moves to Done — enters as a **candidate** and does
+**not** appear in the default semantic search. A human reviews it in **Memory
+review** (left nav) and either **publishes** it (promotes it into the trusted
+retrieval path every future agent searches) or **rejects** it (kept for provenance,
+never surfaced). Human-authored shards are published immediately. Agents can opt
+into seeing unreviewed notes with `search_memory(include_candidates=true)`. Publish
+and reject are recorded in **Activity**. This keeps one hallucinated note from
+becoming ground truth for the next agent.
 
 ### Semantic search
 

@@ -11,8 +11,8 @@ const hits: ShardHit[] = [
   {
     shard: {
       id: "m1", text: "Decided: use pgvector to keep self-host to one Postgres container.",
-      scope: "global", source: "from AL-08", item_id: null, project_id: "core",
-      fresh: false, created_at: "",
+      scope: "global", source: "from AL-08", status: "published", origin: "user:ascme",
+      item_id: null, project_id: "core", fresh: false, created_at: "",
     },
     score: 0.83,
   },

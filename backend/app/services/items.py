@@ -127,9 +127,11 @@ def _auto_extract_lessons(db: Session, item: Item) -> None:
     except Exception:
         return  # never let extraction failure block a status change
     for text in lessons:
+        # Candidates for human review, not auto-trusted memory (AL-49).
         memory_svc.add_memory(
             db, text_body=text, scope="item", source=f"lesson from {item.id}",
             item_id=item.id, project_id=item.project_id, fresh=True,
+            status="candidate", origin="agent:auto-extract",
         )
 
 

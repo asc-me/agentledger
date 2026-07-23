@@ -172,6 +172,12 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ query, top_k }),
     }),
+  candidateShards: (projectId?: string) =>
+    request<Shard[]>(`/memory/candidates${projectId ? `?project_id=${projectId}` : ""}`),
+  publishShard: (id: string) =>
+    request<Shard>(`/memory/shards/${id}/publish`, { method: "POST" }),
+  rejectShard: (id: string) =>
+    request<Shard>(`/memory/shards/${id}/reject`, { method: "POST" }),
 
   requests: (projectId?: string) =>
     request<RequestItem[]>(`/requests${projectId ? `?project_id=${projectId}` : ""}`),

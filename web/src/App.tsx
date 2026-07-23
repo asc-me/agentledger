@@ -10,6 +10,7 @@ import { EmbedFeedbackPage } from "@/features/feedback/EmbedFeedbackPage";
 import { FeedbackKitView } from "@/features/feedback/FeedbackKitView";
 import { LinksGraphView } from "@/features/links/LinksGraphView";
 import { McpToolsView } from "@/features/mcp/McpToolsView";
+import { MemoryReviewView } from "@/features/memory/MemoryReviewView";
 import { PrdEditorView } from "@/features/prds/PrdEditorView";
 import { PrdListView } from "@/features/prds/PrdListView";
 import { ProfileView } from "@/features/profile/ProfileView";
@@ -54,6 +55,7 @@ function AuthedApp() {
         <Route path="/roadmap" element={<RoadmapView />} />
         <Route path="/mcp-tools" element={<McpToolsView />} />
         <Route path="/activity" element={<ActivityView />} />
+        <Route path="/memory-review" element={<MemoryReviewView />} />
         <Route path="/prds" element={<PrdListView />} />
         <Route path="/prds/:id" element={<PrdEditorView />} />
         <Route path="/feedback-kit" element={<FeedbackKitView />} />

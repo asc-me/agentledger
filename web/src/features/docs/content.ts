@@ -132,6 +132,17 @@ const CONTENT: Record<string, DocEntry> = {
     related: [{ label: "Settings", to: "/settings" }],
   },
 
+  "/memory-review": {
+    badge: "MEMORY REVIEW",
+    title: "Memory review",
+    tagline: "Approve agent-written memory before it's trusted.",
+    sections: [
+      { num: 1, h: "Candidates, not truth", b: "Memory an agent writes (via add_memory or auto-extracted on Done) enters as a candidate. It stays out of the default semantic search until you publish it here." },
+      { num: 2, h: "Publish or reject", b: "Publish promotes a shard into the trusted retrieval path every future agent searches. Reject keeps it for provenance but never surfaces it. Both are recorded in Activity." },
+    ],
+    related: [{ label: "Activity", to: "/activity" }],
+  },
+
   "/activity": {
     badge: "ACTIVITY",
     title: "Activity",
