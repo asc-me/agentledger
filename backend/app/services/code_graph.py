@@ -38,6 +38,17 @@ def _embed_input(*, path: str, name: str, summary: str) -> str:
     return " ".join(p for p in (name, path, summary) if p)
 
 
+def backfill_embeddings(db: Session) -> int:
+    """Re-embed every code node with the current provider. Run after switching
+    providers or changing the embedding dimension (AL-64)."""
+    embedder = get_embedder()
+    nodes = list(db.scalars(select(CodeNode)).all())
+    for n in nodes:
+        n.embedding = embedder.embed(_embed_input(path=n.path, name=n.name, summary=n.summary))
+    db.commit()
+    return len(nodes)
+
+
 # ── describe (upsert) ─────────────────────────────────────────────────────────
 
 def upsert_node(

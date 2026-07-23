@@ -53,6 +53,7 @@ def test_export_then_import_roundtrip(client, auth):
 def test_backfill_reembeds_all(client, auth):
     r = client.post("/api/memory/backfill", headers=auth).json()
     assert r["reembedded"] == 5
+    assert "code_reembedded" in r  # backfill now covers code nodes too (AL-64)
 
 
 def test_agent_chat_grounded(client, auth):

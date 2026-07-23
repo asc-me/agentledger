@@ -110,7 +110,14 @@ def search(body: MemorySearchIn, db: Session = Depends(get_db), _: User = Depend
 
 @router.post("/backfill")
 def backfill(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    return {"reembedded": mem_svc.backfill_embeddings(db)}
+    """Re-embed all memory shards AND code nodes with the current provider — run
+    after switching embedding providers or changing EMBED_DIM (AL-64)."""
+    from app.services import code_graph as code_svc
+
+    return {
+        "reembedded": mem_svc.backfill_embeddings(db),
+        "code_reembedded": code_svc.backfill_embeddings(db),
+    }
 
 
 @router.get("/export")
