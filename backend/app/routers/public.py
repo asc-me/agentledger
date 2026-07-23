@@ -5,6 +5,10 @@ Powers the embeddable feedback widget. No JWT — protected by layered spam cont
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
+
 from fastapi import (
     APIRouter,
     Depends,
@@ -36,6 +40,13 @@ _UPLOAD_RATE = 10  # attachment uploads per IP per minute
 
 
 def _client_ip(request: FastAPIRequest) -> str:
+    # Behind a proxy/LB the socket peer is the proxy, so every client shares one
+    # rate-limit bucket. Honor the first X-Forwarded-For hop ONLY when the operator
+    # asserts a trusted proxy sits in front (else the header is client-spoofable).
+    if settings.trusted_proxy:
+        xff = request.headers.get("x-forwarded-for")
+        if xff:
+            return xff.split(",")[0].strip()
     return request.client.host if request.client else "unknown"
 
 
@@ -66,15 +77,31 @@ def widget_config(project_id: str | None = None, db: Session = Depends(get_db)):
     return {"turnstile_sitekey": cfg.turnstile_sitekey if cfg else ""}
 
 
+def _verify_github_signature(raw: bytes, signature: str | None) -> None:
+    """Verify GitHub's X-Hub-Signature-256 HMAC when a webhook secret is configured.
+    No secret → unverified (local/offline default). Secret set → a missing or bad
+    signature is rejected, so forged issue payloads can't create items (AL-44)."""
+    secret = settings.github_webhook_secret
+    if not secret:
+        return
+    if not signature or not signature.startswith("sha256="):
+        raise HTTPException(401, "missing or malformed X-Hub-Signature-256")
+    expected = "sha256=" + hmac.new(secret.encode(), raw, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, signature):
+        raise HTTPException(401, "webhook signature verification failed")
+
+
 @router.post("/github/webhook")
 async def github_webhook(request: FastAPIRequest, db: Session = Depends(get_db)):
     """Inbound GitHub issues webhook → new tracker item, routed to the project that
     has this repo connected (falls back to the default project).
 
-    (Real deployments verify the X-Hub-Signature-256 HMAC; omitted for the local slice.)
+    Verifies the X-Hub-Signature-256 HMAC when GITHUB_WEBHOOK_SECRET is set.
     """
     _rate_or_429(db, request, None, default=60)
-    payload = await request.json()
+    raw = await request.body()
+    _verify_github_signature(raw, request.headers.get("x-hub-signature-256"))
+    payload = json.loads(raw or b"{}")
     if payload.get("action") not in ("opened", "reopened"):
         return {"ignored": True, "action": payload.get("action")}
     issue = payload.get("issue", {}) or {}

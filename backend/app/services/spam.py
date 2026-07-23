@@ -16,11 +16,23 @@ from collections import defaultdict, deque
 
 _WINDOW = 60.0  # seconds
 _hits: dict[str, deque] = defaultdict(deque)
+_SWEEP_EVERY = 1000  # evict emptied keys periodically so _hits can't grow unbounded
+_checks = 0
+
+
+def _sweep_stale(now: float) -> None:
+    """Drop keys whose window has fully expired (AL-44 — keys were never freed)."""
+    for k in [k for k, q in _hits.items() if not q or now - q[-1] > _WINDOW]:
+        del _hits[k]
 
 
 def check_rate(key: str, limit: int) -> bool:
     """Return True if this call is under the limit for `key` in the last minute."""
+    global _checks
     now = time.monotonic()
+    _checks += 1
+    if _checks % _SWEEP_EVERY == 0:
+        _sweep_stale(now)
     q = _hits[key]
     while q and now - q[0] > _WINDOW:
         q.popleft()
