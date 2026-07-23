@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from app import errors
 from app.db import get_db
 from app.models import User
 from app.providers import get_chat_model, iter_reply
@@ -207,6 +208,8 @@ def code_link(body: CodeRefIn, db: Session = Depends(get_db),
             db, project_id=pid, ref_id=body.ref_id, path=body.path,
             relation=body.relation, ref_type=body.ref_type,
         )
+    except errors.NotFound as e:
+        raise HTTPException(404, str(e))
     except ValueError as e:
         raise HTTPException(422, str(e))
     return code_svc.ref_dict(ref)

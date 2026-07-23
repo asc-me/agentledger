@@ -260,7 +260,7 @@ def test_link_code_unknown_ref_errors(client, auth):
     )
     result = r.json()["result"]
     assert result.get("isError") is True
-    assert result["structuredContent"]["error"]["code"] == "invalid_request"
+    assert result["structuredContent"]["error"]["code"] == "not_found"
 
 
 def test_code_link_rest_endpoints(client, auth):
@@ -272,9 +272,9 @@ def test_code_link_rest_endpoints(client, auth):
     )
     assert created.status_code == 201
     assert created.json()["ref_type"] == "item"
-    # unknown ref → 422
+    # unknown ref → 404 (existence-hiding not-found, AL-47)
     bad = client.post("/api/agent/code/link", json={"ref_id": "AL-9999", "path": ITEMS_NODE["path"]}, headers=auth)
-    assert bad.status_code == 422
+    assert bad.status_code == 404
     # unlink via REST
     gone = client.post("/api/agent/code/unlink", json={"ref_id": "AL-08", "path": ITEMS_NODE["path"]}, headers=auth)
     assert gone.json()["removed"] == 1

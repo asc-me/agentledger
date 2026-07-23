@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.embeddings import cosine_similarity, get_embedder
+from app.errors import NotFound
 from app.models import CodeEdge, CodeNode, CodeRef, Item, Request
 from app.services import items as items_svc
 from app.services.clustering import _match
@@ -158,7 +159,7 @@ def describe_code(
         if edge is not None:
             e_up += 1
 
-    pruned = 0
+    stale_paths: list[str] = []
     if prune and seen_paths:
         stale = db.scalars(
             select(CodeNode).where(
@@ -169,10 +170,18 @@ def describe_code(
         ).all()
         for node in stale:
             node.fresh = False
-            pruned += 1
+            stale_paths.append(node.path)
 
     db.commit()
-    return {"nodes_upserted": n_up, "edges_upserted": e_up, "marked_stale": pruned}
+    # Echo the paths touched so the agent can verify the effect without a full
+    # get_code_map round-trip (AL-47 — the describe_code verification edge).
+    return {
+        "nodes_upserted": n_up,
+        "edges_upserted": e_up,
+        "marked_stale": len(stale_paths),
+        "upserted_paths": sorted(seen_paths),
+        "stale_paths": sorted(stale_paths),
+    }
 
 
 # ── read ──────────────────────────────────────────────────────────────────────
@@ -268,14 +277,14 @@ def _resolve_ref(db: Session, project_id: str, ref_id: str, ref_type: str | None
         if it is not None and it.project_id == project_id:
             return "item", it
         if ref_type == "item":
-            raise ValueError(f"unknown item in project: {ref_id}")
+            raise NotFound(f"unknown item in project: {ref_id}")
     if ref_type in (None, "request"):
         rq = db.get(Request, ref_id)
         if rq is not None and rq.project_id == project_id:
             return "request", rq
         if ref_type == "request":
-            raise ValueError(f"unknown request in project: {ref_id}")
-    raise ValueError(f"unknown item or request in project: {ref_id}")
+            raise NotFound(f"unknown request in project: {ref_id}")
+    raise NotFound(f"unknown item or request in project: {ref_id}")
 
 
 def ref_dict(ref: CodeRef) -> dict:

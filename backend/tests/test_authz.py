@@ -109,7 +109,7 @@ def test_get_context_reports_scope(client, auth):
 def test_link_items_rejects_dangling_ids(client, auth):
     key = _mint(client, auth, project_id="core")
     res = _call(client, key, "link_items", {"a": "AL-12", "b": "AL-9999"})
-    assert _error_code(res) == "invalid_request"
+    assert _error_code(res) == "not_found"
     assert "not found" in res["structuredContent"]["error"]["message"]
 
 

@@ -20,6 +20,7 @@ import logging
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app import errors
 from app.db import get_db
 from app.models import ApiKey, Item, Link, MemoryShard, Project
 from app.security import authz
@@ -128,7 +129,11 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "search_memory",
-        "description": "Semantic search over memory shards via pgvector cosine.",
+        "description": (
+            "Recall relevant past context before you act: semantic (meaning-based) search over "
+            "memory shards. Use it to find prior decisions, lessons, and notes related to your task. "
+            "Returns shards ranked by similarity with a score."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -149,7 +154,11 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "get_item_details",
-        "description": "Full item incl. linked shards, blockers, deps.",
+        "description": (
+            "The full record for one item — the only tool that returns its description, blockers, "
+            "dependencies, and linked memory shards. Call it after search_items/get_backlog to read "
+            "everything before working an item."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {"id": {"type": "string"}},
@@ -158,7 +167,11 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "suggest_next",
-        "description": "Rank the best next item from state + memory.",
+        "description": (
+            "Advisory: the single best next item to work, ranked from backlog state + memory, "
+            "WITHOUT claiming it (unlike claim_next, which atomically locks work for a loop). "
+            "Returns {item} — item is null when nothing is ready. Use for planning; use claim_next to execute."
+        ),
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
@@ -489,7 +502,10 @@ _OUTPUT_SCHEMAS: dict[str, dict] = {
     },
     "create_item": _ITEM_SCHEMA,
     "update_item": _ITEM_SCHEMA,
-    "suggest_next": _ITEM_SCHEMA,  # or absent when the backlog is empty
+    "suggest_next": {  # stable {item: <item|null>} wrapper — never a bare null
+        "type": "object",
+        "properties": {"item": {**_ITEM_SCHEMA, "type": ["object", "null"]}},
+    },
     "add_memory": _SHARD_SCHEMA,
     "search_memory": {
         "type": "object",
@@ -560,6 +576,8 @@ _OUTPUT_SCHEMAS: dict[str, dict] = {
             "nodes_upserted": {"type": "integer"},
             "edges_upserted": {"type": "integer"},
             "marked_stale": {"type": "integer"},
+            "upserted_paths": {"type": "array", "items": _STR},
+            "stale_paths": {"type": "array", "items": _STR},
         },
     },
     "get_code_map": {
@@ -633,6 +651,55 @@ for _t in TOOLS:
     }
 
 LIVE_TOOL_COUNT = len(TOOLS)
+_SCHEMA_BY_NAME: dict[str, dict] = {t["name"]: t["inputSchema"] for t in TOOLS}
+
+# JSON-schema primitive -> (python type, label). bool is excluded from int on purpose.
+_JSON_TYPES: dict[str, tuple[type | tuple[type, ...], str]] = {
+    "string": (str, "a string"),
+    "integer": (int, "an integer"),
+    "array": (list, "an array"),
+    "boolean": (bool, "a boolean"),
+    "object": (dict, "an object"),
+}
+
+
+def _validate_args(name: str, args: dict[str, Any]) -> None:
+    """Check args against the tool's declared inputSchema BEFORE dispatch, so a
+    bad call becomes an actionable `validation` error instead of a KeyError or a
+    silently-accepted junk value (AL-47). Required fields, enums, and primitive
+    types only — deliberately lightweight, no external validator dependency."""
+    schema = _SCHEMA_BY_NAME.get(name)
+    if schema is None:
+        return  # unknown tool handled by the dispatcher
+    props: dict = schema.get("properties", {})
+    required: list = schema.get("required", [])
+
+    missing = [f for f in required if args.get(f) in (None, "")]
+    if missing:
+        raise errors.Validation(
+            f"{name!r} is missing required argument{'s' if len(missing) > 1 else ''}: "
+            f"{', '.join(missing)}",
+            hint=f"required: {', '.join(required)}",
+        )
+
+    for field, value in args.items():
+        spec = props.get(field)
+        if not spec or value is None:
+            continue  # unknown extras are ignored; None means "absent"
+        enum = spec.get("enum")
+        if enum is not None and value not in enum:
+            raise errors.Validation(
+                f"invalid {field}: {value!r}",
+                hint=f"allowed values: {', '.join(map(str, enum))}",
+            )
+        expected = spec.get("type")
+        if expected in _JSON_TYPES:
+            py_type, label = _JSON_TYPES[expected]
+            ok = isinstance(value, py_type) and not (expected == "integer" and isinstance(value, bool))
+            if not ok:
+                raise errors.Validation(
+                    f"{field} must be {label}", hint=f"got {type(value).__name__}"
+                )
 
 
 def _item_dict(item) -> dict:
@@ -673,10 +740,19 @@ def _paginate(rows: list, args: dict) -> dict:
     }
 
 
-def _idempotent_get(db: Session, args: dict, model) -> Any | None:
-    """If the call carries an idempotency_key already seen, return the original resource."""
+def _idempotent_get(db: Session, args: dict, tool: str, model) -> Any | None:
+    """If the call carries an idempotency_key already seen, return the original
+    resource. A key remembered for a DIFFERENT tool is a conflict, not a silent
+    duplicate (AL-47) — the agent reused a token across logical operations."""
     prior = idem_svc.lookup(db, args.get("idempotency_key") or "")
-    return db.get(model, prior.resource_id) if prior is not None else None
+    if prior is None:
+        return None
+    if prior.tool != tool:
+        raise errors.Conflict(
+            f"idempotency_key was already used for {prior.tool!r}, not {tool!r}",
+            hint="use a fresh idempotency_key for each distinct create",
+        )
+    return db.get(model, prior.resource_id)
 
 
 def _idempotent_remember(db: Session, args: dict, tool: str, resource_id: str) -> None:
@@ -688,7 +764,7 @@ def _scoped_item(db: Session, item_id: str, scope_ids: list[str]) -> Item:
     deliberately does not reveal which project an off-scope item belongs to."""
     item = db.get(Item, item_id)
     if item is None:
-        raise ValueError(f"item not found: {item_id}")
+        raise errors.NotFound(f"item not found: {item_id}", hint="use search_items to find a valid id")
     if item.project_id not in scope_ids:
         raise authz.Forbidden(f"item {item_id!r} is outside this key's project scope")
     return item
@@ -743,7 +819,7 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
             if p.id in readable
         ]}
     if name == "create_item":
-        cached = _idempotent_get(db, args, Item)
+        cached = _idempotent_get(db, args, "create_item", Item)
         if cached is not None:
             return _item_dict(cached)
         item = items_svc.create_item(
@@ -777,7 +853,7 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
             prd_section=args.get("prd_section"),
         )
         if item is None:
-            raise ValueError(f"item not found: {args['id']}")
+            raise errors.NotFound(f"item not found: {args['id']}")
         return _item_dict(item)
     if name == "search_items":
         rows = items_svc.search_items(
@@ -786,7 +862,7 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
         )
         return _paginate([_item_dict(i) for i in rows], args)
     if name == "add_memory":
-        cached = _idempotent_get(db, args, MemoryShard)
+        cached = _idempotent_get(db, args, "add_memory", MemoryShard)
         if cached is not None:
             return _shard_dict(cached)
         if args.get("item_id"):
@@ -823,11 +899,13 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
         _scoped_item(db, args["id"], readable)
         details = items_svc.get_item_details(db, args["id"])
         if details is None:
-            raise ValueError(f"item not found: {args['id']}")
+            raise errors.NotFound(f"item not found: {args['id']}")
         return details
     if name == "suggest_next":
         item = items_svc.suggest_next(db, project_id=pid)
-        return _item_dict(item) if item else None
+        # Stable shape whether or not the backlog has a candidate (parallels
+        # claim_next's {claimed, item}) — never a bare null (AL-47).
+        return {"item": _item_dict(item) if item else None}
     if name == "related_work":
         item = _scoped_item(db, args["id"], readable)
         rel = cluster_svc.related_items(db, item, item.project_id)
@@ -843,7 +921,7 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
             for b in batch
         ]}
     if name == "link_items":
-        cached = _idempotent_get(db, args, Link)
+        cached = _idempotent_get(db, args, "link_items", Link)
         if cached is not None:
             return {"id": cached.id, "a": cached.a, "b": cached.b, "type": cached.type}
         # Both endpoints must exist and be in scope — also stops dangling links
@@ -868,14 +946,20 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
         agent = args.get("agent_id") or key.name or key.id
         item = items_svc.heartbeat(db, args["id"], agent)
         if item is None:
-            raise ValueError(f"not the lease holder for {args['id']!r}")
+            raise errors.Conflict(
+                f"not the lease holder for {args['id']!r}",
+                hint="another agent holds the lease; claim_next for fresh work",
+            )
         return _item_dict(item)
     if name == "release_item":
         _scoped_item(db, args["id"], allowed)
         agent = args.get("agent_id") or key.name or key.id
         item = items_svc.release_item(db, args["id"], agent, to_status=args.get("to_status", "next"))
         if item is None:
-            raise ValueError(f"not the lease holder for {args['id']!r}")
+            raise errors.Conflict(
+                f"not the lease holder for {args['id']!r}",
+                hint="the lease expired or another agent holds it",
+            )
         return _item_dict(item)
     if name == "extract_lessons":
         _scoped_item(db, args["id"], allowed)
@@ -885,14 +969,14 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
     if name == "prd_coverage":
         prd = prd_svc.get_prd(db, args["prd_id"])
         if prd is None:
-            raise ValueError(f"prd not found: {args['prd_id']}")
+            raise errors.NotFound(f"prd not found: {args['prd_id']}")
         if prd.project_id not in readable:
             raise authz.Forbidden(f"prd {args['prd_id']!r} is outside this key's project scope")
         return prd_svc.coverage(db, prd)
     if name == "decompose_prd":
         prd = prd_svc.get_prd(db, args["prd_id"])
         if prd is None:
-            raise ValueError(f"prd not found: {args['prd_id']}")
+            raise errors.NotFound(f"prd not found: {args['prd_id']}")
         if prd.project_id not in allowed:
             raise authz.Forbidden(f"prd {args['prd_id']!r} is outside this key's project scope")
         return prd_svc.decompose(db, prd, create=bool(args.get("create", False)))
@@ -930,13 +1014,13 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
                 detail=args.get("detail", ""), source="mcp-agent",
             )
         except httpx.HTTPError as e:
-            raise ValueError(f"upstream unreachable: {e}")
+            raise errors.Conflict(f"upstream unreachable: {e}", hint="retry later")
         req = result.get("request", {})
         return {
             "ok": True, "request_id": req.get("id"),
             "target": up_svc.target_host(), "duplicates": result.get("duplicates", []),
         }
-    raise ValueError(f"unknown tool: {name}")
+    raise errors.Validation(f"unknown tool: {name}", hint="call tools/list for the available tools")
 
 
 def _rpc_result(id_: Any, result: Any) -> dict:
@@ -956,14 +1040,19 @@ def _success(id_: Any, result: Any) -> dict:
     return _rpc_result(id_, payload)
 
 
-def _tool_error(id_: Any, code: str, message: str) -> dict:
+def _tool_error(id_: Any, code: str, message: str, hint: str | None = None) -> dict:
     """A tool-level failure. Reported via isError so the agent sees it, with a stable
-    machine-readable `code` in structuredContent to branch on."""
+    machine-readable `code` in structuredContent to branch on and an optional `hint`
+    naming the corrective action (AL-47)."""
+    err: dict[str, Any] = {"code": code, "message": message}
+    if hint:
+        err["hint"] = hint
+    text = f"{code}: {message}" + (f" ({hint})" if hint else "")
     return _rpc_result(
         id_,
         {
-            "content": [{"type": "text", "text": f"{code}: {message}"}],
-            "structuredContent": {"error": {"code": code, "message": message}},
+            "content": [{"type": "text", "text": text}],
+            "structuredContent": {"error": err},
             "isError": True,
         },
     )
@@ -975,7 +1064,14 @@ async def mcp_endpoint(
     db: Session = Depends(get_db),
     key: ApiKey = Depends(get_agent_key),
 ):
-    body = await request.json()
+    # Body parsing is inside the guard now — a malformed or non-object body is a
+    # JSON-RPC parse error, not a raw HTTP 500 that escapes the envelope (AL-47).
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return _rpc_error(None, -32700, "parse error: request body is not valid JSON")
+    if not isinstance(body, dict):
+        return _rpc_error(None, -32600, "invalid request: body must be a JSON object")
     method = body.get("method")
     id_ = body.get("id")
 
@@ -1000,9 +1096,11 @@ async def mcp_endpoint(
         params = body.get("params", {})
         name = params.get("name")
         args = params.get("arguments", {}) or {}
-        if name:
-            mcp_stats.increment(db, name)  # per-tool metering for the MCP Tools page
         try:
+            # Validate arguments against the declared schema before dispatch, so a
+            # bad call is an actionable error rather than a KeyError or a silently
+            # accepted junk value (AL-47).
+            _validate_args(name, args)
             # Run tool dispatch (sync DB + any outbound IO like report_agentledger_issue) off
             # the event loop, so a slow/hanging tool never blocks the async server — and a
             # same-host upstream loop-back can still be served concurrently.
@@ -1011,13 +1109,23 @@ async def mcp_endpoint(
             # Authenticated but out of scope: distinct code so agents can branch
             # (retry won't help — a different key or membership grant will).
             return _tool_error(id_, "unauthorized", str(e))
-        except (ValueError, KeyError) as e:
-            # Bad input / not-found: the agent can read the message and correct itself.
-            return _tool_error(id_, "invalid_request", str(e))
+        except errors.AppError as e:
+            # Expected, agent-correctable failure: not_found | validation | conflict.
+            return _tool_error(id_, e.code, str(e), e.hint)
+        except ValueError as e:
+            # A service rejected the input (bad enum, unknown project, etc.).
+            return _tool_error(id_, "validation", str(e))
+        except KeyError as e:
+            # A required arg slipped past validation (belt and braces).
+            return _tool_error(id_, "validation", f"missing argument: {e}")
         except Exception:  # noqa: BLE001 — never leak a raw 500 to a JSON-RPC client
             logger.exception("MCP tool %r failed", name)
             db.rollback()
-            return _tool_error(id_, "internal_error", f"internal error executing {name!r}")
+            return _tool_error(id_, "internal", f"internal error executing {name!r}",
+                               hint="safe to retry once; if it persists, report it")
+        # Meter only successful calls, after dispatch — failed/unknown-tool calls no
+        # longer inflate the MCP Tools dashboard (AL-47).
+        mcp_stats.increment(db, name)
         return _success(id_, result)
 
     return _rpc_error(id_, -32601, f"method not found: {method}")
