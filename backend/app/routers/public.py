@@ -39,15 +39,7 @@ router = APIRouter(prefix="/public", tags=["public"])
 _UPLOAD_RATE = 10  # attachment uploads per IP per minute
 
 
-def _client_ip(request: FastAPIRequest) -> str:
-    # Behind a proxy/LB the socket peer is the proxy, so every client shares one
-    # rate-limit bucket. Honor the first X-Forwarded-For hop ONLY when the operator
-    # asserts a trusted proxy sits in front (else the header is client-spoofable).
-    if settings.trusted_proxy:
-        xff = request.headers.get("x-forwarded-for")
-        if xff:
-            return xff.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+from app.security.net import client_ip as _client_ip  # shared with auth rate limiting
 
 
 def _rate_or_429(db: Session, request: FastAPIRequest, project_id: str | None, default: int = 20) -> None:

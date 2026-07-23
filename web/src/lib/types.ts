@@ -120,6 +120,8 @@ export interface ApiKey {
   project_id: string | null;
   last_used: string | null;
   created_at: string;
+  expires_at: string | null;
+  revoked: boolean;
 }
 
 export interface ApiKeyCreated extends ApiKey {

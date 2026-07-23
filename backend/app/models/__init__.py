@@ -18,6 +18,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeDecorator
@@ -398,6 +399,10 @@ class ApiKey(Base):
     scopes: Mapped[list] = mapped_column(JSON, default=list)
     last_used: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # Lifecycle (AL-72): NULL expires_at = non-expiring; revoked is a soft kill switch.
+    # verify_api_key rejects a key that is past expiry or revoked.
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
 
     user: Mapped[User] = relationship(back_populates="api_keys")
 
