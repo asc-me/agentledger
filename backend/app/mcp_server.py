@@ -1,6 +1,7 @@
 """MCP endpoint (JSON-RPC 2.0 over HTTP).
 
-Exposes the 5 live AgentLedger tools to agents, authenticated by a scoped API key.
+Exposes the live AgentLedger tools to agents, authenticated by a scoped API key
+(the count is `LIVE_TOOL_COUNT`, derived from `TOOLS` — never hardcode it).
 Every tool calls the shared service layer, so an agent's writes are identical to
 what the web app produces — one code path.
 
@@ -35,6 +36,7 @@ from app.services import mcp_stats
 from app.services import memory as mem_svc
 from app.services import prds as prd_svc
 from app.services import prioritization as prio_svc
+from app.services import requests as req_svc
 from app.services import upstream as up_svc
 
 import httpx
@@ -46,6 +48,8 @@ PROTOCOL_VERSION = "2025-06-18"
 logger = logging.getLogger("agentledger.mcp")
 
 _STATUS_ENUM = items_svc.STATUSES
+_LINK_TYPE_ENUM = links_svc.LINK_TYPES
+_REQUEST_TYPE_ENUM = req_svc.REQUEST_TYPES
 _EFFORT_DESC = "Relative effort estimate, integer (higher = more work). No fixed unit."
 
 TOOLS: list[dict[str, Any]] = [
@@ -182,7 +186,7 @@ TOOLS: list[dict[str, Any]] = [
             "properties": {
                 "a": {"type": "string"},
                 "b": {"type": "string"},
-                "type": {"type": "string", "enum": ["dependency", "code", "semantic", "tag"]},
+                "type": {"type": "string", "enum": _LINK_TYPE_ENUM},
                 "reason": {"type": "string"},
             },
             "required": ["a", "b"],
@@ -414,7 +418,7 @@ TOOLS: list[dict[str, Any]] = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "type": {"type": "string", "enum": ["bug", "feature", "enhancement", "feedback"], "description": "Defaults to feedback."},
+                "type": {"type": "string", "enum": _REQUEST_TYPE_ENUM, "description": "Defaults to feedback."},
                 "title": {"type": "string"},
                 "detail": {"type": "string", "description": "What happened / what you'd want. Include repro if it's a bug."},
             },

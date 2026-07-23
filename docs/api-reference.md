@@ -111,6 +111,13 @@ SSE event, then `delta`s, then `done`. Body is `{message, project_id?}`.
 | POST | `/api/api-keys` | JWT (plaintext returned once) |
 | DELETE | `/api/api-keys/{id}` | JWT |
 
+## Reports (upstream feedback)
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| GET | `/api/reports/upstream` | JWT | Whether upstream reporting is on + where reports go |
+| POST | `/api/reports/upstream` | JWT | Forward a user-initiated AgentLedger issue report upstream |
+
 ## MCP
 
 | Method | Path | Auth | Purpose |
