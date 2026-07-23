@@ -18,6 +18,7 @@ from app.config import settings
 from app.db import get_db
 from app.models import OrgInvite, OrgMembership, Organization, User
 from app.schemas import (
+    BillingOut,
     InviteAcceptIn,
     InviteCreate,
     InviteOut,
@@ -25,12 +26,16 @@ from app.schemas import (
     OrgCreate,
     OrgMemberOut,
     OrgOut,
+    PlanLimitsOut,
+    SetPlanIn,
+    UsageOut,
     UserOut,
 )
 from app.security import authz
 from app.security.deps import get_current_user
 from app.services import events as events_svc
 from app.services import orgs as orgs_svc
+from app.services import quotas
 
 
 def require_hosted() -> None:
@@ -72,6 +77,52 @@ def create_org(
     events_svc.record_user(db, user, action="create_org", target_type="org",
                            target_id=org.id, meta={"name": org.name})
     return OrgOut(id=org.id, name=org.name, plan=org.plan, role="owner")
+
+
+@router.get("/orgs/{org_id}/billing", response_model=BillingOut)
+def org_billing(org_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """The org's plan, its limits, and current usage — visible to any member so the
+    team can see how close they are to each cap."""
+    authz.require_org_member(db, user.id, org_id)
+    org = db.get(Organization, org_id)
+    if org is None:
+        raise HTTPException(404, "organization not found")
+    plan = quotas.plan_of(org)
+    return BillingOut(
+        plan=org.plan,
+        limits=PlanLimitsOut(
+            max_projects=plan.max_projects,
+            max_seats=plan.max_seats,
+            max_shards=plan.max_shards,
+            max_calls_per_month=plan.max_calls_per_month,
+        ),
+        usage=UsageOut(**quotas.usage(db, org_id)),
+    )
+
+
+@router.put("/orgs/{org_id}/plan", response_model=OrgOut)
+def set_org_plan(
+    org_id: str,
+    body: SetPlanIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Assign an org's plan. Private-beta billing is MANUAL (AL-75): only a platform
+    operator (config allowlist) may do this — an org owner can't upgrade themselves
+    for free. 404 (not 403) for non-admins so the endpoint's existence stays hidden."""
+    if not quotas.is_platform_admin(user):
+        raise HTTPException(404, "Not Found")
+    if body.plan not in quotas.PLANS:
+        raise HTTPException(422, f"unknown plan {body.plan!r}; expected one of {', '.join(quotas.PLANS)}")
+    org = db.get(Organization, org_id)
+    if org is None:
+        raise HTTPException(404, "organization not found")
+    org.plan = body.plan
+    db.commit()
+    events_svc.record_user(db, user, action="set_org_plan", target_type="org",
+                           target_id=org_id, meta={"plan": body.plan})
+    role = authz.org_role(db, user.id, org_id) or "admin"
+    return OrgOut(id=org.id, name=org.name, plan=org.plan, role=role)
 
 
 @router.get("/orgs/{org_id}/members", response_model=list[OrgMemberOut])

@@ -10,6 +10,7 @@ export const keys = {
   orgs: ["orgs"] as const,
   orgMembers: (id: string) => ["org-members", id] as const,
   invites: (id: string) => ["org-invites", id] as const,
+  billing: (id: string) => ["org-billing", id] as const,
   items: ["items"] as const,
   shards: ["shards"] as const,
   requests: ["requests"] as const,
@@ -45,6 +46,14 @@ export function useInvites(orgId?: string) {
   });
 }
 
+export function useBilling(orgId?: string) {
+  return useQuery({
+    queryKey: keys.billing(orgId ?? ""),
+    queryFn: () => api.orgBilling(orgId!),
+    enabled: !!orgId,
+  });
+}
+
 export function useCreateOrg() {
   const qc = useQueryClient();
   return useMutation({
@@ -58,7 +67,10 @@ export function useCreateInvite(orgId: string) {
   return useMutation({
     mutationFn: ({ email, role }: { email: string; role: string }) =>
       api.createInvite(orgId, email, role),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.invites(orgId) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.invites(orgId) });
+      qc.invalidateQueries({ queryKey: keys.billing(orgId) }); // seat usage moved
+    },
   });
 }
 
@@ -66,7 +78,10 @@ export function useRevokeInvite(orgId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (inviteId: string) => api.revokeInvite(orgId, inviteId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.invites(orgId) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.invites(orgId) });
+      qc.invalidateQueries({ queryKey: keys.billing(orgId) });
+    },
   });
 }
 

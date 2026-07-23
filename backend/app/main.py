@@ -1,10 +1,12 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from app.config import settings
+from app.errors import QuotaExceeded
 from app.db import SessionLocal, init_db
 from app.version import __version__
 from app.mcp_server import router as mcp_router
@@ -68,6 +70,14 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="AgentLedger API", version=__version__, lifespan=lifespan)
+
+@app.exception_handler(QuotaExceeded)
+async def _quota_handler(_: Request, exc: QuotaExceeded):
+    """A hosted plan limit hit via a REST route → HTTP 402 Payment Required. (The MCP
+    dispatcher maps the same exception to a ``quota_exceeded`` tool error itself.)"""
+    detail = str(exc) + (f" — {exc.hint}" if exc.hint else "")
+    return JSONResponse(status_code=402, content={"detail": detail})
+
 
 app.add_middleware(
     CORSMiddleware,

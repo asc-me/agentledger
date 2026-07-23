@@ -11,6 +11,7 @@ from app.schemas import MemberOut, ProjectCreate, ProjectOut, ProjectUpdate, Use
 from app.security import authz
 from app.security.deps import get_current_user
 from app.services import events as events_svc
+from app.services import quotas
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -62,6 +63,7 @@ def create_project(
     if not name:
         raise HTTPException(422, "project name is required")
     org_id = _resolve_org_id(db, user, body.org_id)
+    quotas.enforce_project_quota(db, org_id)  # hosted plan cap (no-op self-host)
     project = Project(
         id=_unique_slug(db, name),
         name=name,

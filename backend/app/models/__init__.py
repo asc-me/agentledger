@@ -128,6 +128,20 @@ class OrgMembership(Base):
     __table_args__ = (UniqueConstraint("org_id", "user_id", name="uq_org_membership"),)
 
 
+class OrgUsage(Base):
+    """Per-org, per-month usage counter for plan enforcement (hosted-only, AL-75).
+
+    Only the metered MCP-call count lives here; project/seat/shard usage is derived
+    by counting rows on demand. Keyed by (org_id, period) where period is 'YYYY-MM'
+    (UTC), so each month starts fresh — no reset job needed."""
+
+    __tablename__ = "org_usage"
+
+    org_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), primary_key=True)
+    period: Mapped[str] = mapped_column(String, primary_key=True)  # 'YYYY-MM' (UTC)
+    mcp_calls: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+
+
 class OrgInvite(Base):
     """A pending invitation to join an organization (hosted-only, AL-74b).
 
