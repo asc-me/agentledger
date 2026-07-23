@@ -1,11 +1,11 @@
-import { GitPullRequest, X } from "lucide-react";
+import { FlaskConical, GitPullRequest, X } from "lucide-react";
 
 import { Avatar } from "@/components/ui/avatar";
 import { LinkedCode } from "@/features/code/LinkedCode";
 import { useProjectCtx } from "@/features/ProjectContext";
 import { CHECK_COLOR, PR_STATE_COLOR } from "@/lib/meta";
-import { useItems, useLinks, useShards } from "@/lib/queries";
-import type { Item, Status } from "@/lib/types";
+import { useItems, useLinks, useShards, useUpdateItem } from "@/lib/queries";
+import type { Fidelity, Item, Status } from "@/lib/types";
 
 import { StatusMenu } from "./StatusMenu";
 
@@ -22,7 +22,9 @@ export function ItemDetailPanel({
   const { data: shards = [] } = useShards(activeId);
   const { data: links = [] } = useLinks(activeId);
   const { data: allItems = [] } = useItems(activeId);
+  const updateItem = useUpdateItem();
   const linked = shards.filter((s) => s.item_id === item.id);
+  const setFidelity = (f: Fidelity) => updateItem.mutate({ id: item.id, body: { fidelity: f } });
 
   const statusOf = (id: string) => allItems.find((i) => i.id === id)?.status;
   const deps = links.filter((l) => l.type === "dependency" && l.a === item.id).map((l) => l.b);
@@ -67,6 +69,33 @@ export function ItemDetailPanel({
               <span className="rounded-md bg-surface-4 px-2 py-0.5 font-mono text-[10px] text-muted-2">
                 {item.effort} pts
               </span>
+            )}
+          </div>
+
+          {/* Fidelity (AL-68): high = needs a prototype before it can be specced in words. */}
+          <div className="flex items-center gap-2">
+            <FlaskConical size={13} className="text-faint" />
+            <span className="font-mono text-[10px] uppercase tracking-wide text-faint">Fidelity</span>
+            <div className="flex items-center gap-1 rounded-lg border border-line-2 bg-surface-2 p-0.5">
+              {(["low", "high"] as const).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setFidelity(f)}
+                  className={
+                    "rounded-md px-2 py-0.5 font-mono text-[10.5px] transition-colors " +
+                    (item.fidelity === f
+                      ? f === "high"
+                        ? "bg-[rgba(224,179,74,0.14)] text-[#e0b34a]"
+                        : "bg-surface-4 text-fg"
+                      : "text-muted hover:text-fg-2")
+                  }
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
+            {item.fidelity === "high" && (
+              <span className="text-[11px] text-[#e0b34a]">needs a prototype</span>
             )}
           </div>
 

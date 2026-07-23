@@ -49,6 +49,7 @@ PROTOCOL_VERSION = "2025-06-18"
 logger = logging.getLogger("agentledger.mcp")
 
 _STATUS_ENUM = items_svc.STATUSES
+_FIDELITY_ENUM = items_svc.FIDELITIES
 _LINK_TYPE_ENUM = links_svc.LINK_TYPES
 _REQUEST_TYPE_ENUM = req_svc.REQUEST_TYPES
 _EFFORT_DESC = "Relative effort estimate, integer (higher = more work). No fixed unit."
@@ -80,6 +81,8 @@ TOOLS: list[dict[str, Any]] = [
                                 "description": "Files/globs/modules this item affects, e.g. backend/app/routers/*. Powers related-work clustering."},
                 "effort": {"type": "integer", "description": _EFFORT_DESC},
                 "status": {"type": "string", "enum": _STATUS_ENUM, "description": "Defaults to backlog."},
+                "fidelity": {"type": "string", "enum": _FIDELITY_ENUM,
+                             "description": "`low` (specifiable now) or `high` (needs a prototype first). Defaults to low."},
                 "prd_id": {"type": "string", "description": "The PRD this task implements (traceability)."},
                 "prd_section": {"type": "string", "description": "The PRD section this task implements."},
             },
@@ -101,6 +104,8 @@ TOOLS: list[dict[str, Any]] = [
                                 "description": "Files/globs/modules this item affects (for related-work clustering)."},
                 "effort": {"type": "integer", "description": _EFFORT_DESC},
                 "blocker": {"type": "string", "description": "Free-text blocker; empty string clears it."},
+                "fidelity": {"type": "string", "enum": _FIDELITY_ENUM,
+                             "description": "`low` or `high` (needs a prototype first)."},
                 "prd_id": {"type": "string"},
                 "prd_section": {"type": "string"},
             },
@@ -537,6 +542,7 @@ _ITEM_SCHEMA = {
         "claimed_by": _NULLABLE_STR,
         "prd_id": _NULLABLE_STR,
         "prd_section": _STR,
+        "fidelity": {"type": "string", "enum": _FIDELITY_ENUM},
     },
 }
 _SHARD_SCHEMA = {
@@ -796,6 +802,7 @@ def _item_dict(item) -> dict:
         "claimed_by": item.claimed_by,
         "prd_id": item.prd_id,
         "prd_section": item.prd_section,
+        "fidelity": item.fidelity,
     }
 
 
@@ -924,6 +931,7 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
             tags=args.get("tags", []),
             effort=args.get("effort", 0),
             status=args.get("status", "backlog"),
+            fidelity=args.get("fidelity", "low"),
             project_id=pid,
             touchpoints=args.get("touchpoints"),
             prd_id=args.get("prd_id"),
@@ -943,6 +951,7 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
             tags=args.get("tags"),
             effort=args.get("effort"),
             blocker=args.get("blocker"),
+            fidelity=args.get("fidelity"),
             touchpoints=args.get("touchpoints"),
             prd_id=args.get("prd_id"),
             prd_section=args.get("prd_section"),

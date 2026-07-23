@@ -80,8 +80,8 @@ Every client authenticates the same way: the key in an `X-API-Key` header (or
 | `claim_next` | `agent_id`, `lease_seconds`, `project_id` | **Atomically** claim the best ready item, assign it to you, move it to in_progress. Returns `{claimed, item}`. |
 | `heartbeat` | `id`, `agent_id` | Extend the lease on an item you hold (so it isn't reclaimed while you work) |
 | `release_item` | `id`, `agent_id`, `to_status` | Return a claimed item to the queue |
-| `create_item` | `title`, `description`, `tags`, `touchpoints`, `effort`, `status`, `project_id` | Create a tracker item (returns its `project_id`) |
-| `update_item` | `id`, `status`, `title`, `description`, `tags`, `touchpoints`, `effort`, `blocker`, `prd_id`, `prd_section` | Patch / advance an item |
+| `create_item` | `title`, `description`, `tags`, `touchpoints`, `effort`, `status`, `fidelity`, `project_id` | Create a tracker item (returns its `project_id`) |
+| `update_item` | `id`, `status`, `title`, `description`, `tags`, `touchpoints`, `effort`, `blocker`, `fidelity`, `prd_id`, `prd_section` | Patch / advance an item |
 | `search_items` | `query`, `tags`, `status`, `project_id` | Query the stream (query matches title, description, **and** tags) |
 | `add_memory` | `text`, `scope`, `item_id`, `project_id` | Record a memory shard — **enters as a `candidate`** pending human publish (AL-49) |
 | `search_memory` | `query`, `top_k`, `include_candidates`, `project_id` | Semantic search over **published** shards (set `include_candidates` for unreviewed ones); returns `status`, `item_id`, `source` |

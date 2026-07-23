@@ -254,6 +254,20 @@ def _stub_command(command: str, prd: Prd) -> str:
 
 _SECTION_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
 
+# High-fidelity signal: work whose answer needs a prototype to see/feel, not words
+# (AL-68). Heuristic over the section title + body; a human can always override.
+_HIGH_FIDELITY_RE = re.compile(
+    r"\b(ui|ux|visual|design|layout|interaction|animation|feel|look|screen|"
+    r"mockup|wireframe|prototype|gesture|responsive|styling|aesthetic|onboarding flow)\b",
+    re.IGNORECASE,
+)
+
+
+def classify_fidelity(text: str) -> str:
+    """`high` when the text is about how something looks/feels/behaves (needs a
+    prototype), else `low` (specifiable in words now)."""
+    return "high" if _HIGH_FIDELITY_RE.search(text or "") else "low"
+
 
 def parse_sections(body: str) -> list[str]:
     """Level-2 headings (`## …`) — the PRD's sections, in order."""
@@ -288,12 +302,17 @@ def coverage(db: Session, prd: Prd) -> dict:
     for s in sections:
         its = by_section.get(s, [])
         counts = Counter(it.status for it in its)
+        # High-fidelity work still open in this section = prototype-first questions
+        # a spec can't close in words yet (AL-68).
+        open_high = sum(1 for it in its if it.fidelity == "high" and it.status != "done")
         per.append({
             "section": s,
             "item_count": len(its),
             "done": counts.get("done", 0),
             "by_status": dict(counts),
             "gap": len(its) == 0,
+            "high_fidelity": sum(1 for it in its if it.fidelity == "high"),
+            "open_high_fidelity": open_high,
             "item_ids": [it.id for it in its],
         })
     total = len(items)
@@ -306,6 +325,8 @@ def coverage(db: Session, prd: Prd) -> dict:
         "gaps": [p["section"] for p in per if p["gap"]],
         "total_items": total, "done_items": done,
         "percent_done": round(100 * done / total) if total else 0,
+        # Prototype-first work outstanding across the whole PRD.
+        "open_high_fidelity": sum(1 for it in items if it.fidelity == "high" and it.status != "done"),
     }
 
 
@@ -314,17 +335,27 @@ def decompose(db: Session, prd: Prd, create: bool = False) -> dict:
     as backlog items linked to the PRD + section, so the spec drives the tracker."""
     cov = coverage(db, prd)
     bodies = section_bodies(prd.body)
-    proposals = [
-        {"section": p["section"], "title": f"Implement: {p['section']}",
-         "description": bodies.get(p["section"], "").strip()}
-        for p in cov["sections"] if p["gap"]
-    ]
+    proposals = []
+    for p in cov["sections"]:
+        if not p["gap"]:
+            continue
+        body = bodies.get(p["section"], "").strip()
+        # A section about how something looks/feels needs a prototype first (AL-68).
+        fidelity = classify_fidelity(f"{p['section']} {body}")
+        proposals.append({
+            "section": p["section"],
+            "title": f"Implement: {p['section']}",
+            "description": body,
+            "fidelity": fidelity,
+        })
     created = []
     if create:
         for pr in proposals:
             item = items_svc.create_item(
                 db, title=pr["title"], description=pr["description"],
-                project_id=prd.project_id, status="backlog", tags=["prd"],
+                project_id=prd.project_id, status="backlog",
+                tags=["prd", "prototype"] if pr["fidelity"] == "high" else ["prd"],
+                fidelity=pr["fidelity"],
                 prd_id=prd.id, prd_section=pr["section"],
                 reporter={"name": "Spec", "handle": "prd", "avatar": "#c9b8ff"},
             )
