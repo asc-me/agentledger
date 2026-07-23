@@ -281,7 +281,10 @@ def test_mcp_errors_are_structured_not_500(client, auth):
     assert r.status_code == 200  # never a raw 500
     result = r.json()["result"]
     assert result["isError"] is True
-    assert result["structuredContent"]["error"]["code"] == "invalid_request"
+    # AL-47: unknown id is now the precise `not_found` code, with a repair hint.
+    err = result["structuredContent"]["error"]
+    assert err["code"] == "not_found"
+    assert "search_items" in err["hint"]
 
 
 def test_create_project_slug_collision(client, auth):

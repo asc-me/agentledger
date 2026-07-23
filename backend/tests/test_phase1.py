@@ -90,7 +90,7 @@ def test_mcp_all_new_tools(client, auth):
     assert "linked_shards" in details
 
     nxt = _call(client, key, "suggest_next", {})
-    assert nxt["status"] in ("next", "backlog")
+    assert nxt["item"]["status"] in ("next", "backlog")
 
     link = _call(client, key, "link_items", {"a": "AL-12", "b": "AL-08", "type": "dependency"})
     assert link["a"] == "AL-12" and link["type"] == "dependency"

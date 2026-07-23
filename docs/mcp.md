@@ -100,15 +100,21 @@ Every client authenticates the same way: the key in an `X-API-Key` header (or
 | `link_code` | `ref_id`, `path`, `relation`, `ref_type`, `project_id` | **Bridge a tracker item/request to a code path** (affects/implements/fixes/tests/references). Idempotent; surfaces both ways |
 | `unlink_code` | `ref_id`, `path`, `relation`, `project_id` | Remove an item/request ↔ code link |
 
-`status` fields accept only `backlog · next · in_progress · review · done · blocked` (enforced in
-the schema). Tool failures return `isError: true` with a machine-readable
-`structuredContent.error.code` — never a raw HTTP 500:
+Arguments are validated against each tool's `inputSchema` **before dispatch**, so a
+missing required field or a bad enum comes back as an actionable error rather than a
+crash or a silently-accepted junk value. Tool failures return `isError: true` with a
+machine-readable `structuredContent.error.code`, a human `message`, and often a
+`hint` naming the fix — never a raw HTTP 500:
 
 | Code | Meaning | Agent's move |
 | --- | --- | --- |
-| `invalid_request` | bad input or not-found (e.g. unknown item id) | read the message, correct the args |
+| `validation` | malformed args: missing required field, bad enum, wrong type, unknown tool | fix the args per the `hint` |
+| `not_found` | a referenced id doesn't exist or isn't visible | `hint` points at `search_items` / `tools/list` |
+| `conflict` | collides with state: lost lease, reused idempotency key, upstream down | usually needs fresh work or a retry later |
 | `unauthorized` | authenticated but out of scope for the project/operation | retry won't help — needs a different key or a membership grant |
-| `internal_error` | unexpected server fault | safe to retry once |
+| `internal` | unexpected server fault | safe to retry once; if it persists, report it |
+
+A malformed request body returns a JSON-RPC parse error (`-32700`); an unknown method returns `-32601`. An `idempotency_key` is scoped to the tool that first used it — reusing it for a different tool is a `conflict`, not a silent duplicate.
 
 **Authority.** A key is bounded by its declared `scopes` (read/write) **and** its
 owner's project memberships — a key can never out-rank the user who minted it. A
