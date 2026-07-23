@@ -21,8 +21,8 @@ def login(body: LoginIn, db: Session = Depends(get_db)):
     if user is None or not verify_password(body.password, user.password_hash):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid credentials")
     return TokenOut(
-        access_token=create_access_token(user.id),
-        refresh_token=create_refresh_token(user.id),
+        access_token=create_access_token(user.id, user.token_version),
+        refresh_token=create_refresh_token(user.id, user.token_version),
     )
 
 
@@ -45,8 +45,8 @@ def register(body: RegisterIn, db: Session = Depends(get_db)):
     db.add(user)
     db.commit()
     return TokenOut(
-        access_token=create_access_token(user.id),
-        refresh_token=create_refresh_token(user.id),
+        access_token=create_access_token(user.id, user.token_version),
+        refresh_token=create_refresh_token(user.id, user.token_version),
     )
 
 
@@ -56,10 +56,24 @@ def refresh(body: RefreshIn, db: Session = Depends(get_db)):
         payload = decode_token(body.refresh_token, expected_type="refresh")
     except jwt.PyJWTError:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid refresh token")
-    uid = payload.get("sub")
-    if db.get(User, uid) is None:
+    user = db.get(User, payload.get("sub"))
+    if user is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "user not found")
-    return TokenOut(access_token=create_access_token(uid), refresh_token=create_refresh_token(uid))
+    # A refresh token from before the last logout/password-change is dead (AL-59).
+    if payload.get("tv", 0) != user.token_version:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "refresh token revoked")
+    return TokenOut(
+        access_token=create_access_token(user.id, user.token_version),
+        refresh_token=create_refresh_token(user.id, user.token_version),
+    )
+
+
+@router.post("/logout", status_code=204)
+def logout(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Server-side logout (AL-59): bump the user's token_version so every access AND
+    refresh token issued so far — on any device — stops validating immediately."""
+    user.token_version += 1
+    db.commit()
 
 
 @router.get("/me", response_model=UserOut)

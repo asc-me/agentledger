@@ -133,7 +133,14 @@ export const api = {
     setRefreshToken(data.refresh_token);
     return this.me();
   },
-  logout() {
+  async logout() {
+    // Best-effort server-side revocation (AL-59): bumps token_version so this
+    // session's refresh token can't outlive the logout. Clear locally regardless.
+    try {
+      await request<void>("/auth/logout", { method: "POST" }, false);
+    } catch {
+      /* already expired / offline — local clear below is what matters for the UI */
+    }
     accessToken = null;
     setRefreshToken(null);
   },

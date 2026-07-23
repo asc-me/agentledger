@@ -70,6 +70,10 @@ class User(Base):
     avatar: Mapped[str] = mapped_column(String, default="#a78bfa")
     initials: Mapped[str] = mapped_column(String, default="")
     password_hash: Mapped[str] = mapped_column(String)
+    # Bumped on logout / password change to revoke every outstanding token: it's
+    # embedded in each JWT as `tv` and checked on decode, so a leaked or logged-out
+    # refresh token stops working immediately instead of living to its 14d expiry (AL-59).
+    token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     memberships: Mapped[list[Membership]] = relationship(back_populates="user")

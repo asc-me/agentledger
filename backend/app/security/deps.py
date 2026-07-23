@@ -24,6 +24,10 @@ def get_current_user(
     user = db.get(User, payload.get("sub"))
     if user is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "user not found")
+    # Revocation check: a token minted before the user's last logout/password-change
+    # carries a stale `tv` and is rejected even though its signature is still valid (AL-59).
+    if payload.get("tv", 0) != user.token_version:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "token revoked")
     return user
 
 
