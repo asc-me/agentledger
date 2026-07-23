@@ -412,3 +412,23 @@ class IdempotencyKey(Base):
     tool: Mapped[str] = mapped_column(String)
     resource_id: Mapped[str] = mapped_column(String)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Event(Base):
+    """Append-only audit log: who did what, when (AL-43). One row per accepted
+    mutation, written at the boundary (MCP dispatcher + REST) so the actor's
+    identity is captured — the ledger in AgentLedger."""
+
+    __tablename__ = "events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    actor_type: Mapped[str] = mapped_column(String)  # user | apikey | system
+    actor_id: Mapped[str] = mapped_column(String, default="")
+    actor_label: Mapped[str] = mapped_column(String, default="")  # display name/handle
+    surface: Mapped[str] = mapped_column(String)  # mcp | rest | public
+    action: Mapped[str] = mapped_column(String)  # e.g. create_item, revoke_api_key
+    target_type: Mapped[str] = mapped_column(String, default="")
+    target_id: Mapped[str] = mapped_column(String, default="")
+    project_id: Mapped[str | None] = mapped_column(ForeignKey("projects.id"), nullable=True, index=True)
+    meta: Mapped[dict | None] = mapped_column(JSON, nullable=True)

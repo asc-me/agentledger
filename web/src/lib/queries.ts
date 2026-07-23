@@ -43,6 +43,10 @@ export function useMcpTools() {
   return useQuery({ queryKey: ["mcp-tools"], queryFn: () => api.mcpTools() });
 }
 
+export function useEvents(projectId?: string) {
+  return useQuery({ queryKey: ["events", projectId], queryFn: () => api.events(projectId) });
+}
+
 export function useCodeMap(projectId?: string) {
   return useQuery({ queryKey: ["code-map", projectId], queryFn: () => api.codeMap(projectId) });
 }

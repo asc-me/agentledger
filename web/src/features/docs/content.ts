@@ -132,6 +132,17 @@ const CONTENT: Record<string, DocEntry> = {
     related: [{ label: "Settings", to: "/settings" }],
   },
 
+  "/activity": {
+    badge: "ACTIVITY",
+    title: "Activity",
+    tagline: "The audit ledger — who did what, when.",
+    sections: [
+      { num: 1, h: "Every mutation", b: "One row per accepted change, attributed to the agent API key or user that made it. Agent (MCP) actions and user (REST) actions both land here." },
+      { num: 2, h: "Scoped to your projects", b: "You see activity only for projects you can read. Switch project in the left nav to narrow it." },
+    ],
+    related: [{ label: "MCP Tools", to: "/mcp-tools" }],
+  },
+
   "/feedback-kit": {
     badge: "FEEDBACK KIT",
     title: "Feedback Kit",

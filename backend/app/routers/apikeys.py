@@ -8,6 +8,7 @@ from app.schemas import ApiKeyCreate, ApiKeyCreated, ApiKeyOut
 from app.security import authz
 from app.security.apikey import generate_api_key
 from app.security.deps import get_current_user
+from app.services import events as events_svc
 
 router = APIRouter(prefix="/api-keys", tags=["api-keys"])
 
@@ -26,6 +27,9 @@ def create_key(body: ApiKeyCreate, db: Session = Depends(get_db), user: User = D
         # project the owner can't read would only produce a dead key.
         authz.require_readable(db, user.id, body.project_id)
     row, plaintext = generate_api_key(db, user.id, body.name, body.scopes, body.project_id)
+    events_svc.record_user(db, user, action="create_api_key", target_type="api_key",
+                           target_id=row.id, project_id=row.project_id,
+                           meta={"name": row.name, "scopes": row.scopes})
     out = ApiKeyCreated.model_validate({**ApiKeyOut.model_validate(row).model_dump(), "plaintext": plaintext})
     return out
 
@@ -35,5 +39,8 @@ def revoke_key(key_id: str, db: Session = Depends(get_db), user: User = Depends(
     row = db.get(ApiKey, key_id)
     if row is None or row.user_id != user.id:
         raise HTTPException(404, "key not found")
+    project_id, name = row.project_id, row.name
     db.delete(row)
     db.commit()
+    events_svc.record_user(db, user, action="revoke_api_key", target_type="api_key",
+                           target_id=key_id, project_id=project_id, meta={"name": name})
