@@ -90,6 +90,88 @@ def _send_invite_email(invite: OrgInvite, org: Organization, inviter: User) -> N
     email_svc.send_email(invite.email, subject, text)
 
 
+def create_platform_invite(db: Session, email: str, plan: str | None, inviter: User) -> OrgInvite:
+    """Operator-issued invite authorizing a BRAND-NEW account to sign up and found its
+    own org (AL-91). Commits.
+
+    Refused when an account already exists for the email: platform invites are for
+    net-new customers, and an existing user wanting another org goes through the
+    additional-org request flow instead. Optionally carries a ``plan`` to stamp on the
+    org they found. Re-inviting a still-pending email refreshes rather than duplicates."""
+    email = email.strip().lower()
+    if not email:
+        raise HTTPException(422, "invitee email is required")
+    if db.scalar(select(User).where(User.email == email)) is not None:
+        raise HTTPException(
+            409,
+            "an account already exists for that email — platform invites are for new "
+            "customers; an existing user needs an additional-org request instead",
+        )
+
+    invite = db.scalar(
+        select(OrgInvite).where(
+            OrgInvite.kind == "platform",
+            OrgInvite.email == email,
+            OrgInvite.status == "pending",
+        )
+    )
+    if invite is None:
+        invite = OrgInvite(
+            id="inv_" + uuid.uuid4().hex[:12],
+            kind="platform",
+            org_id=None,
+            email=email,
+            invited_by=inviter.id,
+        )
+        db.add(invite)
+    invite.plan = plan
+    invite.token = secrets.token_urlsafe(32)
+    invite.expires_at = utcnow() + timedelta(days=settings.invite_expiry_days)
+    db.commit()
+    db.refresh(invite)
+
+    _send_platform_invite_email(invite, inviter)
+    return invite
+
+
+def _send_platform_invite_email(invite: OrgInvite, inviter: User) -> None:
+    link = f"{settings.app_base_url.rstrip('/')}/invite/{invite.token}"
+    subject = "You're invited to AgentLedger"
+    who = inviter.name or inviter.handle or "The AgentLedger team"
+    text = (
+        f"{who} invited you to AgentLedger.\n\n"
+        f"Create your account and set up your organization:\n{link}\n\n"
+        f"This link expires in {settings.invite_expiry_days} days. If you didn't expect "
+        f"this, you can ignore this email."
+    )
+    email_svc.send_email(invite.email, subject, text)
+
+
+def pending_platform_invites(db: Session) -> list[OrgInvite]:
+    return list(
+        db.scalars(
+            select(OrgInvite)
+            .where(OrgInvite.kind == "platform", OrgInvite.status == "pending")
+            .order_by(OrgInvite.created_at.desc())
+        )
+    )
+
+
+def platform_plan_for(db: Session, user: User) -> str | None:
+    """The plan preset from the platform invite this user signed up with, if any.
+
+    Only meaningful while founding their FIRST org — the caller checks that — so no
+    separate consumed flag is needed and the invite keeps its provenance."""
+    invite = db.scalar(
+        select(OrgInvite).where(
+            OrgInvite.kind == "platform",
+            OrgInvite.accepted_user_id == user.id,
+            OrgInvite.status == "accepted",
+        )
+    )
+    return invite.plan if invite else None
+
+
 def invite_by_token(db: Session, token: str) -> OrgInvite | None:
     return db.scalar(select(OrgInvite).where(OrgInvite.token == token))
 
@@ -116,6 +198,14 @@ def accept_invite(db: Session, token: str, user: User) -> Organization:
     was sent to, so a forwarded link can't be redeemed by a different account. Joining
     is idempotent — a user who is already a member just marks the invite accepted."""
     invite = _validate_pending(invite_by_token(db, token))
+    if invite.kind == "platform":
+        # A platform invite is redeemed by REGISTERING with it (which founds a new org),
+        # not by joining an existing one. An already-signed-in user can't consume it.
+        raise HTTPException(
+            400,
+            "this is a platform invitation — redeem it by creating a new account; an "
+            "existing account needs an additional-org request instead",
+        )
     if invite.email.lower() != (user.email or "").lower():
         raise HTTPException(403, "this invitation was sent to a different email address")
 
@@ -137,6 +227,23 @@ def accept_invite(db: Session, token: str, user: User) -> Organization:
     return org
 
 
+def accept_platform_invite(db: Session, token: str, user: User) -> OrgInvite:
+    """Mark a platform invite redeemed by the account that just registered (AL-91).
+
+    There is no org to join — the invite authorized the *account*; the user then founds
+    their own org, and :func:`platform_plan_for` applies any plan preset at that point."""
+    invite = _validate_pending(invite_by_token(db, token))
+    if invite.kind != "platform":
+        raise HTTPException(400, "not a platform invitation")
+    if invite.email.lower() != (user.email or "").lower():
+        raise HTTPException(403, "this invitation was sent to a different email address")
+    invite.status = "accepted"
+    invite.accepted_at = utcnow()
+    invite.accepted_user_id = user.id
+    db.commit()
+    return invite
+
+
 def revoke_invite(db: Session, invite: OrgInvite) -> None:
     """Cancel a pending invite so its link stops working. Commits."""
     invite.status = "revoked"
@@ -144,10 +251,16 @@ def revoke_invite(db: Session, invite: OrgInvite) -> None:
 
 
 def pending_invites(db: Session, org_id: str) -> list[OrgInvite]:
+    """Pending invites for one org — org-kind only, so the operator's platform
+    invites never surface inside a tenant's member list."""
     return list(
         db.scalars(
             select(OrgInvite)
-            .where(OrgInvite.org_id == org_id, OrgInvite.status == "pending")
+            .where(
+                OrgInvite.kind == "org",
+                OrgInvite.org_id == org_id,
+                OrgInvite.status == "pending",
+            )
             .order_by(OrgInvite.created_at.desc())
         )
     )

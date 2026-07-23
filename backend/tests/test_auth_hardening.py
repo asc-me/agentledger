@@ -31,7 +31,7 @@ def test_register_accepts_strong_password(client):
 def test_registration_can_be_closed(client, monkeypatch):
     from app.config import settings
 
-    monkeypatch.setattr(settings, "open_registration", False)
+    monkeypatch.setattr(settings, "signup_mode", "invite_only")
     r = client.post("/api/auth/register", json=_register_body())
     assert r.status_code == 403
 

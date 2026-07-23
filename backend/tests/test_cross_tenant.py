@@ -239,7 +239,7 @@ def test_hosted_e2e_loop(client, monkeypatch):
     from app.services.email import outbox
 
     monkeypatch.setattr(settings, "hosted_mode", True)
-    monkeypatch.setattr(settings, "open_registration", False)  # invite-only
+    monkeypatch.setattr(settings, "signup_mode", "invite_only")  # invite-only
     monkeypatch.setattr(settings, "platform_admin_emails", "alex@ascme-labs.com")
     outbox.clear()
 

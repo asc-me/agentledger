@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { useAuth } from "@/features/auth/AuthContext";
 import { api } from "@/lib/api";
 import { keys } from "@/lib/queries";
+import type { InvitePreview } from "@/lib/types";
 
 /**
  * Landing page for an emailed org invite link (`/invite/:token`), AL-74b. Mounted
@@ -65,27 +66,63 @@ function InviteBody({
   currentEmail,
 }: {
   token: string;
-  preview: { org_name: string; email: string; role: string; invited_by: string };
+  preview: InvitePreview;
   currentEmail: string | null;
 }) {
   const invitedBy = preview.invited_by ? `${preview.invited_by} invited you` : "You've been invited";
+  const isPlatform = preview.kind === "platform";
 
   return (
     <>
-      <h1 className="mb-1 text-[16px] font-semibold">
-        Join <span className="text-accent">{preview.org_name}</span>
-      </h1>
-      <p className="mb-5 text-[12.5px] text-muted">
-        {invitedBy} to join <strong>{preview.org_name}</strong> as {preview.role}.
-      </p>
+      {isPlatform ? (
+        <>
+          <h1 className="mb-1 text-[16px] font-semibold">
+            Welcome to <span className="text-accent">AgentLedger</span>
+          </h1>
+          <p className="mb-5 text-[12.5px] text-muted">
+            {invitedBy} to AgentLedger. Create your account and you'll set up your
+            organization next.
+          </p>
+        </>
+      ) : (
+        <>
+          <h1 className="mb-1 text-[16px] font-semibold">
+            Join <span className="text-accent">{preview.org_name}</span>
+          </h1>
+          <p className="mb-5 text-[12.5px] text-muted">
+            {invitedBy} to join <strong>{preview.org_name}</strong> as {preview.role}.
+          </p>
+        </>
+      )}
 
       {currentEmail === null ? (
-        <SignedOutFlow token={token} email={preview.email} />
+        // A platform invite is redeemed by registering — no sign-in path, since an
+        // existing account can't consume one (it needs an additional-org request).
+        <SignedOutFlow token={token} email={preview.email} signupOnly={isPlatform} />
+      ) : isPlatform ? (
+        <AlreadySignedIn currentEmail={currentEmail} />
       ) : currentEmail.toLowerCase() === preview.email.toLowerCase() ? (
         <AcceptButton token={token} />
       ) : (
         <MismatchNotice invitedEmail={preview.email} currentEmail={currentEmail} />
       )}
+    </>
+  );
+}
+
+function AlreadySignedIn({ currentEmail }: { currentEmail: string }) {
+  const { logout } = useAuth();
+  return (
+    <>
+      <p className="mb-4 rounded-[10px] border border-line-2 bg-surface-2 p-3 text-[12px] text-muted">
+        This invitation creates a <strong>new</strong> account and organization, but you're
+        already signed in as <strong>{currentEmail}</strong>. Sign out to redeem it — or, if
+        you need an additional organization on your existing account, request one from your
+        organization settings.
+      </p>
+      <Button variant="outline" className="w-full" onClick={logout}>
+        Sign out
+      </Button>
     </>
   );
 }
@@ -140,7 +177,15 @@ function MismatchNotice({
   );
 }
 
-function SignedOutFlow({ token, email }: { token: string; email: string }) {
+function SignedOutFlow({
+  token,
+  email,
+  signupOnly = false,
+}: {
+  token: string;
+  email: string;
+  signupOnly?: boolean;
+}) {
   const { login, register } = useAuth();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -210,10 +255,18 @@ function SignedOutFlow({ token, email }: { token: string; email: string }) {
       {error && <p className="mb-4 text-[12px] text-st-blocked">{error}</p>}
 
       <Button type="submit" className="w-full" disabled={busy}>
-        {busy ? "Joining…" : mode === "signup" ? "Create account & join" : "Sign in & join"}
+        {busy
+          ? signupOnly
+            ? "Creating account…"
+            : "Joining…"
+          : signupOnly
+            ? "Create account"
+            : mode === "signup"
+              ? "Create account & join"
+              : "Sign in & join"}
       </Button>
 
-      <div className="mt-5 text-center text-[12px] text-muted">
+      <div className={`mt-5 text-center text-[12px] text-muted ${signupOnly ? "hidden" : ""}`}>
         {mode === "signup" ? (
           <>
             Already have an account?{" "}

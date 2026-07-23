@@ -32,11 +32,26 @@ class Settings(BaseSettings):
     refresh_token_days: int = 14
 
     # Auth hardening (AL-72). Login is rate-limited per-email and (more loosely)
-    # per-IP to blunt credential stuffing / brute force. open_registration=False
-    # closes public signup (invite-only private beta / hosted); self-host stays open.
+    # per-IP to blunt credential stuffing / brute force.
     login_rate_per_min: int = 10
-    open_registration: bool = True
     min_password_length: int = 8
+
+    # Who may create an account (AL-93). Replaces the old open_registration boolean,
+    # which couldn't express "closed to the public, open to invite holders" — the
+    # exact shape a private beta needs:
+    #   open        — anyone may sign up (self-host default, today's behavior)
+    #   invite_only — signup requires a valid platform or org invite
+    #   closed      — no signup at all, invite or not
+    signup_mode: str = "open"
+
+    @field_validator("signup_mode")
+    @classmethod
+    def _valid_signup_mode(cls, v: str) -> str:
+        allowed = {"open", "invite_only", "closed"}
+        v = (v or "").strip().lower()
+        if v not in allowed:
+            raise ValueError(f"signup_mode must be one of {sorted(allowed)}")
+        return v
 
     # Security hardening for internet-exposed deploys (all safe-by-default for local):
     # verify inbound GitHub webhook HMAC when set; trust X-Forwarded-For only behind a

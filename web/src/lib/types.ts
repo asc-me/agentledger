@@ -24,9 +24,11 @@ export interface Project {
 }
 
 // ── Deploy config + Organizations (hosted-only, AL-74b) ────────────────────
+export type SignupMode = "open" | "invite_only" | "closed";
+
 export interface AppConfig {
   hosted_mode: boolean;
-  open_registration: boolean;
+  signup_mode: SignupMode;
 }
 
 export type OrgRole = "owner" | "admin" | "member";
@@ -55,6 +57,8 @@ export interface Invite {
 }
 
 export interface InvitePreview {
+  /** "org" seats you in an existing org; "platform" onboards a brand-new tenant. */
+  kind: "org" | "platform";
   org_name: string;
   email: string;
   role: string;
