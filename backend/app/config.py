@@ -2,6 +2,10 @@ from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# The insecure fallback secret. Anyone knowing it can mint tokens for any user, so
+# an internet-exposed deploy MUST override JWT_SECRET (see startup security check).
+DEFAULT_JWT_SECRET = "dev-secret-change-me-in-production-0123456789abcdef"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -9,10 +13,17 @@ class Settings(BaseSettings):
     # Postgres by default; falls back to SQLite for zero-infra local runs / tests.
     database_url: str = "postgresql+psycopg://agentledger:agentledger@localhost:5432/agentledger"
 
-    jwt_secret: str = "dev-secret-change-me-in-production-0123456789abcdef"
+    jwt_secret: str = DEFAULT_JWT_SECRET
     jwt_algorithm: str = "HS256"
     access_token_minutes: int = 30
     refresh_token_days: int = 14
+
+    # Security hardening for internet-exposed deploys (all safe-by-default for local):
+    # verify inbound GitHub webhook HMAC when set; trust X-Forwarded-For only behind a
+    # known proxy; refuse to start on a weak/default JWT secret when required.
+    github_webhook_secret: str = ""
+    trusted_proxy: bool = False
+    require_strong_secret: bool = False
 
     embed_dim: int = 384
 
@@ -60,6 +71,11 @@ class Settings(BaseSettings):
     @property
     def is_sqlite(self) -> bool:
         return self.database_url.startswith("sqlite")
+
+    @property
+    def jwt_secret_is_weak(self) -> bool:
+        """The default secret, or anything too short to resist offline guessing."""
+        return self.jwt_secret == DEFAULT_JWT_SECRET or len(self.jwt_secret) < 32
 
 
 @lru_cache

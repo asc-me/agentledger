@@ -24,6 +24,10 @@ from app.routers import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from app.security.startup import check_security
+
+    check_security()  # refuse/warn on a weak JWT secret before serving (AL-44)
+
     if settings.is_sqlite:
         # SQLite (tests / zero-infra dev): create tables directly.
         init_db()
