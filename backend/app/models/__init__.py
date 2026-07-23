@@ -339,6 +339,13 @@ class PlatformConfig(Base):
     active_chat_provider: Mapped[str] = mapped_column(String, default="")
     providers: Mapped[dict] = mapped_column(JSON, default=dict)
 
+    # Public sharing (AL-73): a project is publicly readable ONLY when it opts in.
+    # The unguessable share_token is how public links address the project, so the
+    # raw project_id is never needed (and, in hosted mode, never accepted) — that
+    # closes the "name any project_id unauthenticated → cross-tenant read" hole.
+    public_share_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
+    share_token: Mapped[str | None] = mapped_column(String, nullable=True, unique=True)
+
     github_connected: Mapped[bool] = mapped_column(Boolean, default=False)
     github_account: Mapped[str] = mapped_column(String, default="")
     github_repo: Mapped[str] = mapped_column(String, default="")

@@ -230,6 +230,9 @@ def seed(db: Session) -> bool:
         github_connected=True, github_account="ascme-labs",
         github_repo="ascme-labs/agentledger", github_scope="repo · read/write",
         gdrive_connected=False,
+        # The demo roadmap is meant to be public; a stable token keeps the embed link
+        # working. Freshly-created projects stay private until they opt in (AL-73).
+        public_share_enabled=True, share_token="demo-core-roadmap",
     ))
 
     for p in PRDS:

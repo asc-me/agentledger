@@ -230,6 +230,44 @@ function IntegrationsPanel() {
         </div>
       </div>
 
+      {/* Public sharing */}
+      <div className="rounded-[13px] border border-line-2 bg-surface-2 p-4">
+        <div className="mb-1 flex items-center gap-2.5">
+          <ShieldCheck size={17} className="text-fg" />
+          <div className="text-[14px] font-semibold">Public sharing</div>
+        </div>
+        <p className="mb-3 text-[12px] text-muted">
+          Off by default — no project data is public until you turn this on. When enabled, the
+          read-only roadmap and feedback widget become reachable via an unguessable link.
+        </p>
+        <label className="mb-3 flex items-center gap-2 text-[12px] text-fg-2">
+          <input
+            type="checkbox"
+            checked={cfg.public_share_enabled}
+            onChange={async (e) => {
+              await api.updatePlatform({ public_share_enabled: e.target.checked });
+              invalidate();
+            }}
+            className="accent-accent"
+          />
+          Enable public roadmap + feedback widget for this project
+        </label>
+        {cfg.public_share_enabled && cfg.share_token && (
+          <div className="flex items-center gap-2">
+            <code className="flex-1 overflow-x-auto rounded-md border border-line-2 bg-surface-3 px-2 py-1.5 font-mono text-[11px] text-fg-2">
+              {origin}/embed/roadmap?token={cfg.share_token}
+            </code>
+            <button
+              className="rounded-md border border-line-2 bg-surface-3 p-1.5 text-muted hover:text-fg"
+              onClick={() => copyText(`${origin}/embed/roadmap?token=${cfg.share_token}`).then((ok) => ok && (setCopied(true), setTimeout(() => setCopied(false), 1500)))}
+              title="Copy public roadmap link"
+            >
+              {copied ? <Check size={13} className="text-accent" /> : <Copy size={13} />}
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* Spam protection */}
       <div className="rounded-[13px] border border-line-2 bg-surface-2 p-4">
         <div className="mb-1 flex items-center gap-2.5">

@@ -10,6 +10,8 @@ credentials); the inbound GitHub webhook (routers/public.py) is fully implemente
 """
 from __future__ import annotations
 
+from secrets import token_urlsafe
+
 from sqlalchemy.orm import Session
 
 from app.config import settings as app_settings
@@ -98,6 +100,11 @@ def update_config(db: Session, project_id: str, fields: dict) -> PlatformConfig:
             continue
         if hasattr(cfg, k) and v is not None:
             setattr(cfg, k, v)
+
+    # Mint a share token the first time public sharing is enabled; keep it stable
+    # thereafter so the link survives a disable/re-enable (AL-73).
+    if cfg.public_share_enabled and not cfg.share_token:
+        cfg.share_token = token_urlsafe(24)
 
     db.commit()
     db.refresh(cfg)

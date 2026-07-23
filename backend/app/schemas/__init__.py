@@ -250,6 +250,8 @@ class PlatformConfigOut(ORMModel):
     turnstile_secret_set: bool = False  # never expose the secret itself
     active_chat_provider: str = ""
     provider_config: dict = {}  # redacted per-provider config (api keys → key_set bool)
+    public_share_enabled: bool = False
+    share_token: str | None = None  # the share-link token (shown to authed members only)
 
 
 class PlatformUpdate(BaseModel):
@@ -263,6 +265,7 @@ class PlatformUpdate(BaseModel):
     turnstile_secret: str | None = None
     active_chat_provider: str | None = None
     providers: dict | None = None
+    public_share_enabled: bool | None = None
 
 
 class GithubConnectIn(BaseModel):
@@ -367,6 +370,7 @@ class PublicRequestIn(BaseModel):
     detail: str = ""
     email: str = ""
     project_id: str = "core"
+    token: str | None = None  # public share token (preferred over raw project_id; AL-73)
     source_url: str = ""
     meta: dict = {}
     attachment_ids: list[str] = []
