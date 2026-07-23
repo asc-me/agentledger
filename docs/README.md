@@ -35,6 +35,7 @@ fully offline with `docker compose up`.
 | [Data model](data-model.md) | Entities and relationships |
 | [Configuration](configuration.md) | Environment variables |
 | [Development](development.md) | Local dev, tests, migrations |
+| [Deploy](deploy.md) | Self-host deploy runbook — release identity, verification, recovery, rollback |
 | [Implementation plan](IMPLEMENTATION_PLAN.md) | Phase-by-phase build status |
 
 ## Conventions used in these docs

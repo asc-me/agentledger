@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     trusted_proxy: bool = False
     require_strong_secret: bool = False
 
+    # Release identity: the git revision this image was built from, baked in at
+    # `docker compose build` time (see docs/deploy.md) and reported by /health.
+    git_sha: str = "unknown"
+
     embed_dim: int = 384
 
     # ---- AI providers (F1). Defaults are all-stub → fully offline. ----

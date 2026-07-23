@@ -2,9 +2,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 from app.config import settings
 from app.db import SessionLocal, init_db
+from app.version import __version__
 from app.mcp_server import router as mcp_router
 from app.routers import (
     agent,
@@ -64,7 +66,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="AgentLedger API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="AgentLedger API", version=__version__, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -93,4 +95,19 @@ app.include_router(mcp_router, prefix=API)
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "agentledger-api", "version": "0.1.0"}
+    """Liveness + release identity. Always HTTP 200 while the process is up (so the
+    container healthcheck tracks the API, not the DB); `db` reports readiness, and
+    `version`+`git_sha` tell you exactly what revision is running (see docs/deploy.md)."""
+    db_ok = True
+    try:
+        with SessionLocal() as s:
+            s.execute(text("SELECT 1"))
+    except Exception:  # noqa: BLE001 — health must never raise
+        db_ok = False
+    return {
+        "status": "ok" if db_ok else "degraded",
+        "service": "agentledger-api",
+        "version": __version__,
+        "git_sha": settings.git_sha,
+        "db": "ok" if db_ok else "down",
+    }
