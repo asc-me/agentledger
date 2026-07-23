@@ -56,6 +56,38 @@ def add_memory(
     return shard
 
 
+def cluster_candidates(
+    db: Session, *, project_id: str | None = None, threshold: float = 0.88, min_size: int = 2
+) -> list[list[MemoryShard]]:
+    """Group candidate shards by embedding similarity — recurring agent lessons
+    worth promoting together (AL-50). When the same correction shows up N times,
+    it points at an underlying principle that deserves a durable owner (the
+    feedback thesis). Greedy single-pass; returns clusters of size >= min_size,
+    largest first. Small by construction — it runs over the review queue only."""
+    cands = [
+        s for s in list_shards(db, project_id=project_id, status="candidate")
+        if s.embedding is not None
+    ]
+    vecs = {s.id: list(s.embedding) for s in cands}  # coerce pgvector arrays → lists
+    used: set[str] = set()
+    clusters: list[list[MemoryShard]] = []
+    for i, a in enumerate(cands):
+        if a.id in used:
+            continue
+        group = [a]
+        used.add(a.id)
+        for b in cands[i + 1:]:
+            if b.id in used:
+                continue
+            if cosine_similarity(vecs[a.id], vecs[b.id]) >= threshold:
+                group.append(b)
+                used.add(b.id)
+        if len(group) >= min_size:
+            clusters.append(group)
+    clusters.sort(key=len, reverse=True)
+    return clusters
+
+
 def set_status(db: Session, shard_id: str, status: str) -> MemoryShard | None:
     """Promote (→published) or reject (→rejected) a candidate shard (AL-49)."""
     if status not in ("candidate", "published", "rejected"):

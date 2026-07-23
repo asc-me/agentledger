@@ -1,19 +1,26 @@
-import { Check, Sparkles, X } from "lucide-react";
+import { Check, Layers, Sparkles, X } from "lucide-react";
 
 import { useProjectCtx } from "@/features/ProjectContext";
-import { useCandidateShards, useReviewShard } from "@/lib/queries";
-import type { Shard } from "@/lib/types";
+import { useCandidateClusters, useCandidateShards, usePromoteCluster, useReviewShard } from "@/lib/queries";
+import type { Shard, ShardCluster } from "@/lib/types";
 
 /** AL-49: the review queue. Agent-written memory enters as a candidate and only
- *  reaches the trusted retrieval path once a human publishes it here. */
+ *  reaches the trusted retrieval path once a human publishes it here.
+ *  AL-50: recurring near-duplicate candidates are grouped so a lesson that keeps
+ *  recurring can be promoted once as a principle. */
 export function MemoryReviewView() {
   const { activeId } = useProjectCtx();
   const { data: candidates, isLoading } = useCandidateShards(activeId);
+  const { data: clusters } = useCandidateClusters(activeId);
   const { publish, reject } = useReviewShard();
+  const promoteCluster = usePromoteCluster();
 
   if (isLoading || !candidates) {
     return <div className="flex h-full items-center justify-center text-[13px] text-muted">Loading…</div>;
   }
+
+  const clustered = new Set((clusters ?? []).flatMap((c) => [c.representative.id, ...c.members.map((m) => m.id)]));
+  const loose = candidates.filter((s) => !clustered.has(s.id));
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -35,7 +42,20 @@ export function MemoryReviewView() {
           </div>
         ) : (
           <div className="mx-auto flex max-w-3xl flex-col gap-2.5">
-            {candidates.map((s) => (
+            {(clusters ?? []).map((c) => (
+              <ClusterCard
+                key={c.representative.id}
+                cluster={c}
+                onPromote={() =>
+                  promoteCluster.mutate({
+                    publishId: c.representative.id,
+                    rejectIds: c.members.map((m) => m.id),
+                  })
+                }
+                busy={promoteCluster.isPending}
+              />
+            ))}
+            {loose.map((s) => (
               <CandidateCard
                 key={s.id}
                 shard={s}
@@ -87,6 +107,53 @@ function CandidateCard({
           className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-[12px] text-muted transition-colors hover:border-line-hover hover:text-ink disabled:opacity-50"
         >
           <X size={13} /> Reject
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** AL-50: a recurring lesson — several near-duplicate candidates. Promote the
+ *  representative as the principle and drop the duplicates in one action. */
+function ClusterCard({
+  cluster,
+  onPromote,
+  busy,
+}: {
+  cluster: ShardCluster;
+  onPromote: () => void;
+  busy: boolean;
+}) {
+  const { representative: rep, members, size } = cluster;
+  return (
+    <div className="rounded-[12px] border border-[rgba(224,179,74,0.35)] bg-[rgba(224,179,74,0.04)] p-3.5">
+      <div className="mb-2 flex items-center gap-2">
+        <Layers size={13} className="text-[#e0b34a]" />
+        <span className="font-mono text-[10.5px] font-medium text-[#e0b34a]">
+          RECURRING · appeared {size}×
+        </span>
+        <span className="font-mono text-[10.5px] text-faint">{rep.origin || "agent"}</span>
+      </div>
+      <p className="mb-2 whitespace-pre-wrap text-[13px] leading-relaxed text-ink">{rep.text}</p>
+      {members.length > 0 && (
+        <details className="mb-3 text-[12px] text-muted">
+          <summary className="cursor-pointer select-none text-faint">
+            {members.length} similar duplicate{members.length > 1 ? "s" : ""}
+          </summary>
+          <ul className="mt-1.5 flex flex-col gap-1 border-l border-line pl-3">
+            {members.map((m) => (
+              <li key={m.id} className="whitespace-pre-wrap leading-relaxed">{m.text}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onPromote}
+          disabled={busy}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-[#1c2620] bg-[rgba(95,208,122,0.08)] px-2.5 py-1.5 text-[12px] font-medium text-st-done transition-colors hover:bg-[rgba(95,208,122,0.14)] disabled:opacity-50"
+        >
+          <Check size={13} /> Publish as principle{members.length > 0 ? ` · drop ${members.length}` : ""}
         </button>
       </div>
     </div>
