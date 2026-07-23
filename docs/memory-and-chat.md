@@ -32,6 +32,11 @@ into seeing unreviewed notes with `search_memory(include_candidates=true)`. Publ
 and reject are recorded in **Activity**. This keeps one hallucinated note from
 becoming ground truth for the next agent.
 
+**Grilling feeds the queue.** When you apply a PRD [grill](prds.md) session, each
+decision you made becomes a `candidate` shard (`origin: agent:grill`, sourced to the
+PRD) — so grilling decisions land in Memory review for approval instead of
+evaporating when the context is cleared.
+
 ### Semantic search
 
 The Memory tab's search box runs a **semantic** search (not keyword): the query is embedded

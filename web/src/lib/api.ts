@@ -236,7 +236,7 @@ export const api = {
       body: JSON.stringify({ command }),
     }),
   grillApply: (id: string, history: GrillMessage[]) =>
-    request<{ body: string }>(`/prds/${id}/grill/apply`, {
+    request<{ body: string; decisions_captured: number }>(`/prds/${id}/grill/apply`, {
       method: "POST",
       body: JSON.stringify({ history }),
     }),
