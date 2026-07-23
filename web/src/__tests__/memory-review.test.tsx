@@ -21,8 +21,10 @@ vi.mock("@/lib/api", () => ({
   api: {
     projects: vi.fn(async () => []),
     candidateShards: vi.fn(async () => [candidate]),
+    candidateClusters: vi.fn(async () => []),
     publishShard: publishSpy,
     rejectShard: vi.fn(async () => ({ ...candidate, status: "rejected" })),
+    promoteCluster: vi.fn(async () => ({ published: "", rejected: [] })),
   },
 }));
 

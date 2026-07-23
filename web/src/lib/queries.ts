@@ -134,16 +134,35 @@ export function useCandidateShards(projectId?: string) {
   });
 }
 
+export function useCandidateClusters(projectId?: string) {
+  return useQuery({
+    queryKey: ["shard-clusters", projectId],
+    queryFn: () => api.candidateClusters(projectId),
+  });
+}
+
+function invalidateReview(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: ["shard-candidates"] });
+  qc.invalidateQueries({ queryKey: ["shard-clusters"] });
+  qc.invalidateQueries({ queryKey: keys.shards });
+}
+
 export function useReviewShard() {
   const qc = useQueryClient();
-  const invalidate = () => {
-    qc.invalidateQueries({ queryKey: ["shard-candidates"] });
-    qc.invalidateQueries({ queryKey: keys.shards });
-  };
+  const invalidate = () => invalidateReview(qc);
   return {
     publish: useMutation({ mutationFn: (id: string) => api.publishShard(id), onSuccess: invalidate }),
     reject: useMutation({ mutationFn: (id: string) => api.rejectShard(id), onSuccess: invalidate }),
   };
+}
+
+export function usePromoteCluster() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { publishId: string; rejectIds: string[] }) =>
+      api.promoteCluster(v.publishId, v.rejectIds),
+    onSuccess: () => invalidateReview(qc),
+  });
 }
 
 export function useRequests(projectId?: string) {

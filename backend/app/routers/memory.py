@@ -42,6 +42,46 @@ def list_candidates(
     return mem_svc.list_shards(db, project_id=project_id, status="candidate")
 
 
+class ShardCluster(BaseModel):
+    size: int
+    representative: ShardOut
+    members: list[ShardOut]  # the duplicates (representative excluded)
+
+
+@router.get("/candidate-clusters", response_model=list[ShardCluster])
+def candidate_clusters(
+    project_id: str | None = None,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Recurring lessons (AL-50): candidate shards grouped by similarity, so a
+    correction that keeps recurring can be promoted once as a principle."""
+    groups = mem_svc.cluster_candidates(db, project_id=project_id)
+    return [
+        ShardCluster(
+            size=len(g),
+            representative=ShardOut.model_validate(g[0]),
+            members=[ShardOut.model_validate(s) for s in g[1:]],
+        )
+        for g in groups
+    ]
+
+
+class PromoteClusterIn(BaseModel):
+    publish_id: str
+    reject_ids: list[str] = []
+
+
+@router.post("/promote-cluster")
+def promote_cluster(body: PromoteClusterIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Give a recurring lesson one durable owner: publish the representative and
+    reject the duplicates (AL-50). Each shard is authz-checked and audited."""
+    _review_shard(body.publish_id, "published", "publish_shard", db, user)
+    for rid in body.reject_ids:
+        _review_shard(rid, "rejected", "reject_shard", db, user)
+    return {"published": body.publish_id, "rejected": body.reject_ids}
+
+
 @router.post("/shards", response_model=ShardOut, status_code=201)
 def add_shard(body: ShardCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     if body.project_id is not None:

@@ -77,6 +77,12 @@ export interface Shard {
   created_at: string;
 }
 
+export interface ShardCluster {
+  size: number;
+  representative: Shard;
+  members: Shard[];
+}
+
 export interface ShardHit {
   shard: Shard;
   score: number;

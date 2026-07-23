@@ -20,6 +20,7 @@ import type {
   Item,
   EventPage,
   McpToolInfo,
+  ShardCluster,
   Member,
   PlatformConfig,
   Prd,
@@ -174,10 +175,17 @@ export const api = {
     }),
   candidateShards: (projectId?: string) =>
     request<Shard[]>(`/memory/candidates${projectId ? `?project_id=${projectId}` : ""}`),
+  candidateClusters: (projectId?: string) =>
+    request<ShardCluster[]>(`/memory/candidate-clusters${projectId ? `?project_id=${projectId}` : ""}`),
   publishShard: (id: string) =>
     request<Shard>(`/memory/shards/${id}/publish`, { method: "POST" }),
   rejectShard: (id: string) =>
     request<Shard>(`/memory/shards/${id}/reject`, { method: "POST" }),
+  promoteCluster: (publish_id: string, reject_ids: string[]) =>
+    request<{ published: string; rejected: string[] }>("/memory/promote-cluster", {
+      method: "POST",
+      body: JSON.stringify({ publish_id, reject_ids }),
+    }),
 
   requests: (projectId?: string) =>
     request<RequestItem[]>(`/requests${projectId ? `?project_id=${projectId}` : ""}`),

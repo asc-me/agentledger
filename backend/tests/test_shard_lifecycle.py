@@ -107,6 +107,51 @@ def test_read_only_member_cannot_publish(client):
     assert r.status_code == 403
 
 
+# ---- AL-50: recurring-lesson clustering ----
+
+def test_similar_candidates_cluster(client, auth):
+    key = _key(client, auth, project_id="core")
+    # Identical text → identical (deterministic stub) embedding → same cluster.
+    for _ in range(3):
+        _mcp(client, key, "add_memory", {"text": "always validate MCP args before dispatch"})
+    _mcp(client, key, "add_memory", {"text": "unrelated note about drag reorder flicker on safari"})
+    clusters = client.get("/api/memory/candidate-clusters?project_id=core", headers=auth).json()
+    assert len(clusters) == 1
+    c = clusters[0]
+    assert c["size"] == 3
+    assert len(c["members"]) == 2  # representative excluded
+
+
+def test_promote_cluster_publishes_rep_and_rejects_dupes(client, auth):
+    key = _key(client, auth, project_id="core")
+    for _ in range(3):
+        _mcp(client, key, "add_memory", {"text": "prefer typed errors with a repair hint"})
+    cluster = client.get("/api/memory/candidate-clusters?project_id=core", headers=auth).json()[0]
+    rep = cluster["representative"]["id"]
+    dupes = [m["id"] for m in cluster["members"]]
+
+    r = client.post("/api/memory/promote-cluster",
+                    json={"publish_id": rep, "reject_ids": dupes}, headers=auth)
+    assert r.status_code == 200
+    # representative is now searchable; dupes never surface; queue is empty.
+    hits = _mcp(client, key, "search_memory", {"query": "prefer typed errors repair hint", "top_k": 50})
+    ids = {h["id"] for h in hits["results"]}
+    assert rep in ids and not (ids & set(dupes))
+    assert client.get("/api/memory/candidate-clusters?project_id=core", headers=auth).json() == []
+
+
+def test_read_only_member_cannot_promote_cluster(client):
+    alex = _login(client, "alex@ascme-labs.com")
+    key = _key(client, alex, project_id="core")
+    for _ in range(2):
+        _mcp(client, key, "add_memory", {"text": "some recurring agent lesson zzz"})
+    cluster = client.get("/api/memory/candidate-clusters?project_id=core", headers=alex).json()[0]
+    ops = _login(client, "ops@ascme-labs.com")  # read-only on core
+    r = client.post("/api/memory/promote-cluster",
+                    json={"publish_id": cluster["representative"]["id"]}, headers=ops)
+    assert r.status_code == 403
+
+
 # ---- auto-extraction enters as candidate ----
 
 def test_extract_lessons_are_candidates(client, auth):
