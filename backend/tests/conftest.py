@@ -1,7 +1,9 @@
 import os
 
-# Must be set before app modules import settings.
-os.environ["DATABASE_URL"] = "sqlite:///./.pytest.db"
+# Must be set before app modules import settings. setdefault so CI can point the
+# suite at Postgres (DATABASE_URL=postgresql+psycopg://...) to exercise the real
+# Alembic chain and pgvector `<=>` search path; local runs default to SQLite.
+os.environ.setdefault("DATABASE_URL", "sqlite:///./.pytest.db")
 os.environ["SEED_ON_START"] = "true"
 
 import pytest
@@ -17,15 +19,27 @@ def _reset_rate_limit():
     yield
 
 
+def _drop_schema():
+    from sqlalchemy import text
+
+    from app.db import Base, engine
+
+    Base.metadata.drop_all(engine)
+    if not engine.url.drivername.startswith("sqlite"):
+        # alembic_version isn't in Base.metadata; drop it too or the lifespan's
+        # `upgrade head` would think the (now-dropped) schema is still current.
+        with engine.begin() as conn:
+            conn.execute(text("DROP TABLE IF EXISTS alembic_version"))
+
+
 @pytest.fixture()
 def client():
-    from app.db import Base, engine
     from app.main import app
 
-    Base.metadata.drop_all(engine)  # start clean; lifespan re-creates + seeds
+    _drop_schema()  # start clean; lifespan re-creates (SQLite) / re-migrates (Postgres) + seeds
     with TestClient(app) as c:
         yield c
-    Base.metadata.drop_all(engine)
+    _drop_schema()
 
 
 @pytest.fixture()

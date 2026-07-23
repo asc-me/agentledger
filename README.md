@@ -15,6 +15,8 @@ opt-in. A hosted multi-tenant service is a later, additive layer.
 > `#c6f24e` / purple `#a78bfa`, IBM Plex) and the optional demo dataset mirror the prototype.
 > **Full documentation is in [`docs/`](docs/README.md)** — product overview, per-feature
 > guides, architecture, API reference, and the phase-by-phase implementation plan.
+> Coding agents (and contributors) start at [`AGENTS.md`](AGENTS.md) — operating loop,
+> invariants, and per-task-class checklists.
 
 ## What's built
 
