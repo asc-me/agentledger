@@ -14,6 +14,7 @@ from app.schemas import (
     PlatformUpdate,
 )
 from app.providers import registry as provider_registry
+from app.security import authz
 from app.security.deps import get_current_user
 from app.services import drive_sync
 from app.services import items as items_svc
@@ -34,12 +35,14 @@ def list_providers(_: User = Depends(get_current_user)):
 
 
 @router.get("", response_model=PlatformConfigOut)
-def get_platform(project_id: str = "core", db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def get_platform(project_id: str = "core", db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    authz.require_readable(db, user.id, project_id)
     return platform_svc.get_config(db, project_id)
 
 
 @router.patch("", response_model=PlatformConfigOut)
-def update_platform(body: PlatformUpdate, project_id: str = "core", db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def update_platform(body: PlatformUpdate, project_id: str = "core", db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    authz.require_writable(db, user.id, project_id)
     if body.llm_mode is not None and body.llm_mode not in ("stub", "local", "cloud"):
         raise HTTPException(422, "llm_mode must be stub | local | cloud")
     if body.active_chat_provider and body.active_chat_provider not in provider_registry.IDS:
@@ -48,12 +51,14 @@ def update_platform(body: PlatformUpdate, project_id: str = "core", db: Session 
 
 
 @router.post("/github/connect", response_model=PlatformConfigOut)
-def github_connect(body: GithubConnectIn, project_id: str = "core", db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def github_connect(body: GithubConnectIn, project_id: str = "core", db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    authz.require_writable(db, user.id, project_id)
     return platform_svc.connect_github(db, project_id, account=body.account, repo=body.repo)
 
 
 @router.post("/github/disconnect", response_model=PlatformConfigOut)
-def github_disconnect(project_id: str = "core", db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def github_disconnect(project_id: str = "core", db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    authz.require_writable(db, user.id, project_id)
     return platform_svc.disconnect_github(db, project_id)
 
 
@@ -66,6 +71,7 @@ def github_create_issue(
     Local slice: records the item and the intended issue. Pushing to the real
     GitHub API requires a connected account with a token (out of scope offline).
     """
+    authz.require_writable(db, user.id, project_id)
     cfg = platform_svc.get_config(db, project_id)
     item = items_svc.create_item(
         db, title=body.title, description=body.body, tags=["github", body.type],
@@ -82,18 +88,21 @@ def github_create_issue(
 
 
 @router.post("/gdrive/connect", response_model=PlatformConfigOut)
-def gdrive_connect(body: GdriveConnectIn, project_id: str = "core", db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def gdrive_connect(body: GdriveConnectIn, project_id: str = "core", db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    authz.require_writable(db, user.id, project_id)
     return platform_svc.connect_gdrive(db, project_id, account=body.account, folder=body.folder)
 
 
 @router.post("/gdrive/disconnect", response_model=PlatformConfigOut)
-def gdrive_disconnect(project_id: str = "core", db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def gdrive_disconnect(project_id: str = "core", db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    authz.require_writable(db, user.id, project_id)
     return platform_svc.disconnect_gdrive(db, project_id)
 
 
 @router.post("/gdrive/sync")
-def gdrive_sync(project_id: str = "core", db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def gdrive_sync(project_id: str = "core", db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Two-way sync of this project's PRDs with the connected folder's PRDs/ subdirectory."""
+    authz.require_writable(db, user.id, project_id)
     cfg = platform_svc.get_config(db, project_id)
     if not cfg.gdrive_connected:
         raise HTTPException(400, "Google Drive is not connected for this project")

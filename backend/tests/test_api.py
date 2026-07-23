@@ -153,10 +153,11 @@ def test_register_then_create_first_project(client):
     assert [i["title"] for i in listed] == ["First task"]
 
 
-def test_create_item_unknown_project_is_422(client, auth):
-    # A missing/incorrect project is a clean client error, not a 500.
+def test_create_item_unknown_project_is_404(client, auth):
+    # A missing/incorrect project is a clean client error, not a 500. Since the
+    # authz pass (AL-42), unknown and not-a-member are both existence-hiding 404s.
     r = client.post("/api/items", json={"title": "x", "project_id": "does-not-exist"}, headers=auth)
-    assert r.status_code == 422
+    assert r.status_code == 404
 
 
 def _mcp(client, key, name, args):
@@ -184,12 +185,25 @@ def test_project_scoped_api_key_targets_its_project(client, auth):
     got = client.get("/api/items?project_id=alpha", headers=auth).json()
     assert any(i["title"] == "scoped task" for i in got)
 
-    # Override: an explicit project_id on the call wins.
-    _mcp(client, key, "create_item", {"title": "override task", "project_id": "beta"})
+    # A project-scoped key can NOT escape its project via the project_id arg
+    # (this used to work — the F1/AL-42 authz hole).
+    r = client.post(
+        "/api/mcp",
+        json={"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+              "params": {"name": "create_item",
+                         "arguments": {"title": "override task", "project_id": "beta"}}},
+        headers={"X-API-Key": key},
+    ).json()["result"]
+    assert r["isError"] is True
+    assert r["structuredContent"]["error"]["code"] == "unauthorized"
+    beta = client.get("/api/items?project_id=beta", headers=auth).json()
+    assert not any(i["title"] == "override task" for i in beta)
+
+    # A GLOBAL key from a user with write access to both projects may choose.
+    gkey = client.post("/api/api-keys", json={"name": "global-agent"}, headers=auth).json()["plaintext"]
+    _mcp(client, gkey, "create_item", {"title": "override task", "project_id": "beta"})
     beta = client.get("/api/items?project_id=beta", headers=auth).json()
     assert any(i["title"] == "override task" for i in beta)
-    alpha = client.get("/api/items?project_id=alpha", headers=auth).json()
-    assert not any(i["title"] == "override task" for i in alpha)
 
 
 def test_create_api_key_unknown_project_is_422(client, auth):

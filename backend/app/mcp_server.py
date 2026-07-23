@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import ApiKey, Item, Link, MemoryShard, Project
+from app.security import authz
 from app.security.deps import get_agent_key
 from app.services import clustering as cluster_svc
 from app.services import code_graph as code_svc
@@ -34,7 +35,6 @@ from app.services import memory as mem_svc
 from app.services import prds as prd_svc
 from app.services import prioritization as prio_svc
 from app.services import upstream as up_svc
-from app.services.projects import resolve_project_id
 
 import httpx
 
@@ -683,9 +683,46 @@ def _idempotent_remember(db: Session, args: dict, tool: str, resource_id: str) -
     idem_svc.remember(db, args.get("idempotency_key") or "", tool, resource_id)
 
 
+def _scoped_item(db: Session, item_id: str, scope_ids: list[str]) -> Item:
+    """Load an item and require it inside the key's project scope. The refusal
+    deliberately does not reveal which project an off-scope item belongs to."""
+    item = db.get(Item, item_id)
+    if item is None:
+        raise ValueError(f"item not found: {item_id}")
+    if item.project_id not in scope_ids:
+        raise authz.Forbidden(f"item {item_id!r} is outside this key's project scope")
+    return item
+
+
 def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any:
-    # The key scopes the agent to a project; a per-call `project_id` argument overrides it.
-    pid = args.get("project_id") or resolve_project_id(db, key.project_id)
+    # Authority: a key's declared scopes ∩ its owner's memberships bound every call
+    # (a key never out-ranks the user who minted it). `project_id` args can select
+    # among in-scope projects but can no longer escape the scope.
+    writes = name not in _READ_ONLY
+    if writes and "write" not in (key.scopes or []):
+        raise authz.Forbidden(
+            f"api key {key.name!r} has scopes {key.scopes} but {name!r} mutates state; "
+            "mint a key with the 'write' scope or use a read-only tool"
+        )
+    readable = authz.key_readable_ids(db, key)
+    allowed = authz.key_writable_ids(db, key) if writes else readable
+    requested = args.get("project_id")
+    if requested and requested not in allowed:
+        raise authz.Forbidden(
+            f"project {requested!r} is outside this key's {'write' if writes else 'read'} scope "
+            f"(in scope: {', '.join(allowed) or 'none'})"
+        )
+    pid = (
+        requested
+        or (key.project_id if key.project_id in allowed else None)
+        or (allowed[0] if allowed else None)
+    )
+    if pid is None and name in _PROJECT_SCOPED:
+        raise authz.Forbidden(
+            f"no project in scope for {name!r}: the key's owner has no "
+            f"{'write-access ' if writes else ''}project memberships; "
+            "ask a project owner to grant access"
+        )
 
     if name == "get_context":
         proj = db.get(Project, pid) if pid else None
@@ -694,6 +731,8 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
             "project_name": proj.name if proj else None,
             "key_project_id": key.project_id,  # None => global key; agent should pass project_id
             "scopes": key.scopes,
+            "readable_projects": readable,
+            "writable_projects": authz.key_writable_ids(db, key),
             "project_count": db.scalar(select(func.count()).select_from(Project)),
             "tool_count": LIVE_TOOL_COUNT,
         }
@@ -701,6 +740,7 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
         return {"results": [
             {"id": p.id, "name": p.name, "accent": p.accent, "description": p.description}
             for p in db.scalars(select(Project).order_by(Project.name)).all()
+            if p.id in readable
         ]}
     if name == "create_item":
         cached = _idempotent_get(db, args, Item)
@@ -722,6 +762,7 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
         _idempotent_remember(db, args, "create_item", item.id)
         return _item_dict(item)
     if name == "update_item":
+        _scoped_item(db, args["id"], allowed)
         item = items_svc.update_item(
             db,
             args["id"],
@@ -748,6 +789,8 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
         cached = _idempotent_get(db, args, MemoryShard)
         if cached is not None:
             return _shard_dict(cached)
+        if args.get("item_id"):
+            _scoped_item(db, args["item_id"], allowed)
         shard = mem_svc.add_memory(
             db,
             text_body=args["text"],
@@ -777,6 +820,7 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
         ]
         return _paginate(rows, args)
     if name == "get_item_details":
+        _scoped_item(db, args["id"], readable)
         details = items_svc.get_item_details(db, args["id"])
         if details is None:
             raise ValueError(f"item not found: {args['id']}")
@@ -785,9 +829,7 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
         item = items_svc.suggest_next(db, project_id=pid)
         return _item_dict(item) if item else None
     if name == "related_work":
-        item = db.get(Item, args["id"])
-        if item is None:
-            raise ValueError(f"item not found: {args['id']}")
+        item = _scoped_item(db, args["id"], readable)
         rel = cluster_svc.related_items(db, item, item.project_id)
         return {"results": [
             {**_item_dict(r["item"]), "score": r["score"], "shared": r["shared"], "link_types": r["link_types"]}
@@ -804,6 +846,10 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
         cached = _idempotent_get(db, args, Link)
         if cached is not None:
             return {"id": cached.id, "a": cached.a, "b": cached.b, "type": cached.type}
+        # Both endpoints must exist and be in scope — also stops dangling links
+        # from poisoning get_backlog's blocked_by.
+        _scoped_item(db, args["a"], allowed)
+        _scoped_item(db, args["b"], allowed)
         link = links_svc.create_link(
             db, a=args["a"], b=args["b"], type_=args.get("type", "dependency"),
             reason=args.get("reason", ""), project_id=pid,
@@ -818,18 +864,21 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
         )
         return {"claimed": item is not None, "item": _item_dict(item) if item else None}
     if name == "heartbeat":
+        _scoped_item(db, args["id"], allowed)  # raises the precise error first
         agent = args.get("agent_id") or key.name or key.id
         item = items_svc.heartbeat(db, args["id"], agent)
         if item is None:
-            raise ValueError(f"not the lease holder, or unknown item: {args['id']}")
+            raise ValueError(f"not the lease holder for {args['id']!r}")
         return _item_dict(item)
     if name == "release_item":
+        _scoped_item(db, args["id"], allowed)
         agent = args.get("agent_id") or key.name or key.id
         item = items_svc.release_item(db, args["id"], agent, to_status=args.get("to_status", "next"))
         if item is None:
-            raise ValueError(f"not the lease holder, or unknown item: {args['id']}")
+            raise ValueError(f"not the lease holder for {args['id']!r}")
         return _item_dict(item)
     if name == "extract_lessons":
+        _scoped_item(db, args["id"], allowed)
         return {"results": insights_svc.extract_lessons(db, args["id"])}
     if name == "generate_digest":
         return {"digest": insights_svc.generate_digest(db, project_id=pid)}
@@ -837,11 +886,15 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
         prd = prd_svc.get_prd(db, args["prd_id"])
         if prd is None:
             raise ValueError(f"prd not found: {args['prd_id']}")
+        if prd.project_id not in readable:
+            raise authz.Forbidden(f"prd {args['prd_id']!r} is outside this key's project scope")
         return prd_svc.coverage(db, prd)
     if name == "decompose_prd":
         prd = prd_svc.get_prd(db, args["prd_id"])
         if prd is None:
             raise ValueError(f"prd not found: {args['prd_id']}")
+        if prd.project_id not in allowed:
+            raise authz.Forbidden(f"prd {args['prd_id']!r} is outside this key's project scope")
         return prd_svc.decompose(db, prd, create=bool(args.get("create", False)))
     if name == "describe_code":
         return code_svc.describe_code(
@@ -954,6 +1007,10 @@ async def mcp_endpoint(
             # the event loop, so a slow/hanging tool never blocks the async server — and a
             # same-host upstream loop-back can still be served concurrently.
             result = await run_in_threadpool(_call_tool, db, name, args, key)
+        except authz.Forbidden as e:
+            # Authenticated but out of scope: distinct code so agents can branch
+            # (retry won't help — a different key or membership grant will).
+            return _tool_error(id_, "unauthorized", str(e))
         except (ValueError, KeyError) as e:
             # Bad input / not-found: the agent can read the message and correct itself.
             return _tool_error(id_, "invalid_request", str(e))
