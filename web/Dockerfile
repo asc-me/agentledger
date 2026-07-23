@@ -16,8 +16,9 @@ ARG GIT_SHA=unknown
 # docker-compose working (listen 80, proxy to the `api` service); Railway overrides
 # PORT + API_UPSTREAM. The filter limits substitution so nginx runtime vars survive (AL-27).
 ENV PORT=80 \
+    API_SCHEME=http \
     API_UPSTREAM=api:8000 \
-    NGINX_ENVSUBST_FILTER=^(PORT|API_UPSTREAM)$
+    NGINX_ENVSUBST_FILTER=^(PORT|API_SCHEME|API_UPSTREAM)$
 COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /app/dist /usr/share/nginx/html
 # Release identity for the static bundle — queryable at /version.txt.
