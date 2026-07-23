@@ -42,7 +42,8 @@ def test_auto_extraction_on_done(client, auth):
 
 
 def test_export_then_import_roundtrip(client, auth):
-    exported = client.get("/api/memory/export", headers=auth).json()["shards"]
+    # project_id is required since the authz pass (AL-42) — no all-projects dump.
+    exported = client.get("/api/memory/export?project_id=core", headers=auth).json()["shards"]
     assert len(exported) == 5
     n = client.post("/api/memory/import", json={"shards": exported[:2]}, headers=auth).json()["imported"]
     assert n == 2

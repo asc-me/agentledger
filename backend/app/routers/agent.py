@@ -30,6 +30,7 @@ from app.schemas import (
     ShardHit,
     ShardOut,
 )
+from app.security import authz
 from app.security.deps import get_current_user
 from app.services import code_graph as code_svc
 from app.services import items as items_svc
@@ -197,9 +198,10 @@ def code_for_ref(ref_id: str, ref_type: str | None = None, project_id: str | Non
 
 @router.post("/code/link", response_model=CodeRefOut, status_code=201)
 def code_link(body: CodeRefIn, db: Session = Depends(get_db),
-              _: User = Depends(get_current_user), project_id: str | None = None):
+              user: User = Depends(get_current_user), project_id: str | None = None):
     """Link a tracker item/request to a code path (the explicit bridge)."""
     pid = resolve_project_id(db, project_id)
+    authz.require_writable(db, user.id, pid)
     try:
         ref = code_svc.link_code(
             db, project_id=pid, ref_id=body.ref_id, path=body.path,
@@ -212,9 +214,10 @@ def code_link(body: CodeRefIn, db: Session = Depends(get_db),
 
 @router.post("/code/unlink")
 def code_unlink(body: CodeUnlinkIn, db: Session = Depends(get_db),
-                _: User = Depends(get_current_user), project_id: str | None = None):
+                user: User = Depends(get_current_user), project_id: str | None = None):
     """Remove a link from an item/request to a code path."""
     pid = resolve_project_id(db, project_id)
+    authz.require_writable(db, user.id, pid)
     removed = code_svc.unlink_code(db, project_id=pid, ref_id=body.ref_id, path=body.path, relation=body.relation)
     return {"removed": removed}
 

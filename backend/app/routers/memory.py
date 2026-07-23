@@ -3,8 +3,9 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import User
+from app.models import MemoryShard, User
 from app.schemas import MemorySearchIn, ShardCreate, ShardHit, ShardOut
+from app.security import authz
 from app.security.deps import get_current_user
 from app.services import memory as mem_svc
 
@@ -30,7 +31,12 @@ def list_shards(
 
 
 @router.post("/shards", response_model=ShardOut, status_code=201)
-def add_shard(body: ShardCreate, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def add_shard(body: ShardCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if body.project_id is not None:
+        authz.require_writable(db, user.id, body.project_id)
+    elif not authz.writable_project_ids(db, user.id):
+        # A global (project-less) shard still requires write access somewhere.
+        raise HTTPException(403, "no write access to any project")
     return mem_svc.add_memory(
         db,
         text_body=body.text,
@@ -41,7 +47,14 @@ def add_shard(body: ShardCreate, db: Session = Depends(get_db), _: User = Depend
 
 
 @router.patch("/shards/{shard_id}", response_model=ShardOut)
-def edit_shard(shard_id: str, body: ShardEdit, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def edit_shard(shard_id: str, body: ShardEdit, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    existing = db.get(MemoryShard, shard_id)
+    if existing is None:
+        raise HTTPException(404, "shard not found")
+    if existing.project_id is not None:
+        authz.require_writable(db, user.id, existing.project_id, "shard")
+    elif not authz.writable_project_ids(db, user.id):
+        raise HTTPException(403, "no write access to any project")
     shard = mem_svc.update_shard(db, shard_id, text_body=body.text)
     if shard is None:
         raise HTTPException(404, "shard not found")
@@ -60,10 +73,14 @@ def backfill(db: Session = Depends(get_db), _: User = Depends(get_current_user))
 
 
 @router.get("/export")
-def export(project_id: str | None = None, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def export(project_id: str | None = None, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if project_id is None:
+        raise HTTPException(422, "project_id is required")
+    authz.require_readable(db, user.id, project_id)
     return {"shards": mem_svc.export_shards(db, project_id=project_id)}
 
 
 @router.post("/import")
-def import_(body: ImportIn, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def import_(body: ImportIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    authz.require_writable(db, user.id, body.project_id)
     return {"imported": mem_svc.import_shards(db, body.shards, project_id=body.project_id)}

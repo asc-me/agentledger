@@ -102,7 +102,19 @@ Every client authenticates the same way: the key in an `X-API-Key` header (or
 
 `status` fields accept only `backlog · next · in_progress · review · done · blocked` (enforced in
 the schema). Tool failures return `isError: true` with a machine-readable
-`structuredContent.error.code` (`invalid_request` or `internal_error`) — never a raw HTTP 500.
+`structuredContent.error.code` — never a raw HTTP 500:
+
+| Code | Meaning | Agent's move |
+| --- | --- | --- |
+| `invalid_request` | bad input or not-found (e.g. unknown item id) | read the message, correct the args |
+| `unauthorized` | authenticated but out of scope for the project/operation | retry won't help — needs a different key or a membership grant |
+| `internal_error` | unexpected server fault | safe to retry once |
+
+**Authority.** A key is bounded by its declared `scopes` (read/write) **and** its
+owner's project memberships — a key can never out-rank the user who minted it. A
+project-scoped key is further pinned to that project; the `project_id` argument
+selects among in-scope projects but cannot escape the scope. Call `get_context`
+first: it reports `readable_projects` and `writable_projects` for the key.
 
 ### Spec → task traceability
 

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import Membership, Project, User
 from app.schemas import MemberOut, ProjectCreate, ProjectOut, ProjectUpdate, UserOut
+from app.security import authz
 from app.security.deps import get_current_user
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -23,8 +24,10 @@ def _unique_slug(db: Session, name: str) -> str:
 
 
 @router.get("", response_model=list[ProjectOut])
-def list_projects(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    return list(db.scalars(select(Project).order_by(Project.name)).all())
+def list_projects(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    readable = set(authz.readable_project_ids(db, user.id))
+    rows = db.scalars(select(Project).order_by(Project.name)).all()
+    return [p for p in rows if p.id in readable]
 
 
 @router.post("", response_model=ProjectOut, status_code=201)
@@ -56,8 +59,9 @@ def update_project(
     project_id: str,
     body: ProjectUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
+    authz.require_writable(db, user.id, project_id)
     project = db.get(Project, project_id)
     if project is None:
         raise HTTPException(404, "project not found")
@@ -70,7 +74,8 @@ def update_project(
 
 
 @router.get("/{project_id}/members", response_model=list[MemberOut])
-def list_members(project_id: str, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def list_members(project_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    authz.require_readable(db, user.id, project_id)
     rows = db.scalars(select(Membership).where(Membership.project_id == project_id)).all()
     out = []
     for m in rows:

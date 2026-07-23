@@ -1,0 +1,92 @@
+"""Authorization boundary — who may touch which project.
+
+Authentication (security/deps.py) proves identity; this module decides
+authority. Enforcement lives at the boundaries (the MCP dispatcher and REST
+routers); services stay principal-free so domain logic keeps one owner.
+
+Semantics (the Membership model the app always had, now enforced):
+
+- ``Membership.access``: ``"write"`` | ``"read"`` | ``"none"`` (explicit denial).
+  A user may read projects where access != "none" and write where access ==
+  "write". No membership row means no access.
+- An agent API key is bounded by BOTH its declared ``scopes`` (read/write) and
+  its owner's memberships — a key can never out-rank the user who minted it.
+  A project-scoped key (``project_id`` set) is further bounded to that project.
+
+MCP maps :class:`Forbidden` to an ``unauthorized`` tool error; REST uses
+:func:`require_readable` / :func:`require_writable`, which raise existence-hiding
+404s so non-members can't probe which projects or resources exist.
+"""
+from __future__ import annotations
+
+from fastapi import HTTPException
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.models import ApiKey, Membership, Project
+
+
+class Forbidden(Exception):
+    """Authenticated but not authorized for the attempted operation."""
+
+
+def _member_project_ids(db: Session, user_id: str, levels: tuple[str, ...]) -> list[str]:
+    rows = db.execute(
+        select(Membership.project_id)
+        .join(Project, Project.id == Membership.project_id)
+        .where(Membership.user_id == user_id, Membership.access.in_(levels))
+        .order_by(Project.name)  # deterministic default-project resolution
+    ).scalars()
+    return list(rows)
+
+
+def readable_project_ids(db: Session, user_id: str) -> list[str]:
+    return _member_project_ids(db, user_id, ("read", "write"))
+
+
+def writable_project_ids(db: Session, user_id: str) -> list[str]:
+    return _member_project_ids(db, user_id, ("write",))
+
+
+def key_readable_ids(db: Session, key: ApiKey) -> list[str]:
+    """Projects this key may read: its scope project (if the owner can read it),
+    else all projects the owner can read."""
+    readable = readable_project_ids(db, key.user_id)
+    if key.project_id:
+        return [key.project_id] if key.project_id in readable else []
+    return readable
+
+
+def key_writable_ids(db: Session, key: ApiKey) -> list[str]:
+    """Projects this key may write: requires the 'write' scope on the key AND
+    write access for the key's owner (a key never out-ranks its minter)."""
+    if "write" not in (key.scopes or []):
+        return []
+    writable = writable_project_ids(db, key.user_id)
+    if key.project_id:
+        return [key.project_id] if key.project_id in writable else []
+    return writable
+
+
+def can_read(db: Session, user_id: str, project_id: str | None) -> bool:
+    return project_id is not None and project_id in readable_project_ids(db, user_id)
+
+
+def can_write(db: Session, user_id: str, project_id: str | None) -> bool:
+    return project_id is not None and project_id in writable_project_ids(db, user_id)
+
+
+def require_readable(db: Session, user_id: str, project_id: str | None, what: str = "project") -> None:
+    """REST guard: 404 (not 403) so non-members can't probe resource existence."""
+    if not can_read(db, user_id, project_id):
+        raise HTTPException(404, f"{what} not found")
+
+
+def require_writable(db: Session, user_id: str, project_id: str | None, what: str = "project") -> None:
+    """REST guard for mutations. 404 hides existence; a read-only member gets the
+    honest 403 (they can already see the resource)."""
+    if can_write(db, user_id, project_id):
+        return
+    if can_read(db, user_id, project_id):
+        raise HTTPException(403, f"read-only access to this {what}'s project")
+    raise HTTPException(404, f"{what} not found")
