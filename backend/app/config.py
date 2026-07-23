@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     # `docker compose build` time (see docs/deploy.md) and reported by /health.
     git_sha: str = "unknown"
 
+    # Secret encryption at rest (AL-73). When set, BYOK provider API keys (and other
+    # stored secrets) are Fernet-encrypted in the DB; unset means store as-is (fine for
+    # a trusted single-tenant self-host). Any string works — it's stretched to a key.
+    # Hosted mode requires it (check_security refuses to boot otherwise).
+    secret_encryption_key: str = ""
+
     # Multi-tenant SaaS switch. OFF for self-hosted/OSS builds (flat User→Project,
     # cross-project "global" memory allowed). ON only for the hosted offering, where
     # Organizations + billing + quotas mount and tenant boundaries tighten (e.g. no
