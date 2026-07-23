@@ -19,6 +19,7 @@ import type {
   GraphLink,
   Item,
   EventPage,
+  GrillMessage,
   McpToolInfo,
   ShardCluster,
   Member,
@@ -234,6 +235,46 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ command }),
     }),
+  grillApply: (id: string, history: GrillMessage[]) =>
+    request<{ body: string }>(`/prds/${id}/grill/apply`, {
+      method: "POST",
+      body: JSON.stringify({ history }),
+    }),
+  async grillStream(
+    id: string,
+    message: string,
+    history: GrillMessage[],
+    onDelta: (text: string) => void,
+    retry = true,
+  ): Promise<void> {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+    const res = await fetch(`/api/prds/${id}/grill/stream`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ message, history }),
+    });
+    if (res.status === 401 && retry && (await refresh())) {
+      return this.grillStream(id, message, history, onDelta, false);
+    }
+    if (!res.ok || !res.body) throw new Error(`grill stream failed: ${res.status}`);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let idx: number;
+      while ((idx = buf.indexOf("\n\n")) >= 0) {
+        const frame = buf.slice(0, idx);
+        buf = buf.slice(idx + 2);
+        const event = frame.match(/^event: (.*)$/m)?.[1];
+        const data = frame.match(/^data: ([\s\S]*)$/m)?.[1];
+        if (event === "delta" && data !== undefined) onDelta(JSON.parse(data).text);
+      }
+    }
+  },
 
   dashboard: (projectId?: string) =>
     request<DashboardData>(`/dashboard${projectId ? `?project_id=${projectId}` : ""}`),

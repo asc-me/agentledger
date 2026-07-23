@@ -381,6 +381,25 @@ class ChatIn(BaseModel):
     project_id: str | None = None
 
 
+# ---- Grill mode (AL-67): interactive PRD interrogation ----
+class GrillMessage(BaseModel):
+    role: str  # "user" | "agent"
+    text: str
+
+
+class GrillIn(BaseModel):
+    message: str = ""  # empty on the opening turn
+    history: list[GrillMessage] = []
+
+
+class GrillApplyIn(BaseModel):
+    history: list[GrillMessage] = []
+
+
+class GrillApplyOut(BaseModel):
+    body: str
+
+
 class ChatOut(BaseModel):
     reply: str
     shards: list[ShardHit]
