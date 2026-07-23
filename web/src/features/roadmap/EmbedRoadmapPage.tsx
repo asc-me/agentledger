@@ -9,9 +9,16 @@ export function EmbedRoadmapPage() {
   const [phases, setPhases] = React.useState<RoadmapPhase[] | null>(null);
 
   React.useEffect(() => {
-    const project = new URLSearchParams(window.location.search).get("project");
-    const url = project ? `/api/public/roadmap?project_id=${encodeURIComponent(project)}` : "/api/public/roadmap";
-    fetch(url)
+    const params = new URLSearchParams(window.location.search);
+    // Prefer the unguessable share token; `project` stays as a self-host fallback.
+    const token = params.get("token");
+    const project = params.get("project");
+    const qs = token
+      ? `?token=${encodeURIComponent(token)}`
+      : project
+        ? `?project_id=${encodeURIComponent(project)}`
+        : "";
+    fetch(`/api/public/roadmap${qs}`)
       .then((r) => (r.ok ? r.json() : []))
       .then(setPhases)
       .catch(() => setPhases([]));

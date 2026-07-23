@@ -55,18 +55,40 @@ def _ensure_enabled() -> None:
         raise HTTPException(403, "public submissions are disabled")
 
 
+def _public_project(db: Session, token: str | None, project_id: str | None) -> str:
+    """Resolve the project a public request targets, and enforce that it opted into
+    public sharing (AL-73). Prefer the unguessable share token; in hosted mode ONLY
+    the token is accepted, so an attacker can't name another tenant's project_id.
+    A project that hasn't opted in (or a bad token) is indistinguishable from
+    nonexistent — always 404 — so the surface can't be probed."""
+    pid: str | None = None
+    if token:
+        cfg = db.scalar(select(PlatformConfig).where(PlatformConfig.share_token == token))
+        pid = cfg.project_id if cfg else None
+    elif not settings.hosted_mode:
+        # Self-host convenience: address by raw id or fall back to the sole project.
+        pid = resolve_project_id(db, project_id)
+
+    if pid is not None:
+        cfg = db.get(PlatformConfig, pid)
+        if cfg is not None and cfg.public_share_enabled:
+            return pid
+    raise HTTPException(404, "not found")
+
+
 @router.get("/roadmap")
-def public_roadmap(project_id: str | None = None, db: Session = Depends(get_db)):
-    """Read-only public roadmap for the shareable link."""
-    return roadmap_svc.list_roadmap(db, project_id=resolve_project_id(db, project_id))
+def public_roadmap(project_id: str | None = None, token: str | None = None, db: Session = Depends(get_db)):
+    """Read-only public roadmap for the shareable link (opted-in projects only)."""
+    pid = _public_project(db, token, project_id)
+    return roadmap_svc.list_roadmap(db, project_id=pid)
 
 
 @router.get("/widget-config")
-def widget_config(project_id: str | None = None, db: Session = Depends(get_db)):
+def widget_config(project_id: str | None = None, token: str | None = None, db: Session = Depends(get_db)):
     """Public config the embedded widget needs (e.g. whether to render Turnstile)."""
-    pid = resolve_project_id(db, project_id)
-    cfg = get_config(db, pid) if pid else None
-    return {"turnstile_sitekey": cfg.turnstile_sitekey if cfg else ""}
+    pid = _public_project(db, token, project_id)
+    cfg = get_config(db, pid)
+    return {"turnstile_sitekey": cfg.turnstile_sitekey}
 
 
 def _verify_github_signature(raw: bytes, signature: str | None) -> None:
@@ -129,11 +151,12 @@ def check_duplicates(
     q: str,
     request: FastAPIRequest,
     project_id: str | None = None,
+    token: str | None = None,
     db: Session = Depends(get_db),
 ):
     """Live duplicate check for the widget — before the user submits."""
     _ensure_enabled()
-    pid = resolve_project_id(db, project_id)
+    pid = _public_project(db, token, project_id)
     _rate_or_429(db, request, pid)
     return dup_svc.find_duplicates(db, q, project_id=pid)
 
@@ -180,11 +203,13 @@ def submit_request(
     if body.hp:
         raise HTTPException(400, "submission rejected")
 
-    project_id = resolve_project_id(db, body.project_id)
+    # Only opted-in projects accept public submissions, addressed by share token
+    # (or raw id on self-host) — never an arbitrary tenant's project_id (AL-73).
+    project_id = _public_project(db, body.token, body.project_id)
     # 2. Per-project rate limit.
     _rate_or_429(db, request, project_id)
     # 3. Optional Turnstile (only enforced when the project configured a secret).
-    cfg = get_config(db, project_id) if project_id else None
+    cfg = get_config(db, project_id)
     if cfg and cfg.turnstile_secret:
         if not spam.verify_turnstile(cfg.turnstile_secret, body.turnstile_token, _client_ip(request)):
             raise HTTPException(403, "captcha verification failed")

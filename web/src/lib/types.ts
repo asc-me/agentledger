@@ -154,6 +154,8 @@ export interface PlatformConfig {
   turnstile_secret_set: boolean;
   active_chat_provider: string;
   provider_config: Record<string, ProviderConfigView>;
+  public_share_enabled: boolean;
+  share_token: string | null;
 }
 
 export type ProviderKind = "stub" | "anthropic" | "openai" | "ollama";
