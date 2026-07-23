@@ -80,6 +80,9 @@ def test_check_security_warns_but_allows_by_default(monkeypatch, capsys):
 def test_check_security_skips_sqlite(monkeypatch):
     from app.security import startup
 
+    # Force SQLite explicitly — don't rely on the ambient DATABASE_URL, which is
+    # Postgres in the CI proof job (that mismatch was the bug this test caught).
+    monkeypatch.setattr(settings, "database_url", "sqlite:///./x.db")
     monkeypatch.setattr(settings, "jwt_secret", "short")
     monkeypatch.setattr(settings, "require_strong_secret", True)
     startup.check_security()  # sqlite (test DB) → skipped, no raise
