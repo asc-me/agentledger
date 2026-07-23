@@ -326,6 +326,28 @@ export interface McpToolInfo {
   status: string;
 }
 
+export interface Event {
+  id: number;
+  ts: string | null;
+  actor_type: "user" | "apikey" | "system";
+  actor_id: string;
+  actor_label: string;
+  surface: "mcp" | "rest" | "public";
+  action: string;
+  target_type: string;
+  target_id: string;
+  project_id: string | null;
+  meta: Record<string, unknown> | null;
+}
+
+export interface EventPage {
+  results: Event[];
+  total: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
+}
+
 export interface DashboardData {
   items_total: number;
   items_by_status: Record<Status, number>;

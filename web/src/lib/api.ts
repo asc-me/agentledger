@@ -18,6 +18,7 @@ import type {
   DashboardData,
   GraphLink,
   Item,
+  EventPage,
   McpToolInfo,
   Member,
   PlatformConfig,
@@ -227,6 +228,8 @@ export const api = {
   links: (projectId?: string) =>
     request<GraphLink[]>(`/links${projectId ? `?project_id=${projectId}` : ""}`),
   mcpTools: () => request<{ live: number; tools: McpToolInfo[] }>("/mcp/tools"),
+  events: (projectId?: string, limit = 100) =>
+    request<EventPage>(`/events?limit=${limit}${projectId ? `&project_id=${projectId}` : ""}`),
 
   platform: () => request<PlatformConfig>(`/platform${projectQuery()}`),
   updatePlatform: (body: Partial<PlatformConfig>) =>

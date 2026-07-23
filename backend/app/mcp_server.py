@@ -28,6 +28,7 @@ from app.security import authz
 from app.security.deps import get_agent_key
 from app.services import clustering as cluster_svc
 from app.services import code_graph as code_svc
+from app.services import events as events_svc
 from app.services import idempotency as idem_svc
 from app.services import insights as insights_svc
 from app.services import items as items_svc
@@ -440,6 +441,8 @@ _IDEMPOTENT_CREATES = {"create_item", "add_memory", "link_items"}
 _IDEMPOTENT_WRITES = {"describe_code", "link_code"}
 # Paged reads accept limit + offset and return {results, total, limit, offset, has_more}.
 _PAGED = {"search_items", "get_backlog"}
+# Write tools whose target is a tracker item (for audit target_type labeling).
+_ITEM_WRITE_TOOLS = {"create_item", "update_item", "claim_next", "heartbeat", "release_item"}
 # Read-only tools never mutate state.
 _READ_ONLY = {
     "get_context", "list_projects", "search_items", "search_memory",
@@ -1027,6 +1030,20 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
     raise errors.Validation(f"unknown tool: {name}", hint="call tools/list for the available tools")
 
 
+def _audit_tool(db: Session, key: ApiKey, name: str, result: Any) -> None:
+    """Best-effort audit of an accepted agent mutation. Pulls the target id and
+    project from the tool result where present (most write tools echo them)."""
+    target_id, project_id = "", None
+    if isinstance(result, dict):
+        target_id = str(result.get("id") or result.get("request_id") or "")
+        project_id = result.get("project_id")
+    events_svc.record_key(
+        db, key, action=name,
+        target_type="item" if name in _ITEM_WRITE_TOOLS else "",
+        target_id=target_id, project_id=project_id,
+    )
+
+
 def _rpc_result(id_: Any, result: Any) -> dict:
     return {"jsonrpc": "2.0", "id": id_, "result": result}
 
@@ -1130,6 +1147,9 @@ async def mcp_endpoint(
         # Meter only successful calls, after dispatch — failed/unknown-tool calls no
         # longer inflate the MCP Tools dashboard (AL-47).
         mcp_stats.increment(db, name)
+        # Audit every accepted agent mutation, attributed to the key (AL-43).
+        if name not in _READ_ONLY:
+            _audit_tool(db, key, name, result)
         return _success(id_, result)
 
     return _rpc_error(id_, -32601, f"method not found: {method}")

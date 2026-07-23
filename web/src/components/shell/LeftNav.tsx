@@ -9,6 +9,7 @@ import {
   Network,
   Plug,
   Plus,
+  ScrollText,
   Settings,
   Sparkles,
   Star,
@@ -91,6 +92,7 @@ export function LeftNav() {
         <NavItem to="/code" icon={<Network size={16} />} label="Code graph" />
         <NavItem to="/roadmap" icon={<Map size={16} />} label="Roadmap" />
         <NavItem to="/mcp-tools" icon={<Plug size={16} />} label="MCP Tools" />
+        <NavItem to="/activity" icon={<ScrollText size={16} />} label="Activity" />
         <NavItem to="/prds" icon={<BarChart3 size={16} />} label="PRDs" />
       </nav>
 

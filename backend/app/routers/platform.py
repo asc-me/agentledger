@@ -17,6 +17,7 @@ from app.providers import registry as provider_registry
 from app.security import authz
 from app.security.deps import get_current_user
 from app.services import drive_sync
+from app.services import events as events_svc
 from app.services import items as items_svc
 from app.services import platform as platform_svc
 
@@ -43,6 +44,9 @@ def get_platform(project_id: str = "core", db: Session = Depends(get_db), user: 
 @router.patch("", response_model=PlatformConfigOut)
 def update_platform(body: PlatformUpdate, project_id: str = "core", db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     authz.require_writable(db, user.id, project_id)
+    events_svc.record_user(db, user, action="update_platform_config", target_type="project",
+                           target_id=project_id, project_id=project_id,
+                           meta={"fields": sorted(body.model_dump(exclude_unset=True).keys())})
     if body.llm_mode is not None and body.llm_mode not in ("stub", "local", "cloud"):
         raise HTTPException(422, "llm_mode must be stub | local | cloud")
     if body.active_chat_provider and body.active_chat_provider not in provider_registry.IDS:
