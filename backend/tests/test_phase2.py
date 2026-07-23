@@ -24,7 +24,7 @@ def test_public_submit_creates_request_and_flags_duplicate(client, auth):
     assert all(d["id"] != new_id for d in body["duplicates"])  # never itself
 
     # The new request shows up in the authenticated triage queue.
-    reqs = client.get("/api/requests", headers=auth).json()
+    reqs = client.get("/api/requests?project_id=core", headers=auth).json()
     assert any(x["id"] == new_id for x in reqs)
 
 
@@ -39,7 +39,7 @@ def test_public_submit_captures_context(client, auth):
     )
     assert r.status_code == 201
     new_id = r.json()["request"]["id"]
-    got = next(x for x in client.get("/api/requests", headers=auth).json() if x["id"] == new_id)
+    got = next(x for x in client.get("/api/requests?project_id=core", headers=auth).json() if x["id"] == new_id)
     assert got["detail"] == "Tapping Pay does nothing on iOS Safari."  # detail is now persisted
     assert got["source_url"] == "https://shop.example.com/checkout"    # page captured
     assert got["meta"]["app_version"] == "2.4.1"                       # custom meta kept
@@ -68,7 +68,7 @@ def test_attachment_upload_link_and_serve(client, auth):
     )
     assert sub.status_code == 201
     new_id = sub.json()["request"]["id"]
-    got = next(x for x in client.get("/api/requests", headers=auth).json() if x["id"] == new_id)
+    got = next(x for x in client.get("/api/requests?project_id=core", headers=auth).json() if x["id"] == new_id)
     assert got["attachment_ids"] == [att_id]
 
     served = client.get(f"/api/public/attachments/{att_id}")

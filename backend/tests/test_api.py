@@ -32,11 +32,11 @@ def test_login_bad_password(client):
 
 
 def test_items_require_auth(client):
-    assert client.get("/api/items").status_code == 401
+    assert client.get("/api/items?project_id=core").status_code == 401
 
 
 def test_seeded_items(client, auth):
-    items = client.get("/api/items", headers=auth).json()
+    items = client.get("/api/items?project_id=core", headers=auth).json()
     assert len(items) == 9
     assert items[0]["id"] == "AL-12"  # sort_order 0
 
@@ -56,7 +56,7 @@ def test_invalid_status_rejected(client, auth):
 
 
 def test_reorder(client, auth):
-    items = client.get("/api/items", headers=auth).json()
+    items = client.get("/api/items?project_id=core", headers=auth).json()
     ids = [i["id"] for i in items]
     reversed_ids = list(reversed(ids))
     r = client.patch("/api/items/reorder", json={"ordered_ids": reversed_ids}, headers=auth)
@@ -65,7 +65,7 @@ def test_reorder(client, auth):
 
 
 def test_requests_vote_and_link(client, auth):
-    reqs = client.get("/api/requests", headers=auth).json()
+    reqs = client.get("/api/requests?project_id=core", headers=auth).json()
     assert len(reqs) == 5
     v = client.post("/api/requests/R-35/vote", json={"delta": 1}, headers=auth)
     assert v.json()["votes"] == 4
@@ -82,7 +82,7 @@ def test_link_unknown_item_422(client, auth):
 def test_memory_search_ranks_relevant_first(client, auth):
     r = client.post(
         "/api/memory/search",
-        json={"query": "pgvector single postgres container self-host", "top_k": 3},
+        json={"query": "pgvector single postgres container self-host", "top_k": 3, "project_id": "core"},
         headers=auth,
     )
     hits = r.json()
@@ -93,10 +93,10 @@ def test_memory_search_ranks_relevant_first(client, auth):
 def test_add_memory_then_searchable(client, auth):
     client.post(
         "/api/memory/shards",
-        json={"text": "Chose Vite over Next for the decoupled SPA frontend", "scope": "global"},
+        json={"text": "Chose Vite over Next for the decoupled SPA frontend", "scope": "global", "project_id": "core"},
         headers=auth,
     )
-    r = client.post("/api/memory/search", json={"query": "vite spa frontend decoupled", "top_k": 1}, headers=auth)
+    r = client.post("/api/memory/search", json={"query": "vite spa frontend decoupled", "top_k": 1, "project_id": "core"}, headers=auth)
     assert "Vite" in r.json()[0]["shard"]["text"]
 
 
@@ -129,7 +129,7 @@ def test_mcp_tools_and_call(client, auth):
     assert payload["project_id"]  # #5: writes confirm where they landed
 
     # The agent-created item is visible through the web API — shared service layer.
-    items = client.get("/api/items", headers=auth).json()
+    items = client.get("/api/items?project_id=core", headers=auth).json()
     assert any(i["title"] == "From agent" for i in items)
 
 
@@ -251,7 +251,7 @@ def test_mcp_idempotent_create(client, auth):
     a = _mcp(client, key, "create_item", {"title": "once", "idempotency_key": "abc-123"})
     b = _mcp(client, key, "create_item", {"title": "once again", "idempotency_key": "abc-123"})
     assert a["id"] == b["id"]  # retry returns the original, no duplicate
-    matches = [i for i in client.get("/api/items", headers=auth).json() if i["id"] == a["id"]]
+    matches = [i for i in client.get("/api/items?project_id=core", headers=auth).json() if i["id"] == a["id"]]
     assert len(matches) == 1
 
 

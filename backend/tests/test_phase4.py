@@ -3,7 +3,7 @@ import json
 
 
 def test_dashboard(client, auth):
-    d = client.get("/api/dashboard", headers=auth).json()
+    d = client.get("/api/dashboard?project_id=core", headers=auth).json()
     assert d["items_total"] == 9
     assert d["items_by_status"]["in_progress"] == 2
     assert d["shard_count"] == 5
@@ -14,7 +14,7 @@ def test_dashboard(client, auth):
 
 
 def test_roadmap_phases_and_progress(client, auth):
-    phases = client.get("/api/roadmap", headers=auth).json()
+    phases = client.get("/api/roadmap?project_id=core", headers=auth).json()
     assert [p["key"] for p in phases] == ["mvp", "post", "later"]
     mvp = phases[0]
     assert mvp["name"] == "MVP" and mvp["total"] == 8 and mvp["done"] == 5
@@ -27,7 +27,7 @@ def test_public_roadmap_no_auth(client):
 
 
 def test_links_graph_data(client, auth):
-    links = client.get("/api/links", headers=auth).json()
+    links = client.get("/api/links?project_id=core", headers=auth).json()
     assert len(links) == 8
     dep = [l for l in links if l["type"] == "dependency"]
     assert any(l["a"] == "AL-12" and l["b"] == "AL-08" for l in dep)

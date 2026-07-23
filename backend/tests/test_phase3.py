@@ -2,7 +2,7 @@
 
 
 def test_seeded_prds(client, auth):
-    prds = client.get("/api/prds", headers=auth).json()
+    prds = client.get("/api/prds?project_id=core", headers=auth).json()
     assert len(prds) == 3
     ids = {p["id"] for p in prds}
     assert ids == {"PRD-1", "PRD-2", "PRD-3"}

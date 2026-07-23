@@ -77,7 +77,8 @@ def can_write(db: Session, user_id: str, project_id: str | None) -> bool:
 
 
 def require_readable(db: Session, user_id: str, project_id: str | None, what: str = "project") -> None:
-    """REST guard: 404 (not 403) so non-members can't probe resource existence."""
+    """REST guard: 404 (not 403) so non-members can't probe resource existence.
+    A None/omitted project_id fails closed (no cross-tenant "list everything")."""
     if not can_read(db, user_id, project_id):
         raise HTTPException(404, f"{what} not found")
 

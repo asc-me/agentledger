@@ -42,8 +42,18 @@ def _require_writable_prd(db: Session, user: User, prd_id: str) -> None:
     authz.require_writable(db, user.id, prd.project_id, "prd")
 
 
+def _require_readable_prd(db: Session, user: User, prd_id: str):
+    """Load-and-read-guard for PRD reads (tenant isolation, AL-70)."""
+    prd = prd_svc.get_prd(db, prd_id)
+    if prd is None:
+        raise HTTPException(404, "prd not found")
+    authz.require_readable(db, user.id, prd.project_id, "prd")
+    return prd
+
+
 @router.get("", response_model=list[PrdSummary])
-def list_prds(project_id: str | None = None, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def list_prds(project_id: str | None = None, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    authz.require_readable(db, user.id, project_id)
     return prd_svc.list_prds(db, project_id=project_id)
 
 
@@ -56,10 +66,8 @@ def create_prd(body: PrdCreate, db: Session = Depends(get_db), user: User = Depe
 
 
 @router.get("/{prd_id}/coverage")
-def prd_coverage(prd_id: str, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    prd = prd_svc.get_prd(db, prd_id)
-    if prd is None:
-        raise HTTPException(404, "prd not found")
+def prd_coverage(prd_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    prd = _require_readable_prd(db, user, prd_id)
     return prd_svc.coverage(db, prd)
 
 
@@ -74,11 +82,8 @@ def decompose_prd(prd_id: str, create: bool = False, db: Session = Depends(get_d
 
 
 @router.get("/{prd_id}", response_model=PrdOut)
-def get_prd(prd_id: str, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    prd = prd_svc.get_prd(db, prd_id)
-    if prd is None:
-        raise HTTPException(404, "prd not found")
-    return prd
+def get_prd(prd_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    return _require_readable_prd(db, user, prd_id)
 
 
 @router.patch("/{prd_id}", response_model=PrdOut)
@@ -94,10 +99,8 @@ def update_prd(prd_id: str, body: PrdUpdate, db: Session = Depends(get_db), user
 
 
 @router.get("/{prd_id}/versions", response_model=list[PrdVersionOut])
-def list_versions(prd_id: str, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    prd = prd_svc.get_prd(db, prd_id)
-    if prd is None:
-        raise HTTPException(404, "prd not found")
+def list_versions(prd_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    prd = _require_readable_prd(db, user, prd_id)
     return prd.versions
 
 

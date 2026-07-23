@@ -16,7 +16,7 @@ export const keys = {
 };
 
 export function usePrds(projectId?: string) {
-  return useQuery({ queryKey: [...keys.prds, projectId], queryFn: () => api.prds(projectId) });
+  return useQuery({ queryKey: [...keys.prds, projectId], queryFn: () => api.prds(projectId), enabled: !!projectId });
 }
 
 export function usePrd(id: string) {
@@ -28,15 +28,15 @@ export function usePrdVersions(id: string) {
 }
 
 export function useDashboard(projectId?: string) {
-  return useQuery({ queryKey: ["dashboard", projectId], queryFn: () => api.dashboard(projectId) });
+  return useQuery({ queryKey: ["dashboard", projectId], queryFn: () => api.dashboard(projectId), enabled: !!projectId });
 }
 
 export function useRoadmap(projectId?: string) {
-  return useQuery({ queryKey: ["roadmap", projectId], queryFn: () => api.roadmap(projectId) });
+  return useQuery({ queryKey: ["roadmap", projectId], queryFn: () => api.roadmap(projectId), enabled: !!projectId });
 }
 
 export function useLinks(projectId?: string) {
-  return useQuery({ queryKey: ["links", projectId], queryFn: () => api.links(projectId) });
+  return useQuery({ queryKey: ["links", projectId], queryFn: () => api.links(projectId), enabled: !!projectId });
 }
 
 export function useMcpTools() {
@@ -68,7 +68,7 @@ export function useProjects() {
 }
 
 export function useItems(projectId?: string) {
-  return useQuery({ queryKey: [...keys.items, projectId], queryFn: () => api.items(projectId) });
+  return useQuery({ queryKey: [...keys.items, projectId], queryFn: () => api.items(projectId), enabled: !!projectId });
 }
 
 export function useUpdateItem() {
@@ -116,7 +116,7 @@ export function useReorderItems() {
 }
 
 export function useShards(projectId?: string) {
-  return useQuery({ queryKey: [...keys.shards, projectId], queryFn: () => api.shards(projectId) });
+  return useQuery({ queryKey: [...keys.shards, projectId], queryFn: () => api.shards(projectId), enabled: !!projectId });
 }
 
 export function useAddShard() {
@@ -131,6 +131,7 @@ export function useCandidateShards(projectId?: string) {
   return useQuery({
     queryKey: ["shard-candidates", projectId],
     queryFn: () => api.candidateShards(projectId),
+    enabled: !!projectId,
   });
 }
 
@@ -138,6 +139,7 @@ export function useCandidateClusters(projectId?: string) {
   return useQuery({
     queryKey: ["shard-clusters", projectId],
     queryFn: () => api.candidateClusters(projectId),
+    enabled: !!projectId,
   });
 }
 
@@ -166,7 +168,7 @@ export function usePromoteCluster() {
 }
 
 export function useRequests(projectId?: string) {
-  return useQuery({ queryKey: [...keys.requests, projectId], queryFn: () => api.requests(projectId) });
+  return useQuery({ queryKey: [...keys.requests, projectId], queryFn: () => api.requests(projectId), enabled: !!projectId });
 }
 
 export function useVoteRequest() {

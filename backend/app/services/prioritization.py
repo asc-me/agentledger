@@ -32,13 +32,20 @@ def context(db: Session, project_id: str | None) -> Context:
     by_id = {it.id: it for it in items}
     ctx = Context(items=items, by_id=by_id, now=utcnow())
 
-    for lk in db.scalars(select(Link).where(Link.type == "dependency")).all():
+    # Scope link/request scans to the project (tenant isolation + efficiency, AL-70).
+    link_q = select(Link).where(Link.type == "dependency")
+    req_q = select(Request).where(Request.linked_to.is_not(None))
+    if project_id:
+        link_q = link_q.where(Link.project_id == project_id)
+        req_q = req_q.where(Request.project_id == project_id)
+
+    for lk in db.scalars(link_q).all():
         # a depends on b
         if lk.a in by_id and lk.b in by_id:
             ctx.deps.setdefault(lk.a, []).append(lk.b)
             ctx.dependents.setdefault(lk.b, []).append(lk.a)
 
-    for req in db.scalars(select(Request).where(Request.linked_to.is_not(None))).all():
+    for req in db.scalars(req_q).all():
         if req.linked_to in by_id:
             ctx.votes[req.linked_to] = ctx.votes.get(req.linked_to, 0) + (req.votes or 0)
     return ctx

@@ -27,8 +27,9 @@ def list_shards(
     project_id: str | None = None,
     status: str | None = None,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
+    authz.require_readable(db, user.id, project_id)
     return mem_svc.list_shards(db, project_id=project_id, status=status)
 
 
@@ -36,9 +37,10 @@ def list_shards(
 def list_candidates(
     project_id: str | None = None,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
     """The review queue (AL-49): agent-written shards awaiting human publish."""
+    authz.require_readable(db, user.id, project_id)
     return mem_svc.list_shards(db, project_id=project_id, status="candidate")
 
 
@@ -52,10 +54,11 @@ class ShardCluster(BaseModel):
 def candidate_clusters(
     project_id: str | None = None,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
     """Recurring lessons (AL-50): candidate shards grouped by similarity, so a
     correction that keeps recurring can be promoted once as a principle."""
+    authz.require_readable(db, user.id, project_id)
     groups = mem_svc.cluster_candidates(db, project_id=project_id)
     return [
         ShardCluster(
@@ -143,7 +146,8 @@ def edit_shard(shard_id: str, body: ShardEdit, db: Session = Depends(get_db), us
 
 
 @router.post("/search", response_model=list[ShardHit])
-def search(body: MemorySearchIn, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def search(body: MemorySearchIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    authz.require_readable(db, user.id, body.project_id)
     hits = mem_svc.search_memory(db, body.query, top_k=body.top_k, project_id=body.project_id)
     return [ShardHit(shard=ShardOut.model_validate(s), score=round(score, 4)) for s, score in hits]
 

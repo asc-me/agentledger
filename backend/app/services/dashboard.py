@@ -21,7 +21,12 @@ def build(db: Session, project_id: str | None = None) -> dict:
         by_status[it.status] = by_status.get(it.status, 0) + 1
         effort_total += it.effort or 0
 
-    requests = list(db.scalars(select(Request)).all())
+    # Scope every aggregate to the project (tenant isolation, AL-70).
+    def _scoped(model):
+        q = select(model)
+        return q.where(model.project_id == project_id) if project_id else q
+
+    requests = list(db.scalars(_scoped(Request)).all())
     req_by_type: dict[str, int] = {}
     req_by_status: dict[str, int] = {}
     for r in requests:
@@ -40,8 +45,8 @@ def build(db: Session, project_id: str | None = None) -> dict:
         "requests_total": len(requests),
         "requests_by_type": req_by_type,
         "requests_by_status": req_by_status,
-        "shard_count": db.scalar(select(func.count()).select_from(MemoryShard)) or 0,
-        "prd_count": db.scalar(select(func.count()).select_from(Prd)) or 0,
+        "shard_count": db.scalar(select(func.count()).select_from(_scoped(MemoryShard).subquery())) or 0,
+        "prd_count": db.scalar(select(func.count()).select_from(_scoped(Prd).subquery())) or 0,
         "mcp_calls": mcp_stats.total(db),
         "recent_items": [
             {"id": it.id, "title": it.title, "status": it.status, "date": it.date}

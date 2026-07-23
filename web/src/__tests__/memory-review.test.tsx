@@ -16,10 +16,15 @@ const candidate: Shard = {
 // Hoisted so the (hoisted) vi.mock factory can reference the spy eagerly.
 const { publishSpy } = vi.hoisted(() => ({ publishSpy: vi.fn(async () => ({})) }));
 
+const project = {
+  id: "core", name: "Core", accent: "#a78bfa", visibility: "private", description: "",
+  share_global_memory: false, auto_extract: true, mcp_enabled: true, embed_model: "",
+};
+
 vi.mock("@/lib/api", () => ({
   setActiveProjectId: vi.fn(),
   api: {
-    projects: vi.fn(async () => []),
+    projects: vi.fn(async () => [project]),
     candidateShards: vi.fn(async () => [candidate]),
     candidateClusters: vi.fn(async () => []),
     publishShard: publishSpy,

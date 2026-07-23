@@ -16,8 +16,9 @@ def list_requests(
     project_id: str | None = None,
     type: str | None = None,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
+    authz.require_readable(db, user.id, project_id)
     return req_svc.list_requests(db, project_id=project_id, type_=type)
 
 

@@ -56,14 +56,14 @@ def test_project_update_and_members(client, auth):
 
 
 def test_github_webhook_creates_item_no_auth(client, auth):
-    before = len(client.get("/api/items", headers=auth).json())
+    before = len(client.get("/api/items?project_id=core", headers=auth).json())
     r = client.post(
         "/api/public/github/webhook",
         json={"action": "opened", "issue": {"title": "Crash on startup", "body": "stack trace..."}},
     )  # no Authorization header
     assert r.status_code == 200
     new_id = r.json()["created_item"]
-    items = client.get("/api/items", headers=auth).json()
+    items = client.get("/api/items?project_id=core", headers=auth).json()
     assert len(items) == before + 1
     created = next(i for i in items if i["id"] == new_id)
     assert created["title"] == "Crash on startup"
