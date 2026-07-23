@@ -127,6 +127,25 @@ export function useAddShard() {
   });
 }
 
+export function useCandidateShards(projectId?: string) {
+  return useQuery({
+    queryKey: ["shard-candidates", projectId],
+    queryFn: () => api.candidateShards(projectId),
+  });
+}
+
+export function useReviewShard() {
+  const qc = useQueryClient();
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["shard-candidates"] });
+    qc.invalidateQueries({ queryKey: keys.shards });
+  };
+  return {
+    publish: useMutation({ mutationFn: (id: string) => api.publishShard(id), onSuccess: invalidate }),
+    reject: useMutation({ mutationFn: (id: string) => api.rejectShard(id), onSuccess: invalidate }),
+  };
+}
+
 export function useRequests(projectId?: string) {
   return useQuery({ queryKey: [...keys.requests, projectId], queryFn: () => api.requests(projectId) });
 }

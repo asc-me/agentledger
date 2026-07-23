@@ -62,11 +62,15 @@ export interface Item {
   updated_at: string;
 }
 
+export type ShardStatus = "candidate" | "published" | "rejected";
+
 export interface Shard {
   id: string;
   text: string;
   scope: string;
   source: string;
+  status: ShardStatus;
+  origin: string;
   item_id: string | null;
   project_id: string | null;
   fresh: boolean;

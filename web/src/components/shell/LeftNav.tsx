@@ -3,6 +3,7 @@ import {
   Check,
   ChevronDown,
   GitFork,
+  Inbox,
   LayoutGrid,
   ListChecks,
   Map,
@@ -28,12 +29,13 @@ import {
 import { useProjectCtx } from "@/features/ProjectContext";
 import { NewProjectDialog } from "@/features/onboarding/NewProjectDialog";
 import { cn } from "@/lib/cn";
-import { useItems, useRequests } from "@/lib/queries";
+import { useCandidateShards, useItems, useRequests } from "@/lib/queries";
 
 export function LeftNav() {
   const { projects, active, activeId, setActiveId } = useProjectCtx();
   const { data: items } = useItems(activeId);
   const { data: requests } = useRequests(activeId);
+  const { data: candidates } = useCandidateShards(activeId);
   const [newProjectOpen, setNewProjectOpen] = React.useState(false);
 
   return (
@@ -92,6 +94,7 @@ export function LeftNav() {
         <NavItem to="/code" icon={<Network size={16} />} label="Code graph" />
         <NavItem to="/roadmap" icon={<Map size={16} />} label="Roadmap" />
         <NavItem to="/mcp-tools" icon={<Plug size={16} />} label="MCP Tools" />
+        <NavItem to="/memory-review" icon={<Inbox size={16} />} label="Memory review" count={candidates?.length || undefined} />
         <NavItem to="/activity" icon={<ScrollText size={16} />} label="Activity" />
         <NavItem to="/prds" icon={<BarChart3 size={16} />} label="PRDs" />
       </nav>

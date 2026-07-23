@@ -51,12 +51,15 @@ Interactive OpenAPI docs are at **`/docs`**.
 
 ## Memory & agent chat
 
-| Method | Path | Auth |
-| --- | --- | --- |
-| GET | `/api/memory/shards` | JWT |
-| POST | `/api/memory/shards` | JWT |
-| PATCH | `/api/memory/shards/{id}` | JWT |
-| POST | `/api/memory/search` | JWT |
+| Method | Path | Auth | Notes |
+| --- | --- | --- | --- |
+| GET | `/api/memory/shards` | JWT | (optional `?status=candidate\|published\|rejected`) |
+| GET | `/api/memory/candidates` | JWT | The review queue — agent shards awaiting publish (AL-49) |
+| POST | `/api/memory/shards` | JWT | Human-authored → published immediately |
+| PATCH | `/api/memory/shards/{id}` | JWT | |
+| POST | `/api/memory/shards/{id}/publish` | JWT | Promote a candidate into the trusted retrieval path |
+| POST | `/api/memory/shards/{id}/reject` | JWT | Reject a candidate (kept for provenance, never searched) |
+| POST | `/api/memory/search` | JWT | Published-only semantic search |
 | POST | `/api/memory/backfill` | JWT |
 | GET | `/api/memory/export` | JWT |
 | POST | `/api/memory/import` | JWT |

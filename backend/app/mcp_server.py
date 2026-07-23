@@ -121,7 +121,12 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "add_memory",
-        "description": "Attach a memory shard to an item or the global scope.",
+        "description": (
+            "Record a memory shard (a decision, lesson, or note) on an item or the global scope. "
+            "Agent-written shards enter as a `candidate` — a human reviews and publishes them "
+            "before they surface in the default search, so an unverified note can't become ground "
+            "truth for future agents. Returns the shard incl. its `status`."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -136,14 +141,18 @@ TOOLS: list[dict[str, Any]] = [
         "name": "search_memory",
         "description": (
             "Recall relevant past context before you act: semantic (meaning-based) search over "
-            "memory shards. Use it to find prior decisions, lessons, and notes related to your task. "
-            "Returns shards ranked by similarity with a score."
+            "memory shards. Returns published (human-reviewed) shards ranked by similarity with a "
+            "score and `status`. Set `include_candidates: true` to also see unreviewed agent notes."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "query": {"type": "string"},
                 "top_k": {"type": "integer"},
+                "include_candidates": {
+                    "type": "boolean",
+                    "description": "Also return unpublished candidate shards (default false).",
+                },
             },
             "required": ["query"],
         },
@@ -484,7 +493,7 @@ _SHARD_SCHEMA = {
     "type": "object",
     "properties": {
         "id": _STR, "text": _STR, "scope": _STR,
-        "item_id": _NULLABLE_STR, "project_id": _NULLABLE_STR,
+        "item_id": _NULLABLE_STR, "project_id": _NULLABLE_STR, "status": _STR,
     },
 }
 
@@ -521,7 +530,7 @@ _OUTPUT_SCHEMAS: dict[str, dict] = {
                 "type": "object",
                 "properties": {
                     "id": _STR, "text": _STR, "scope": _STR, "score": {"type": "number"},
-                    "item_id": _NULLABLE_STR, "source": _STR, "project_id": _NULLABLE_STR,
+                    "item_id": _NULLABLE_STR, "source": _STR, "project_id": _NULLABLE_STR, "status": _STR,
                 },
             }},
             "returned": {"type": "integer"},
@@ -729,6 +738,7 @@ def _shard_dict(shard) -> dict:
     return {
         "id": shard.id, "text": shard.text, "scope": shard.scope,
         "item_id": shard.item_id, "project_id": shard.project_id,
+        "status": shard.status,
     }
 
 
@@ -874,22 +884,30 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
             return _shard_dict(cached)
         if args.get("item_id"):
             _scoped_item(db, args["item_id"], allowed)
+        # Agent-written memory enters as a CANDIDATE — it reaches the trusted
+        # retrieval path only after a human publishes it (AL-49).
         shard = mem_svc.add_memory(
             db,
             text_body=args["text"],
             scope=args.get("scope", "global"),
             item_id=args.get("item_id"),
             project_id=pid,
+            status="candidate",
+            origin=f"agent:{key.name or key.id}",
         )
         _idempotent_remember(db, args, "add_memory", shard.id)
         return _shard_dict(shard)
     if name == "search_memory":
         top_k = args.get("top_k", 5)
-        hits = mem_svc.search_memory(db, args["query"], top_k=top_k, project_id=pid)
+        hits = mem_svc.search_memory(
+            db, args["query"], top_k=top_k, project_id=pid,
+            include_candidates=bool(args.get("include_candidates", False)),
+        )
         results = [
             {
                 "id": s.id, "text": s.text, "scope": s.scope, "score": round(score, 4),
                 "item_id": s.item_id, "source": s.source, "project_id": s.project_id,
+                "status": s.status,
             }
             for s, score in hits
         ]

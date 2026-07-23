@@ -16,11 +16,14 @@ def extract_lessons(db: Session, item_id: str) -> list[dict]:
     lessons = get_extractor().extract(title=item.title, description=item.description)
     created = []
     for text in lessons:
+        # Auto-extracted lessons are agent telemetry — enter as candidates for
+        # human review, not straight into the trusted retrieval path (AL-49).
         shard = memory_svc.add_memory(
             db, text_body=text, scope="item", source=f"lesson from {item.id}",
             item_id=item.id, project_id=item.project_id, fresh=True,
+            status="candidate", origin="agent:auto-extract",
         )
-        created.append({"id": shard.id, "text": shard.text})
+        created.append({"id": shard.id, "text": shard.text, "status": shard.status})
     return created
 
 

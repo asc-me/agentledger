@@ -144,6 +144,11 @@ class MemoryShard(Base):
     text: Mapped[str] = mapped_column(Text)
     scope: Mapped[str] = mapped_column(String, default="global")  # global/item
     source: Mapped[str] = mapped_column(String, default="")
+    # Lifecycle (AL-49): agent self-reports enter as `candidate` and only reach the
+    # default retrieval path once a human `publish`es them. `rejected` is kept for
+    # provenance but never surfaces in search. `origin` records who/what wrote it.
+    status: Mapped[str] = mapped_column(String, default="published", index=True)  # candidate|published|rejected
+    origin: Mapped[str] = mapped_column(String, default="")  # user:<handle> | agent:<key> | agent:auto-extract
     embedding = mapped_column(EmbeddingType(settings.embed_dim), nullable=True)
     fresh: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
