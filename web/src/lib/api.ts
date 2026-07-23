@@ -172,7 +172,7 @@ export const api = {
   searchMemory: (query: string, top_k = 5) =>
     request<ShardHit[]>("/memory/search", {
       method: "POST",
-      body: JSON.stringify({ query, top_k }),
+      body: JSON.stringify({ query, top_k, project_id: activeProjectId }),
     }),
   candidateShards: (projectId?: string) =>
     request<Shard[]>(`/memory/candidates${projectId ? `?project_id=${projectId}` : ""}`),

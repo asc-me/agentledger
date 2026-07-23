@@ -35,17 +35,20 @@ def events(
 
 
 @router.get("/dashboard")
-def dashboard(project_id: str | None = None, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def dashboard(project_id: str | None = None, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    authz.require_readable(db, user.id, project_id)
     return dash_svc.build(db, project_id=project_id)
 
 
 @router.get("/roadmap")
-def roadmap(project_id: str | None = None, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def roadmap(project_id: str | None = None, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    authz.require_readable(db, user.id, project_id)
     return roadmap_svc.list_roadmap(db, project_id=project_id)
 
 
 @router.get("/links")
-def links(project_id: str | None = None, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def links(project_id: str | None = None, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    authz.require_readable(db, user.id, project_id)
     rows = links_svc.list_links(db, project_id=project_id)
     return [
         {"id": l.id, "a": l.a, "b": l.b, "type": l.type, "confidence": l.confidence, "reason": l.reason}

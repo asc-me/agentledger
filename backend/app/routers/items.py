@@ -16,8 +16,9 @@ def list_items(
     project_id: str | None = None,
     status: str | None = None,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
+    authz.require_readable(db, user.id, project_id)
     return items_svc.list_items(db, project_id=project_id, status=status)
 
 

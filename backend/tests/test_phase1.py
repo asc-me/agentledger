@@ -19,26 +19,26 @@ def _call(client, key, name, args):
 def test_reembed_on_shard_edit_changes_ranking(client, auth):
     # Create a shard about "kubernetes", then edit it to be about "postgres".
     s = client.post(
-        "/api/memory/shards", json={"text": "Runs on kubernetes clusters", "scope": "global"}, headers=auth
+        "/api/memory/shards", json={"text": "Runs on kubernetes clusters", "scope": "global", "project_id": "core"}, headers=auth
     ).json()
     client.patch(f"/api/memory/shards/{s['id']}", json={"text": "Runs on a single postgres container"}, headers=auth)
     hits = client.post(
-        "/api/memory/search", json={"query": "postgres container", "top_k": 1}, headers=auth
+        "/api/memory/search", json={"query": "postgres container", "top_k": 1, "project_id": "core"}, headers=auth
     ).json()
     assert "postgres" in hits[0]["shard"]["text"]  # re-embedded, so it now matches
 
 
 def test_auto_extraction_on_done(client, auth):
-    before = len(client.get("/api/memory/shards", headers=auth).json())
+    before = len(client.get("/api/memory/shards?project_id=core", headers=auth).json())
     # AL-15 is `next` in the seed; moving it to done should mint a lesson shard.
     client.patch("/api/items/AL-15", json={"status": "done"}, headers=auth)
-    shards = client.get("/api/memory/shards", headers=auth).json()
+    shards = client.get("/api/memory/shards?project_id=core", headers=auth).json()
     assert len(shards) == before + 1
     assert any(s["source"] == "lesson from AL-15" for s in shards)
     # Idempotent: re-setting done doesn't double-extract.
     client.patch("/api/items/AL-15", json={"status": "review"}, headers=auth)
     client.patch("/api/items/AL-15", json={"status": "done"}, headers=auth)
-    assert len(client.get("/api/memory/shards", headers=auth).json()) == before + 1
+    assert len(client.get("/api/memory/shards?project_id=core", headers=auth).json()) == before + 1
 
 
 def test_export_then_import_roundtrip(client, auth):
@@ -47,7 +47,7 @@ def test_export_then_import_roundtrip(client, auth):
     assert len(exported) == 5
     n = client.post("/api/memory/import", json={"shards": exported[:2]}, headers=auth).json()["imported"]
     assert n == 2
-    assert len(client.get("/api/memory/shards", headers=auth).json()) == 7
+    assert len(client.get("/api/memory/shards?project_id=core", headers=auth).json()) == 7
 
 
 def test_backfill_reembeds_all(client, auth):

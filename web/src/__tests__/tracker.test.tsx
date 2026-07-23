@@ -23,10 +23,15 @@ const items: Item[] = [
   },
 ];
 
+const project = {
+  id: "core", name: "Core", accent: "#a78bfa", visibility: "private", description: "",
+  share_global_memory: false, auto_extract: true, mcp_enabled: true, embed_model: "",
+};
+
 vi.mock("@/lib/api", () => ({
   setActiveProjectId: vi.fn(),
   api: {
-    projects: vi.fn(async () => []),
+    projects: vi.fn(async () => [project]),
     items: vi.fn(async () => items),
     shards: vi.fn(async () => []),
     updateItem: vi.fn(async (id: string, body: Partial<Item>) => ({ ...items[0], id, ...body })),
