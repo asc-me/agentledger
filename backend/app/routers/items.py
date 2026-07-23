@@ -64,10 +64,13 @@ def reorder(
 
 
 @router.get("/{item_id}", response_model=ItemOut)
-def get_item(item_id: str, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def get_item(item_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     item = items_svc.get_item(db, item_id)
     if item is None:
         raise HTTPException(404, "item not found")
+    # Authorize by the item's project — without this, any authenticated user could
+    # read any item by id, across tenants (AL-76 caught this). 404 hides existence.
+    authz.require_readable(db, user.id, item.project_id, "item")
     return item
 
 

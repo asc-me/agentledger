@@ -160,9 +160,15 @@ def search(body: MemorySearchIn, db: Session = Depends(get_db), user: User = Dep
 
 
 @router.post("/backfill")
-def backfill(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def backfill(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Re-embed all memory shards AND code nodes with the current provider — run
-    after switching embedding providers or changing EMBED_DIM (AL-64)."""
+    after switching embedding providers or changing EMBED_DIM (AL-64).
+
+    This is a global, cross-tenant maintenance op, so in hosted mode it's restricted
+    to a platform operator — a single tenant must not be able to trigger a re-embed of
+    every tenant's data (AL-76). Self-host is unrestricted, as before."""
+    if settings.hosted_mode and not quotas.is_platform_admin(user):
+        raise HTTPException(403, "backfill is an operator-only maintenance action")
     from app.services import code_graph as code_svc
 
     return {
