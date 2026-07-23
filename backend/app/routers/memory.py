@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.db import get_db
 from app.models import MemoryShard, User
 from app.schemas import MemorySearchIn, ShardCreate, ShardHit, ShardOut
@@ -89,6 +90,10 @@ def promote_cluster(body: PromoteClusterIn, db: Session = Depends(get_db), user:
 def add_shard(body: ShardCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     if body.project_id is not None:
         authz.require_writable(db, user.id, body.project_id)
+    elif settings.hosted_mode:
+        # Hosted tenants can't create project-less "global" memory — it would be
+        # visible tenant-wide and break isolation (AL-71). Reads already exclude it.
+        raise HTTPException(400, "global memory is disabled; specify a project_id")
     elif not authz.writable_project_ids(db, user.id):
         # A global (project-less) shard still requires write access somewhere.
         raise HTTPException(403, "no write access to any project")

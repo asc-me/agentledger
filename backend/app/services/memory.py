@@ -8,7 +8,19 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.embeddings import cosine_similarity, get_embedder
-from app.models import MemoryShard
+from app.models import MemoryShard, Project
+
+
+def _includes_global(db: Session, project_id: str) -> bool:
+    """Whether project-less ("global", project_id IS NULL) shards should surface in
+    THIS project's memory. Honors the project's `share_global_memory` opt-out
+    (AL-71) — previously ignored, so global shards bled into every project. In
+    hosted mode global shards can't be created at all, so this stays False and no
+    tenant's memory ever crosses into another's."""
+    if settings.hosted_mode:
+        return False
+    project = db.get(Project, project_id)
+    return bool(project and project.share_global_memory)
 
 
 def list_shards(
@@ -16,9 +28,12 @@ def list_shards(
 ) -> list[MemoryShard]:
     stmt = select(MemoryShard)
     if project_id:
-        stmt = stmt.where(
-            (MemoryShard.project_id == project_id) | (MemoryShard.project_id.is_(None))
-        )
+        if _includes_global(db, project_id):
+            stmt = stmt.where(
+                (MemoryShard.project_id == project_id) | (MemoryShard.project_id.is_(None))
+            )
+        else:
+            stmt = stmt.where(MemoryShard.project_id == project_id)
     if status is not None:
         stmt = stmt.where(MemoryShard.status == status)
     stmt = stmt.order_by(MemoryShard.created_at.desc())
@@ -164,8 +179,13 @@ def search_memory(
         params: dict = {"qv": _vector_literal(qvec), "k": top_k}
         project_clause = ""
         if project_id is not None:
-            project_clause = "AND (project_id = :pid OR project_id IS NULL)"
             params["pid"] = project_id
+            # Honor share_global_memory: only fold in global (NULL) shards when the
+            # project opts in and we're not in hosted mode (AL-71).
+            if _includes_global(db, project_id):
+                project_clause = "AND (project_id = :pid OR project_id IS NULL)"
+            else:
+                project_clause = "AND project_id = :pid"
         # Bind the allowed statuses as an IN-list (never surface `rejected`).
         status_names = [f":st{i}" for i in range(len(allowed))]
         for i, st in enumerate(allowed):
