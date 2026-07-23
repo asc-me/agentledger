@@ -16,6 +16,10 @@ integration** so AI agents can read/write context seamlessly.
 - **Agent-native** — first-class MCP tools; agents and the UI share one code path.
 - **Privacy & control** — local-first capable, self-host friendly, offline by default.
 
+The engineering principles behind these — one source of truth, enforced authority,
+tools that teach their own repair, proof in the real environment — are written up in
+the **[design philosophy](design-philosophy.md)**.
+
 ## Goals
 
 - Provide a single source of truth for dev items, decisions, and feedback.
@@ -41,11 +45,15 @@ A dark-only, keyboard-friendly web app with these areas (each has its own guide)
   detection, and a Feedback Kit that generates a themeable widget.
 - **PRDs** — a list and a markdown editor with live preview, version history + diff, and AI
   drafting commands.
-- **Links / Dashboard / Roadmap / MCP Tools** — a typed-relationship graph, project-health
-  widgets, a phased roadmap (with a public share link), and a live view of the MCP surface.
+- **Links / Code graph / Dashboard / Roadmap / MCP Tools** — a typed-relationship graph, an
+  agent-described code map, project-health widgets, a phased roadmap (with a public share
+  link), and a live view of the MCP surface.
+- **Activity** — an audit ledger: every accepted mutation, attributed to the agent key or
+  user that made it.
 - **Settings / Profile** — switch AI providers, connect integrations, configure the project,
   manage members and API keys.
-- **Native MCP** — 27 tools over a JSON-RPC endpoint, authenticated by scoped API keys.
+- **Native MCP** — 27 tools over a JSON-RPC endpoint, authenticated by scoped API keys, with
+  a typed error taxonomy (every failure carries a machine code + repair hint).
 
 ## Non-goals (current)
 
