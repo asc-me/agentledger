@@ -81,13 +81,15 @@ SSE event, then `delta`s, then `done`. Body is `{message, project_id?}`.
 
 ## PRDs
 
-| Method | Path | Auth |
-| --- | --- | --- |
+| Method | Path | Auth | Notes |
+| --- | --- | --- | --- |
 | GET / POST | `/api/prds` | JWT |
 | GET / PATCH | `/api/prds/{id}` | JWT |
 | GET / POST | `/api/prds/{id}/versions` | JWT |
 | POST | `/api/prds/{id}/link` | JWT |
-| POST | `/api/prds/{id}/ai` | JWT |
+| POST | `/api/prds/{id}/ai` | JWT | one-shot AI command (expand/risks/summarize/grill) |
+| POST | `/api/prds/{id}/grill/stream` | JWT (SSE) | interactive grill — clarifying questions (AL-67) |
+| POST | `/api/prds/{id}/grill/apply` | JWT | fold grill decisions into a proposed PRD body |
 
 ## Analytics
 

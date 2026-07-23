@@ -77,6 +77,11 @@ export interface Shard {
   created_at: string;
 }
 
+export interface GrillMessage {
+  role: "user" | "agent";
+  text: string;
+}
+
 export interface ShardCluster {
   size: number;
   representative: Shard;

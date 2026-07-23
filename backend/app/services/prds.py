@@ -156,6 +156,66 @@ def ai_command(db: Session, prd_id: str, command: str) -> str:
     )
 
 
+# ---- Interactive grill mode (AL-67) ----
+
+GRILL_CHAT_SYSTEM = (
+    "You are grilling the author to sharpen a PRD before anyone builds it. Based on their "
+    "latest answer and the current PRD, ask 1-3 focused clarifying questions that surface "
+    "unstated assumptions, scope edges, failure modes, contracts, and open decisions. Strongly "
+    "prefer LOW-FIDELITY questions answerable in words over HIGH-FIDELITY ones that need a "
+    "prototype (when a question is high-fidelity, say so and suggest prototyping it). Acknowledge "
+    "a decision in one line, then keep grilling. Be terse. Do NOT rewrite the PRD here — only "
+    "interrogate."
+)
+
+GRILL_APPLY_SYSTEM = (
+    "You are updating a PRD to fold in the decisions reached during a grilling conversation. "
+    "Rewrite the FULL PRD markdown body, integrating the author's answers into the appropriate "
+    "`## ` sections and preserving structure and untouched sections. Return ONLY the updated "
+    "markdown PRD body — no preamble, no fences."
+)
+
+
+def _transcript(history: list[dict]) -> str:
+    lines = []
+    for m in history or []:
+        who = "Author" if m.get("role") == "user" else "Grill"
+        text = (m.get("text") or "").strip()
+        if text:
+            lines.append(f"{who}: {text}")
+    return "\n".join(lines)
+
+
+def grill_context(prd: Prd, history: list[dict]) -> str:
+    """Light-context grounding for a grill: the PRD itself + the conversation so far.
+    Deliberately does NOT pull memory/code (that's the heavy-context code-chat path)."""
+    parts = [f"PRD under review — {prd.title} ({prd.status}):", prd.body or "(empty)"]
+    t = _transcript(history)
+    if t:
+        parts += ["", "Conversation so far:", t]
+    return "\n".join(parts)
+
+
+def grill_apply(db: Session, prd_id: str, history: list[dict]) -> str:
+    """Synthesize an updated PRD body that folds in the decisions from a grill
+    transcript (the handoff). Returns the proposed body; the caller saves it."""
+    prd = get_prd(db, prd_id)
+    if prd is None:
+        raise ValueError(f"prd not found: {prd_id}")
+    if settings.chat_provider == "stub":
+        answers = [m.get("text", "").strip() for m in history if m.get("role") == "user"]
+        answers = [a for a in answers if a]
+        if not answers:
+            return prd.body
+        block = "## Decisions from grilling\n" + "\n".join(f"- {a}" for a in answers) + "\n"
+        return prd.body.rstrip() + "\n\n" + block
+    return get_chat_model().chat(
+        system=GRILL_APPLY_SYSTEM,
+        context=grill_context(prd, history),
+        question="Return the updated PRD markdown body incorporating the decisions above.",
+    )
+
+
 def _stub_command(command: str, prd: Prd) -> str:
     """Deterministic, offline output so the editor is useful without a provider."""
     if command == "grill":
