@@ -116,3 +116,82 @@ def test_prd_by_id_refused_cross_tenant(client):
     for path in PRD_BY_ID:
         assert client.get(path, headers=stranger).status_code == 404
         assert client.get(path, headers=ops).status_code == 200
+
+
+# ---- AL-71: agent / code-graph reads are gated too ----
+
+def test_agent_chat_cannot_search_foreign_project(client):
+    """POST /agent/chat searches memory by project_id — a non-member naming `web`
+    must be refused, not served web's shards."""
+    ops = _login(client, "ops@ascme-labs.com")
+    r = client.post("/api/agent/chat", json={"message": "postgres", "project_id": "web"}, headers=ops)
+    assert r.status_code == 404
+
+
+def test_code_graph_reads_refuse_foreign_project(client):
+    """The code-graph reads resolve+gate a project — ops (no web) is refused web."""
+    ops = _login(client, "ops@ascme-labs.com")
+    assert client.get("/api/agent/code/map?project_id=web", headers=ops).status_code == 404
+    assert client.get("/api/agent/code/neighbors?path=x&project_id=web", headers=ops).status_code == 404
+    assert client.post(
+        "/api/agent/code", json={"message": "what is here", "project_id": "web"}, headers=ops
+    ).status_code == 404
+
+
+def test_fresh_tenant_code_reads_see_nothing(client):
+    """A zero-membership tenant can't reach any project's code graph, even by
+    omitting project_id (the fallback is bounded to the caller's own projects)."""
+    stranger = _register(client)
+    assert client.get("/api/agent/code/map", headers=stranger).status_code == 404
+    assert client.get("/api/agent/code/map?project_id=core", headers=stranger).status_code == 404
+
+
+# ---- AL-71: global (project-less) memory honors share_global_memory ----
+
+def test_global_memory_excluded_when_project_opts_out(client, auth):
+    """A global (project-less) shard is visible to a project by default, but a
+    project that sets share_global_memory=False must not see it (AL-71)."""
+    # A published global shard: project_id explicitly null → NULL, written by alex.
+    r = client.post(
+        "/api/memory/shards",
+        json={"text": "GLOBAL-NEEDLE cross-project lesson", "scope": "global", "project_id": None},
+        headers=auth,
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["project_id"] is None, "shard should be global (project-less)"
+
+    def core_sees_needle() -> bool:
+        hits = client.post(
+            "/api/memory/search",
+            json={"query": "GLOBAL-NEEDLE cross-project lesson", "top_k": 10, "project_id": "core"},
+            headers=auth,
+        ).json()
+        return any("GLOBAL-NEEDLE" in h["shard"]["text"] for h in hits)
+
+    assert core_sees_needle(), "default (share_global_memory=True) should surface global shards"
+
+    # Opt core out of global memory; the needle must disappear from its search.
+    up = client.patch("/api/projects/core", json={"share_global_memory": False}, headers=auth)
+    assert up.status_code == 200, up.text
+    assert not core_sees_needle(), "opted-out project still saw a global shard"
+
+
+def test_hosted_mode_forbids_global_shard_creation(client, auth, monkeypatch):
+    """In hosted mode there is no cross-tenant "global" memory: creating a
+    project-less shard is refused, so isolation can't be bypassed (AL-71)."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "hosted_mode", True)
+    r = client.post(
+        "/api/memory/shards",
+        json={"text": "should be rejected", "scope": "global", "project_id": None},
+        headers=auth,
+    )
+    assert r.status_code == 400, r.text
+    # A project-scoped shard is still fine.
+    ok = client.post(
+        "/api/memory/shards",
+        json={"text": "scoped is fine", "scope": "item", "project_id": "core"},
+        headers=auth,
+    )
+    assert ok.status_code == 201, ok.text

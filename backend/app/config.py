@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     # `docker compose build` time (see docs/deploy.md) and reported by /health.
     git_sha: str = "unknown"
 
+    # Multi-tenant SaaS switch. OFF for self-hosted/OSS builds (flat User→Project,
+    # cross-project "global" memory allowed). ON only for the hosted offering, where
+    # Organizations + billing + quotas mount and tenant boundaries tighten (e.g. no
+    # project-less global shards, so one tenant's memory can never reach another).
+    hosted_mode: bool = False
+
     embed_dim: int = 384
 
     # ---- AI providers (F1). Defaults are all-stub → fully offline. ----
