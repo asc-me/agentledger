@@ -66,6 +66,15 @@ export function ItemRow({
 
       <span className="min-w-0 flex-1 truncate text-[13.5px] text-fg-2">{item.title}</span>
 
+      {item.fidelity === "high" && (
+        <span
+          className="flex-none rounded-md border border-[#3a2f1a] bg-[rgba(224,179,74,0.08)] px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wide text-[#e0b34a]"
+          title="High fidelity — needs a prototype before it can be specced"
+        >
+          proto
+        </span>
+      )}
+
       <div className="flex flex-none items-center gap-1.5">
         {item.tags.slice(0, 3).map((t) => (
           <span

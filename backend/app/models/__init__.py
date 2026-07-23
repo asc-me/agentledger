@@ -129,6 +129,9 @@ class Item(Base):
     # Spec traceability (feature D): the PRD + section this item implements.
     prd_id: Mapped[str | None] = mapped_column(String, nullable=True)
     prd_section: Mapped[str] = mapped_column(String, default="")
+    # Fidelity (AL-68): `low` = specifiable in words now; `high` = needs a prototype
+    # to answer (the grill → prototype → grill handoff). Routes prototype-first work.
+    fidelity: Mapped[str] = mapped_column(String, default="low")  # low | high
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow

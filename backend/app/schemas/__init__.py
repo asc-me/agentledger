@@ -110,6 +110,7 @@ class ItemOut(ORMModel):
     claimed_by: str | None = None
     prd_id: str | None = None
     prd_section: str = ""
+    fidelity: str = "low"
     created_at: datetime
     updated_at: datetime
 

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.models import Item, Project, utcnow
 
 STATUSES = ["backlog", "next", "in_progress", "review", "done", "blocked"]
+FIDELITIES = ["low", "high"]  # low = specifiable now; high = needs a prototype (AL-68)
 DEFAULT_LEASE_SECONDS = 600  # a claim with no heartbeat within this window is reclaimable
 
 
@@ -53,9 +54,12 @@ def create_item(
     touchpoints: list[str] | None = None,
     prd_id: str | None = None,
     prd_section: str = "",
+    fidelity: str = "low",
 ) -> Item:
     if status not in STATUSES:
         raise ValueError(f"invalid status: {status}")
+    if fidelity not in FIDELITIES:
+        raise ValueError(f"invalid fidelity: {fidelity}")
     if db.get(Project, project_id) is None:
         raise ValueError(f"unknown project: {project_id!r}")
     max_order = db.scalar(select(func.max(Item.sort_order))) or 0
@@ -73,6 +77,7 @@ def create_item(
         date=date,
         prd_id=prd_id,
         prd_section=prd_section or "",
+        fidelity=fidelity,
     )
     db.add(item)
     db.commit()
@@ -90,9 +95,11 @@ def update_item(db: Session, item_id: str, **fields) -> Item | None:
     if "status" in fields and fields["status"] is not None:
         if fields["status"] not in STATUSES:
             raise ValueError(f"invalid status: {fields['status']}")
+    if fields.get("fidelity") is not None and fields["fidelity"] not in FIDELITIES:
+        raise ValueError(f"invalid fidelity: {fields['fidelity']}")
     prev_status = item.status
     for key in ("title", "description", "status", "tags", "effort", "blocker", "pr", "date",
-                "github_url", "assignee", "touchpoints", "prd_id", "prd_section"):
+                "github_url", "assignee", "touchpoints", "prd_id", "prd_section", "fidelity"):
         if key in fields and fields[key] is not None:
             setattr(item, key, fields[key])
     db.commit()
@@ -202,6 +209,7 @@ def get_item_details(db: Session, item_id: str) -> dict | None:
         "status": item.status,
         "tags": item.tags,
         "effort": item.effort,
+        "fidelity": item.fidelity,
         "blocker": item.blocker,
         "pr": item.pr,
         "linked_shards": [{"id": s.id, "text": s.text, "source": s.source} for s in shards],

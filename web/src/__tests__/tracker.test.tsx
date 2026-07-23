@@ -12,13 +12,13 @@ const items: Item[] = [
   {
     id: "AL-01", project_id: "core", title: "In progress thing", description: "",
     status: "in_progress", tags: ["ai"], touchpoints: [], effort: 5, sort_order: 0, blocker: "", date: "Jul 19",
-    reporter: { name: "Alex Cain", handle: "ascme", avatar: "#a78bfa" }, pr: null, github_url: "", assignee: "", claimed_by: null, prd_id: null, prd_section: "",
+    reporter: { name: "Alex Cain", handle: "ascme", avatar: "#a78bfa" }, pr: null, github_url: "", assignee: "", claimed_by: null, prd_id: null, prd_section: "", fidelity: "low",
     created_at: "", updated_at: "",
   },
   {
     id: "AL-02", project_id: "core", title: "Finished thing", description: "",
     status: "done", tags: ["ui"], touchpoints: [], effort: 8, sort_order: 1, blocker: "", date: "Jul 14",
-    reporter: { name: "Dana Ruiz", handle: "dev_ren", avatar: "#7ca2ff" }, pr: null, github_url: "", assignee: "", claimed_by: null, prd_id: null, prd_section: "",
+    reporter: { name: "Dana Ruiz", handle: "dev_ren", avatar: "#7ca2ff" }, pr: null, github_url: "", assignee: "", claimed_by: null, prd_id: null, prd_section: "", fidelity: "low",
     created_at: "", updated_at: "",
   },
 ];

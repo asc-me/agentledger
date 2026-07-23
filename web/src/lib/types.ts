@@ -1,4 +1,5 @@
 export type Status = "backlog" | "next" | "in_progress" | "review" | "done" | "blocked";
+export type Fidelity = "low" | "high";
 export type RequestType = "bug" | "feature" | "enhancement" | "feedback";
 
 export interface User {
@@ -58,6 +59,7 @@ export interface Item {
   claimed_by: string | null;
   prd_id: string | null;
   prd_section: string;
+  fidelity: Fidelity;
   created_at: string;
   updated_at: string;
 }
@@ -209,6 +211,8 @@ export interface PrdCoverageSection {
   done: number;
   by_status: Record<string, number>;
   gap: boolean;
+  high_fidelity: number;
+  open_high_fidelity: number;
   item_ids: string[];
 }
 
@@ -223,6 +227,7 @@ export interface PrdCoverage {
   total_items: number;
   done_items: number;
   percent_done: number;
+  open_high_fidelity: number;
 }
 
 export interface PrdVersion {

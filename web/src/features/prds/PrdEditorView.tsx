@@ -363,6 +363,11 @@ function CoveragePanel({ prdId, onDecomposed }: { prdId: string; onDecomposed: (
           <div className="mt-1 h-1.5 w-48 overflow-hidden rounded-full bg-surface-4">
             <div className="h-full rounded-full bg-accent" style={{ width: `${cov.percent_done}%` }} />
           </div>
+          {cov.open_high_fidelity > 0 && (
+            <div className="mt-1.5 font-mono text-[10.5px] text-[#e0b34a]">
+              {cov.open_high_fidelity} open · needs a prototype (grill → prototype → grill)
+            </div>
+          )}
         </div>
         {cov.gaps.length > 0 && (
           <Button size="sm" onClick={fillGaps} disabled={busy}>
@@ -379,6 +384,14 @@ function CoveragePanel({ prdId, onDecomposed }: { prdId: string; onDecomposed: (
             className="flex items-center gap-2 rounded-[10px] border border-line-2 bg-surface-2 px-3 py-2"
           >
             <span className="min-w-0 flex-1 truncate text-[13px] text-fg-2">{s.section}</span>
+            {s.open_high_fidelity > 0 && (
+              <span
+                className="rounded border border-[#3a2f1a] bg-[rgba(224,179,74,0.08)] px-1.5 py-px font-mono text-[9px] uppercase tracking-wide text-[#e0b34a]"
+                title="High-fidelity work here needs a prototype"
+              >
+                {s.open_high_fidelity} proto
+              </span>
+            )}
             {s.gap ? (
               <span className="rounded border border-[rgba(224,179,74,0.3)] px-1.5 py-px font-mono text-[9.5px] uppercase tracking-wide text-[#e0b34a]">
                 no tasks
