@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ChevronDown, Eye, History, Link2, ListChecks, Save, Sparkles } from "lucide-react";
+import { ArrowLeft, ChevronDown, Eye, History, Link2, ListChecks, MessageCircleQuestion, Save, Sparkles, X } from "lucide-react";
 import * as React from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
@@ -39,6 +39,7 @@ export function PrdEditorView() {
   const [diffVersion, setDiffVersion] = React.useState<PrdVersion | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [aiBusy, setAiBusy] = React.useState<string | null>(null);
+  const [grill, setGrill] = React.useState<string | null>(null);
 
   // Load draft when the PRD arrives / changes id.
   React.useEffect(() => {
@@ -94,6 +95,18 @@ export function PrdEditorView() {
     }
   }
 
+  // Grill is different from the append-commands: it interrogates the PRD and shows
+  // questions to answer — it doesn't write into the body (AL-66).
+  async function runGrill() {
+    setAiBusy("grill");
+    try {
+      const { text } = await api.prdAi(id, "grill");
+      setGrill(text.trim());
+    } finally {
+      setAiBusy(null);
+    }
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* Header */}
@@ -133,6 +146,15 @@ export function PrdEditorView() {
             {aiBusy === c.key ? "…" : c.label}
           </button>
         ))}
+        <button
+          onClick={runGrill}
+          disabled={!!aiBusy}
+          title="Ask relentless clarifying questions to sharpen this PRD before building"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-[#1c2620] bg-[rgba(198,242,78,0.08)] px-2.5 py-1 text-[11.5px] text-accent transition-colors hover:border-[#2a3320] disabled:opacity-50"
+        >
+          <MessageCircleQuestion size={12} />
+          {aiBusy === "grill" ? "Grilling…" : "Grill"}
+        </button>
         <div className="ml-auto flex items-center gap-2">
           <LinkItemsMenu prdId={id} linked={prd.linked} onChange={refresh} />
           <div className="flex items-center gap-1 rounded-lg border border-line-2 bg-surface-2 p-0.5">
@@ -142,6 +164,26 @@ export function PrdEditorView() {
           </div>
         </div>
       </div>
+
+      {/* Grill questions — answer these by editing the PRD; not written into it (AL-66) */}
+      {grill && (
+        <div className="flex-none border-b border-line bg-[rgba(198,242,78,0.04)] px-5 py-3">
+          <div className="mx-auto flex max-w-4xl items-start gap-3">
+            <MessageCircleQuestion size={15} className="mt-0.5 flex-none text-accent" />
+            <div className="min-w-0 flex-1">
+              <div className="mb-1 font-mono text-[10px] uppercase tracking-wide text-accent">
+                Grill — answer these by sharpening the PRD
+              </div>
+              <div className="text-[12.5px] leading-relaxed text-fg-2">
+                <Markdown source={grill} />
+              </div>
+            </div>
+            <button onClick={() => setGrill(null)} className="flex-none text-faint hover:text-fg" title="Dismiss">
+              <X size={14} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Body: editor | right pane */}
       <div className="grid min-h-0 flex-1 grid-cols-2">

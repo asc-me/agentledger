@@ -240,6 +240,56 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "create_prd",
+        "description": (
+            "Author a PRD (the durable handoff artifact). Use `## ` markdown headings for sections — "
+            "decompose_prd turns each into tracked work and prd_coverage tracks it. Pass `body` for a "
+            "full markdown draft, or `template` (standard|blank) for a skeleton. Returns the PRD incl. id."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "body": {"type": "string", "description": "Full markdown draft (wins over template). Use `## ` section headings."},
+                "template": {"type": "string", "enum": ["standard", "blank"], "description": "Skeleton when no body (default standard)."},
+            },
+            "required": ["title"],
+        },
+    },
+    {
+        "name": "update_prd",
+        "description": (
+            "Patch a PRD's title, status (draft|review|approved), or body (full markdown replace). "
+            "Returns the updated PRD. To keep a history checkpoint, the UI snapshots versions; edits here "
+            "update the working draft."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "prd_id": {"type": "string"},
+                "title": {"type": "string"},
+                "status": {"type": "string", "enum": ["draft", "review", "approved"]},
+                "body": {"type": "string", "description": "Full markdown body (replaces the current draft)."},
+            },
+            "required": ["prd_id"],
+        },
+    },
+    {
+        "name": "grill_prd",
+        "description": (
+            "Get the next batch of relentless clarifying questions to sharpen a PRD before building "
+            "(the 'grill' technique). Surfaces unstated assumptions, scope boundaries, failure modes, and "
+            "open decisions — favoring low-fidelity questions answerable in words over high-fidelity ones "
+            "that need a prototype. Returns a markdown question list. Read-only; author answers by "
+            "update_prd."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {"prd_id": {"type": "string"}},
+            "required": ["prd_id"],
+        },
+    },
+    {
         "name": "related_work",
         "description": (
             "Items related to a given item by shared touchpoints (files/globs/modules it affects) "
@@ -442,7 +492,7 @@ _PROJECT_SCOPED = {
     "create_item", "search_items", "add_memory", "search_memory",
     "get_backlog", "suggest_next", "generate_digest", "link_items", "claim_next", "next_cluster",
     "describe_code", "get_code_map", "code_neighbors", "search_code",
-    "link_code", "unlink_code",
+    "link_code", "unlink_code", "create_prd",
 }
 # Creates accept an idempotency key so a retried call returns the original resource.
 _IDEMPOTENT_CREATES = {"create_item", "add_memory", "link_items"}
@@ -456,7 +506,7 @@ _ITEM_WRITE_TOOLS = {"create_item", "update_item", "claim_next", "heartbeat", "r
 _READ_ONLY = {
     "get_context", "list_projects", "search_items", "search_memory",
     "get_backlog", "get_item_details", "suggest_next", "generate_digest", "related_work",
-    "prd_coverage", "get_code_map", "code_neighbors", "search_code",
+    "prd_coverage", "grill_prd", "get_code_map", "code_neighbors", "search_code",
 }
 
 _PAGE_META = {  # shared output shape for paged reads (#9)
@@ -494,6 +544,15 @@ _SHARD_SCHEMA = {
     "properties": {
         "id": _STR, "text": _STR, "scope": _STR,
         "item_id": _NULLABLE_STR, "project_id": _NULLABLE_STR, "status": _STR,
+    },
+}
+
+_PRD_SCHEMA_REF = {
+    "type": "object",
+    "properties": {
+        "id": _STR, "project_id": _NULLABLE_STR, "title": _STR, "status": _STR,
+        "version": _STR, "sections": {"type": "array", "items": _STR},
+        "linked": {"type": "array", "items": _STR}, "body": _STR,
     },
 }
 
@@ -585,6 +644,12 @@ _OUTPUT_SCHEMAS: dict[str, dict] = {
     "decompose_prd": {
         "type": "object",
         "properties": {"prd_id": _STR, "proposals": {"type": "array"}, "created": {"type": "array"}},
+    },
+    "create_prd": _PRD_SCHEMA_REF,
+    "update_prd": _PRD_SCHEMA_REF,
+    "grill_prd": {
+        "type": "object",
+        "properties": {"prd_id": _STR, "questions": _STR},
     },
     "describe_code": {
         "type": "object",
@@ -739,6 +804,19 @@ def _shard_dict(shard) -> dict:
         "id": shard.id, "text": shard.text, "scope": shard.scope,
         "item_id": shard.item_id, "project_id": shard.project_id,
         "status": shard.status,
+    }
+
+
+def _prd_dict(prd) -> dict:
+    return {
+        "id": prd.id,
+        "project_id": prd.project_id,
+        "title": prd.title,
+        "status": prd.status,
+        "version": prd.version,
+        "sections": prd_svc.parse_sections(prd.body),  # the `## ` headings, in order
+        "linked": list(prd.linked or []),
+        "body": prd.body,
     }
 
 
@@ -1005,6 +1083,30 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
         if prd.project_id not in allowed:
             raise authz.Forbidden(f"prd {args['prd_id']!r} is outside this key's project scope")
         return prd_svc.decompose(db, prd, create=bool(args.get("create", False)))
+    if name == "create_prd":
+        prd = prd_svc.create_prd(
+            db, title=args["title"], template=args.get("template", "standard"),
+            project_id=pid, body=args.get("body"),
+        )
+        return _prd_dict(prd)
+    if name == "update_prd":
+        prd = prd_svc.get_prd(db, args["prd_id"])
+        if prd is None:
+            raise errors.NotFound(f"prd not found: {args['prd_id']}")
+        if prd.project_id not in allowed:
+            raise authz.Forbidden(f"prd {args['prd_id']!r} is outside this key's project scope")
+        updated = prd_svc.update_prd(
+            db, args["prd_id"],
+            title=args.get("title"), status=args.get("status"), body=args.get("body"),
+        )
+        return _prd_dict(updated)
+    if name == "grill_prd":
+        prd = prd_svc.get_prd(db, args["prd_id"])
+        if prd is None:
+            raise errors.NotFound(f"prd not found: {args['prd_id']}")
+        if prd.project_id not in readable:
+            raise authz.Forbidden(f"prd {args['prd_id']!r} is outside this key's project scope")
+        return {"prd_id": prd.id, "questions": prd_svc.ai_command(db, prd.id, "grill")}
     if name == "describe_code":
         return code_svc.describe_code(
             db, project_id=pid,

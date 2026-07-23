@@ -128,6 +128,14 @@ _COMMANDS = {
     "expand": "Expand the section under the cursor into 1-2 well-written paragraphs. Return only the new markdown.",
     "risks": "Generate a '## Risks & Open Questions' markdown section (3-5 bullets) for this PRD. Return only that section.",
     "summarize": "Write a 2-3 sentence executive summary of this PRD as markdown. Return only the summary.",
+    "grill": (
+        "You are grilling the author to sharpen this PRD before anyone builds it. Ask 5-8 relentless, "
+        "specific clarifying questions that surface unstated assumptions, scope boundaries, failure "
+        "modes, data shapes, and decisions still open. Strongly prefer LOW-FIDELITY questions "
+        "answerable in words (routes, contracts, error behavior, acceptance criteria) over HIGH-FIDELITY "
+        "ones that would need a prototype to answer. Return ONLY a markdown bullet list of questions — "
+        "no preamble, no answers."
+    ),
 }
 
 
@@ -150,6 +158,21 @@ def ai_command(db: Session, prd_id: str, command: str) -> str:
 
 def _stub_command(command: str, prd: Prd) -> str:
     """Deterministic, offline output so the editor is useful without a provider."""
+    if command == "grill":
+        secs = parse_sections(prd.body)
+        thin = [s for s in secs if len(section_bodies(prd.body).get(s, "").strip()) < 40]
+        lines = [
+            "- What is the single most important outcome, and how will you know it's met?",
+            "- Which cases are explicitly out of scope for the first version?",
+            "- What should happen on the failure path (bad input, missing data, timeout)?",
+            "- What is the exact shape of the inputs and outputs at the boundary?",
+            "- Which of these decisions actually need a prototype to answer, vs. can be settled now?",
+        ]
+        for s in thin[:3]:
+            lines.append(f"- Section **{s}** is thin — what belongs there?")
+        return "\n".join(lines) + (
+            "\n\n_(Local stub questions. Set CHAT_PROVIDER=ollama|anthropic for a real grill.)_\n"
+        )
     if command == "risks":
         return (
             "## Risks & Open Questions\n"
