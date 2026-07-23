@@ -29,6 +29,7 @@ from app.services import attachments as att_svc
 from app.services import duplicates as dup_svc
 from app.services import items as items_svc
 from app.services import requests as req_svc
+from app.services import ratelimit
 from app.services import roadmap as roadmap_svc
 from app.services import spam
 from app.services.platform import get_config
@@ -46,7 +47,7 @@ def _rate_or_429(db: Session, request: FastAPIRequest, project_id: str | None, d
     limit = default
     if project_id:
         limit = get_config(db, project_id).rate_limit_per_min or default
-    if not spam.check_rate(f"{project_id or 'global'}:{_client_ip(request)}", limit):
+    if not ratelimit.allow(f"{project_id or 'global'}:{_client_ip(request)}", limit):
         raise HTTPException(429, "too many submissions, slow down")
 
 
@@ -169,7 +170,7 @@ async def upload_attachment(
 ):
     """Upload a screenshot for a feedback submission. Returns its id + public url."""
     _ensure_enabled()
-    if not spam.check_rate(f"upload:{_client_ip(request)}", _UPLOAD_RATE):
+    if not ratelimit.allow(f"upload:{_client_ip(request)}", _UPLOAD_RATE):
         raise HTTPException(429, "too many uploads, slow down")
     data = await file.read()
     try:

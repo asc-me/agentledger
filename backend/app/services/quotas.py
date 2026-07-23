@@ -20,7 +20,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.errors import QuotaExceeded
+from app.errors import QuotaExceeded, RateLimited
+from app.services import ratelimit
 from app.models import (
     MemoryShard,
     OrgInvite,
@@ -161,6 +162,19 @@ def enforce_shard_quota(db: Session, org_id: str | None) -> None:
         raise QuotaExceeded(
             f"memory limit reached ({limit} shards) on the {org.plan} plan",
             hint="prune old memory or ask an operator to upgrade the plan",
+        )
+
+
+def enforce_org_rate(org_id: str | None) -> None:
+    """Hosted per-org burst cap on agent (MCP) calls — a short-window limit distinct
+    from the monthly plan quota. Shared across replicas when REDIS_URL is set. No-op
+    off hosted mode, without an org, or when the cap is disabled (0)."""
+    if not settings.hosted_mode or not org_id or settings.org_rate_per_min <= 0:
+        return
+    if not ratelimit.allow(f"org:{org_id}", settings.org_rate_per_min, 60):
+        raise RateLimited(
+            f"rate limit exceeded (> {settings.org_rate_per_min} calls/min for this organization)",
+            hint="back off and retry in a few seconds",
         )
 
 

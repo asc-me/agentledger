@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # The insecure fallback secret. Anyone knowing it can mint tokens for any user, so
@@ -12,6 +13,18 @@ class Settings(BaseSettings):
 
     # Postgres by default; falls back to SQLite for zero-infra local runs / tests.
     database_url: str = "postgresql+psycopg://agentledger:agentledger@localhost:5432/agentledger"
+
+    @field_validator("database_url")
+    @classmethod
+    def _normalize_db_url(cls, v: str) -> str:
+        """Managed hosts (Railway, Heroku, …) hand out ``postgres://…``; SQLAlchemy
+        needs an explicit driver. Rewrite both ``postgres://`` and bare
+        ``postgresql://`` to the psycopg3 driver so the provided URL just works,
+        while ``sqlite://`` and already-qualified URLs pass through untouched (AL-26)."""
+        for prefix in ("postgres://", "postgresql://"):
+            if v.startswith(prefix) and not v.startswith("postgresql+"):
+                return "postgresql+psycopg://" + v[len(prefix):]
+        return v
 
     jwt_secret: str = DEFAULT_JWT_SECRET
     jwt_algorithm: str = "HS256"
@@ -106,6 +119,16 @@ class Settings(BaseSettings):
     smtp_starttls: bool = True
     app_base_url: str = "http://localhost:5173"
     invite_expiry_days: int = 14
+
+    # Rate limiting + observability (Phase 5). REDIS_URL, when set, backs rate limits
+    # with a shared store so caps hold across multiple instances; unset keeps the
+    # in-process limiter (fine for self-host / a single container / tests). The per-org
+    # cap is a hosted burst limit on agent (MCP) calls, distinct from the monthly plan
+    # quota (AL-75). Logging is structured text by default; LOG_JSON emits JSON lines.
+    redis_url: str = ""
+    org_rate_per_min: int = 300  # hosted per-org MCP burst cap (0 = disabled)
+    log_level: str = "INFO"
+    log_json: bool = False
 
     # Comma-separated list of allowed CORS origins for the SPA.
     cors_origins: str = "http://localhost:5173,http://localhost:8080"

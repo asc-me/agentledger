@@ -14,7 +14,7 @@ from app.security.jwt import create_access_token, create_refresh_token, decode_t
 from app.security.net import client_ip
 from app.security.passwords import hash_password, verify_password
 from app.services import orgs as orgs_svc
-from app.services import spam
+from app.services import ratelimit
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -26,7 +26,7 @@ def _guard_login_rate(request: Request, email: str) -> None:
     per_email = settings.login_rate_per_min
     per_ip = per_email * 3  # an IP may legitimately host several accounts
     ip = client_ip(request)
-    if not spam.check_rate(f"login:email:{email.lower()}", per_email) or not spam.check_rate(
+    if not ratelimit.allow(f"login:email:{email.lower()}", per_email) or not ratelimit.allow(
         f"login:ip:{ip}", per_ip
     ):
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "too many login attempts; try again shortly")

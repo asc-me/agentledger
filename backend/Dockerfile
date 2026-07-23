@@ -19,7 +19,9 @@ ENV GIT_SHA=$GIT_SHA
 
 EXPOSE 8000
 
+# Honor $PORT so the same image serves docker-compose (defaults to 8000) and managed
+# hosts like Railway (which inject $PORT). Shell form + healthcheck both read it (AL-26).
 HEALTHCHECK --interval=10s --timeout=3s --retries=10 \
-    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"
+    CMD python -c "import os,urllib.request,sys; p=os.environ.get('PORT','8000'); sys.exit(0 if urllib.request.urlopen(f'http://localhost:{p}/health').status==200 else 1)"
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

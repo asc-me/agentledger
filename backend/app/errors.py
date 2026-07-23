@@ -44,3 +44,10 @@ class QuotaExceeded(AppError):
     Mapped to a ``quota_exceeded`` MCP tool error and, in REST, to HTTP 402."""
 
     code = "quota_exceeded"
+
+
+class RateLimited(AppError):
+    """Too many requests in a short window (per-org agent-call burst cap). Phase 5.
+    Mapped to a ``rate_limited`` MCP tool error; the agent should back off and retry."""
+
+    code = "rate_limited"

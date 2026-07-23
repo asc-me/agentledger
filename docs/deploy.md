@@ -114,3 +114,46 @@ A **backward-incompatible migration** is the one thing a code rollback doesn't
 undo — the DB stays migrated. Prefer additive, backward-compatible migrations so a
 code rollback is always safe; if a destructive migration must ship, snapshot the
 volume first (`docker compose exec db pg_dump ...`).
+
+## Railway (hosted) — code readiness
+
+The hosted multi-tenant offering runs on Railway. The application code is Railway-ready
+(this is Phase 5, slice A); provisioning the actual project/services is a separate,
+account-touching step (the remaining `railway` items). What the code already handles:
+
+- **Two services, one repo.** `backend/railway.json` and `web/railway.json` declare a
+  Dockerfile build + healthcheck per service. Create two Railway services with root
+  directories `backend/` and `web/`; each picks up its `railway.json`.
+- **`$PORT`.** Both images honor Railway's injected `$PORT` — the API via
+  `uvicorn --port ${PORT:-8000}`, the web via nginx's envsubst template
+  (`nginx.conf.template`, `listen ${PORT}`). Locally (`docker compose`) the defaults
+  (8000 / 80) keep working unchanged.
+- **`DATABASE_URL`.** Railway's Postgres hands out a `postgres://…` URL; config rewrites
+  `postgres://` / `postgresql://` to the psycopg3 driver automatically — paste it as-is.
+- **Web → API address.** Set `API_UPSTREAM` on the web service to the backend's private
+  address (e.g. `${{backend.RAILWAY_PRIVATE_DOMAIN}}:8000`); it defaults to `api:8000`
+  for compose.
+- **Migrations** run on API startup (same as self-host). Run a single API replica during
+  a migration deploy to avoid two instances racing `upgrade head`.
+
+### Required environment (backend service, hosted)
+
+| Var | Notes |
+|-----|-------|
+| `HOSTED_MODE=true` | Turns on the org layer, quotas, and tighter tenant isolation. |
+| `JWT_SECRET` | Long random string. `REQUIRE_STRONG_SECRET=true` refuses to boot on a weak one. |
+| `SECRET_ENCRYPTION_KEY` | Required in hosted mode (encrypts BYOK provider keys); boot fails without it. |
+| `DATABASE_URL` | From the Railway Postgres plugin (auto-normalized). |
+| `PORT` | Injected by Railway. |
+| `PLATFORM_ADMIN_EMAILS` | Comma-separated operator allowlist for manual plan assignment. |
+| `APP_BASE_URL` | Public SPA origin, used to build org-invite links. |
+| `SMTP_HOST` / `SMTP_*` | Invite email delivery (falls back to console/outbox if unset). |
+| `REDIS_URL` | Optional; shared rate-limit store across replicas (in-process fallback otherwise). |
+| `CORS_ORIGINS` | The web service's public origin(s). |
+| `TRUSTED_PROXY=true` | Behind Railway's edge, so `X-Forwarded-For` is trustworthy. |
+
+### `/data/sync`
+
+Drive/filesystem sync is a self-host convenience. On Railway either leave it
+unconfigured (it stays dormant with no Drive folder set) or attach a volume at
+`/data/sync` if you want it — it is not required for the hosted app to run.
