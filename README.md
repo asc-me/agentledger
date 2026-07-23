@@ -70,9 +70,11 @@ live from **Settings → AI Providers**, or via env:
 
 `CHAT_PROVIDER` switches live (chat + auto-extraction + streaming). `EMBED_PROVIDER` is a
 **deploy-time** setting — changing it changes the vector dimension, so set `EMBED_DIM` to
-match (nomic-embed-text=768, OpenAI text-embedding-3-small=1536), reprovision the DB, then
-`POST /api/memory/backfill`. See `.env.example`. The `anthropic` SDK is an optional
-`cloud` pip extra (lazily imported); stub and Ollama need no extra dependency.
+match (nomic-embed-text=768, bge-m3=1024, OpenAI text-embedding-3-small=1536). The pgvector
+columns follow `EMBED_DIM` automatically on migrate (migration 0019), which **drops existing
+embeddings** — so after changing the dimension, `POST /api/memory/backfill` to re-embed all
+shards and code nodes with the new provider. See `.env.example`. The `anthropic` SDK is an
+optional `cloud` pip extra (lazily imported); stub and Ollama need no extra dependency.
 
 ## Using the MCP tools
 
