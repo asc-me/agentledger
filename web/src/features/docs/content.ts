@@ -126,7 +126,7 @@ const CONTENT: Record<string, DocEntry> = {
     title: "MCP Tools",
     tagline: "The tool surface agents call — with live metrics.",
     sections: [
-      { num: 1, h: "The surface", b: "11 live tools over a JSON-RPC endpoint (POST /api/mcp). Each card shows its params, description, and call count." },
+      { num: 1, h: "The surface", b: "27 live tools over a JSON-RPC endpoint (POST /api/mcp). Each card shows its params, description, and call count." },
       { num: 2, h: "Authenticate agents", b: "Create a scoped API key in Settings → API Keys, then call the endpoint with it. Every call is metered here." },
     ],
     related: [{ label: "Settings", to: "/settings" }],

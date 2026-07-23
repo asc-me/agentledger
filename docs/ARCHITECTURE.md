@@ -126,10 +126,10 @@ backend/app/
   providers/         base protocols + stub · ollama · openai · anthropic + registry
   services/          business logic shared by REST + MCP
   routers/           auth · projects · items · requests · memory · agent · apikeys ·
-                     prds · analytics · platform · public
-  mcp_server.py      JSON-RPC MCP endpoint (11 tools) + metering
+                     prds · analytics · platform · reports · public
+  mcp_server.py      JSON-RPC MCP endpoint (27 tools) + metering
   seed.py            the design dataset
-alembic/             migrations (0001–0004)
+alembic/             migration chain (0001 → head)
 
 web/src/
   lib/               api · publicApi · queries · types · meta · cn · markdown · diff

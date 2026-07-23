@@ -29,7 +29,7 @@ opt-in. A hosted multi-tenant service is a later, additive layer.
 | **Links** | Interactive force-directed graph of typed relationships (dependency / code / semantic / tag) |
 | **Dashboard** | KPI tiles, status distribution, request breakdown, recent activity |
 | **Roadmap** | MVP → Post-MVP → Later with progress; shareable read-only public link |
-| **MCP Tools** | **11 live tools** with per-tool call metering, params, and descriptions |
+| **MCP Tools** | **27 live tools** with per-tool call metering, params, and descriptions |
 | **Feedback Kit** | Themeable embeddable widget generator (accent / radius / types) with live preview + copy-paste snippet |
 | **Settings / Profile** | AI provider switch, GitHub/Drive connection config, project config, members, API keys; profile + project access |
 | **MCP** | `create_item` · `update_item` · `search_items` · `add_memory` · `search_memory` · `get_backlog` · `get_item_details` · `suggest_next` · `link_items` · `extract_lessons` · `generate_digest` |
@@ -86,7 +86,7 @@ curl -s http://localhost:8000/api/mcp \
        "params":{"name":"create_item","arguments":{"title":"From an agent","effort":2}}}'
 ```
 
-`tools/list` returns all 11 tools; every call is metered and shows up on the **MCP Tools**
+`tools/list` returns all 27 tools; every call is metered and shows up on the **MCP Tools**
 page. The created item appears immediately in the web Tracker — agents and the UI share
 one service layer.
 
@@ -109,7 +109,7 @@ export DATABASE_URL="sqlite:///./dev.db"     # zero-infra; create_all + seed on 
 # …or Postgres (runs Alembic migrations):
 # export DATABASE_URL="postgresql+psycopg://agentledger:agentledger@localhost:5432/agentledger"
 uvicorn app.main:app --reload
-pytest            # 49 tests
+pytest            # full backend suite
 ```
 
 **Frontend**
@@ -132,9 +132,9 @@ cd backend && alembic revision --autogenerate -m "describe change" && alembic up
 
 ## Testing
 
-- **Backend**: `cd backend && pytest` — 49 tests (auth, items/reorder, memory search,
-  all 11 MCP tools + metering, requests + public feedback + dedup, PRDs + versions + AI,
-  dashboard/roadmap/links, platform provider switch, GitHub webhook). Runs on SQLite, offline.
+- **Backend**: `cd backend && pytest` — covers auth + authz, items/reorder, memory search,
+  all MCP tools + metering + error taxonomy, requests + public feedback + dedup, PRDs + versions + AI,
+  dashboard/roadmap/links, platform provider switch, GitHub webhook. Runs on SQLite offline; CI also runs it on Postgres+pgvector.
 - **Frontend**: `cd web && pnpm test` — Vitest + Testing Library (tracker interactions,
   memory search, feedback dedup, markdown/diff).
 

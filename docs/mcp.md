@@ -69,7 +69,7 @@ mcp_servers:
 Every client authenticates the same way: the key in an `X-API-Key` header (or
 `Authorization: Bearer`), against a URL reachable **from where the agent runs**.
 
-## The 26 tools
+## The 27 tools
 
 | Tool | Params | Does |
 | --- | --- | --- |
@@ -81,7 +81,7 @@ Every client authenticates the same way: the key in an `X-API-Key` header (or
 | `heartbeat` | `id`, `agent_id` | Extend the lease on an item you hold (so it isn't reclaimed while you work) |
 | `release_item` | `id`, `agent_id`, `to_status` | Return a claimed item to the queue |
 | `create_item` | `title`, `description`, `tags`, `touchpoints`, `effort`, `status`, `project_id` | Create a tracker item (returns its `project_id`) |
-| `update_item` | `id`, `status`, `title`, `description`, `tags`, `touchpoints`, `effort`, `blocker`, `assignee`, `github_url` | Patch / advance an item |
+| `update_item` | `id`, `status`, `title`, `description`, `tags`, `touchpoints`, `effort`, `blocker`, `prd_id`, `prd_section` | Patch / advance an item |
 | `search_items` | `query`, `tags`, `status`, `project_id` | Query the stream (query matches title, description, **and** tags) |
 | `add_memory` | `text`, `scope`, `item_id`, `project_id` | Attach a memory shard |
 | `search_memory` | `query`, `top_k`, `project_id` | Semantic search over shards (returns `item_id`, `source`) |
@@ -99,6 +99,7 @@ Every client authenticates the same way: the key in an `X-API-Key` header (or
 | `search_code` | `query`, `top_k`, `project_id` | Semantic search over code-node summaries (read-only) |
 | `link_code` | `ref_id`, `path`, `relation`, `ref_type`, `project_id` | **Bridge a tracker item/request to a code path** (affects/implements/fixes/tests/references). Idempotent; surfaces both ways |
 | `unlink_code` | `ref_id`, `path`, `relation`, `project_id` | Remove an item/request ↔ code link |
+| `report_agentledger_issue` | `type`, `title`, `detail` | Report a bug/idea about **AgentLedger itself** (not your project) upstream; deduped on arrival |
 
 Arguments are validated against each tool's `inputSchema` **before dispatch**, so a
 missing required field or a bad enum comes back as an actionable error rather than a
@@ -212,7 +213,7 @@ Completing is just `update_item(id, status="done")` (which also auto-extracts le
 
 The **MCP Tools** view (`/mcp-tools`) is a live card grid of all tools: name, `LIVE` status,
 **call count**, description, and params. The header shows `N tools live · total calls`,
-matching the "MCP · 11 TOOLS LIVE" chip in the top bar. Data comes from
+matching the "MCP · N TOOLS LIVE" chip in the top bar (N is dynamic — the live tool count). Data comes from
 `GET /api/mcp/tools`.
 
 ## Examples

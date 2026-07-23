@@ -5,7 +5,7 @@
 ```
 backend/   FastAPI app; services shared by REST + MCP; provider abstraction; Alembic; tests
 web/       Vite + React 19 + TS SPA; Tailwind v4 tokens; TanStack Query; shadcn-style UI
-alembic/   (under backend/) migrations 0001–0004
+alembic/   (under backend/) migration chain (0001 → head)
 docker-compose.yml   postgres(pgvector) + api + web
 docs/      documentation (this folder)
 ```
@@ -25,7 +25,7 @@ export DATABASE_URL="sqlite:///./dev.db"
 # export DATABASE_URL="postgresql+psycopg://agentledger:agentledger@localhost:5432/agentledger"
 
 uvicorn app.main:app --reload        # http://localhost:8000, OpenAPI at /docs
-pytest                               # 49 tests (runs on SQLite, offline)
+pytest                               # full backend suite (runs on SQLite, offline)
 ```
 
 The test suite is fully offline and deterministic (it uses the stub providers and a temp

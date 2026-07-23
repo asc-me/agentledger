@@ -45,7 +45,7 @@ A dark-only, keyboard-friendly web app with these areas (each has its own guide)
   widgets, a phased roadmap (with a public share link), and a live view of the MCP surface.
 - **Settings / Profile** — switch AI providers, connect integrations, configure the project,
   manage members and API keys.
-- **Native MCP** — 11 tools over a JSON-RPC endpoint, authenticated by scoped API keys.
+- **Native MCP** — 27 tools over a JSON-RPC endpoint, authenticated by scoped API keys.
 
 ## Non-goals (current)
 
