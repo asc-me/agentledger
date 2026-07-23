@@ -23,7 +23,8 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import ApiKey, Membership, Project
+from app.config import settings
+from app.models import ApiKey, Membership, OrgMembership, Project
 
 
 class Forbidden(Exception):
@@ -31,13 +32,20 @@ class Forbidden(Exception):
 
 
 def _member_project_ids(db: Session, user_id: str, levels: tuple[str, ...]) -> list[str]:
-    rows = db.execute(
+    q = (
         select(Membership.project_id)
         .join(Project, Project.id == Membership.project_id)
         .where(Membership.user_id == user_id, Membership.access.in_(levels))
-        .order_by(Project.name)  # deterministic default-project resolution
-    ).scalars()
-    return list(rows)
+    )
+    if settings.hosted_mode:
+        # Hosted-only second gate (AL-74): the project must belong to an org the
+        # caller is a member of. A per-project Membership alone is not enough, so a
+        # project can never be reached from outside its tenant org. Self-host
+        # (hosted_mode off) skips this entirely — behavior is unchanged.
+        user_orgs = select(OrgMembership.org_id).where(OrgMembership.user_id == user_id)
+        q = q.where(Project.org_id.in_(user_orgs))
+    q = q.order_by(Project.name)  # deterministic default-project resolution
+    return list(db.execute(q).scalars())
 
 
 def readable_project_ids(db: Session, user_id: str) -> list[str]:
