@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import secrets
 import uuid
+from datetime import timedelta, timezone
 
 from sqlalchemy.orm import Session
 
@@ -26,11 +27,13 @@ def generate_api_key(
     name: str,
     scopes: list[str] | None = None,
     project_id: str | None = None,
+    expires_in_days: int | None = None,
 ) -> tuple[ApiKey, str]:
     """Create a key row and return (row, plaintext). Plaintext is not persisted.
 
     `project_id` scopes the key to one project (agent writes target it by default);
-    None makes a global key.
+    None makes a global key. `expires_in_days` sets an optional lifetime; None =
+    non-expiring.
     """
     raw = KEY_PREFIX + secrets.token_hex(20)
     row = ApiKey(
@@ -41,6 +44,7 @@ def generate_api_key(
         prefix=raw[: len(KEY_PREFIX) + 4],
         hashed_key=_hash_key(raw),
         scopes=scopes or ["read", "write"],
+        expires_at=utcnow() + timedelta(days=expires_in_days) if expires_in_days else None,
     )
     db.add(row)
     db.commit()
@@ -52,7 +56,15 @@ def verify_api_key(db: Session, raw: str) -> ApiKey | None:
     if not raw or not raw.startswith(KEY_PREFIX):
         return None
     row = db.query(ApiKey).filter(ApiKey.hashed_key == _hash_key(raw)).one_or_none()
-    if row is not None:
-        row.last_used = utcnow()
-        db.commit()
+    if row is None:
+        return None
+    # Lifecycle gate (AL-72): a revoked or expired key authenticates no one.
+    if row.revoked:
+        return None
+    if row.expires_at is not None:
+        expires_at = row.expires_at if row.expires_at.tzinfo else row.expires_at.replace(tzinfo=timezone.utc)
+        if expires_at <= utcnow():
+            return None
+    row.last_used = utcnow()
+    db.commit()
     return row

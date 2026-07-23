@@ -344,6 +344,7 @@ function ApiKeysPanel() {
   const qc = useQueryClient();
   const [name, setName] = React.useState("");
   const [global, setGlobal] = React.useState(false);
+  const [expiryDays, setExpiryDays] = React.useState<number | null>(null);
   const [created, setCreated] = React.useState<string | null>(null);
   const [copied, setCopied] = React.useState(false);
   const [connectId, setConnectId] = React.useState<string | null>(null);
@@ -353,7 +354,7 @@ function ApiKeysPanel() {
 
   async function create() {
     if (!name.trim()) return;
-    const res = await api.createApiKey(name.trim(), global ? null : active?.id ?? null);
+    const res = await api.createApiKey(name.trim(), global ? null : active?.id ?? null, expiryDays);
     setCreated(res.plaintext);
     setName("");
     qc.invalidateQueries({ queryKey: keys.apiKeys });
@@ -380,6 +381,17 @@ function ApiKeysPanel() {
       )}
       <div className="mb-2 flex items-center gap-2">
         <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Key name (e.g. ci-agent)" className="max-w-xs" />
+        <select
+          value={expiryDays ?? ""}
+          onChange={(e) => setExpiryDays(e.target.value ? Number(e.target.value) : null)}
+          className="rounded-md border border-line-2 bg-surface-3 px-2 py-1.5 text-[12px] text-muted"
+          aria-label="Key expiry"
+        >
+          <option value="">No expiry</option>
+          <option value="30">Expires in 30 days</option>
+          <option value="90">Expires in 90 days</option>
+          <option value="365">Expires in 365 days</option>
+        </select>
         <Button size="sm" onClick={create} disabled={!name.trim()}><Plus size={14} />Create key</Button>
       </div>
       <label className="mb-4 flex items-center gap-2 text-[12px] text-muted">
@@ -407,6 +419,17 @@ function ApiKeysPanel() {
               >
                 {projectName(k.project_id)}
               </span>
+              {k.expires_at && (
+                <span
+                  className={cn(
+                    "font-mono text-[9.5px] uppercase tracking-wide",
+                    new Date(k.expires_at) <= new Date() ? "text-st-blocked" : "text-faint-2",
+                  )}
+                  title={`Expires ${new Date(k.expires_at).toLocaleDateString()}`}
+                >
+                  {new Date(k.expires_at) <= new Date() ? "expired" : `expires ${new Date(k.expires_at).toLocaleDateString()}`}
+                </span>
+              )}
               <span className="ml-auto font-mono text-[10px] text-faint-2">{k.last_used ? "used" : "never used"}</span>
               <button
                 className={cn("hover:text-fg", connectId === k.id ? "text-accent" : "text-faint")}

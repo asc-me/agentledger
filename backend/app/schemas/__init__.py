@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 class ORMModel(BaseModel):
@@ -19,7 +19,15 @@ class RegisterIn(BaseModel):
     name: str
     email: EmailStr
     handle: str
-    password: str
+    password: str = Field(min_length=8, max_length=200)
+
+    @field_validator("password")
+    @classmethod
+    def _password_not_trivial(cls, v: str) -> str:
+        # Cheap floor against the worst passwords; length is the main lever (AL-72).
+        if v.strip() != v or len(set(v)) < 4:
+            raise ValueError("password is too weak")
+        return v
 
 
 class RefreshIn(BaseModel):
@@ -202,6 +210,8 @@ class ApiKeyCreate(BaseModel):
     scopes: list[str] = ["read", "write"]
     # Project the key's agent writes to by default. None = global key.
     project_id: str | None = None
+    # Optional lifetime; None = non-expiring (AL-72).
+    expires_in_days: int | None = Field(default=None, ge=1, le=3650)
 
 
 class ApiKeyOut(ORMModel):
@@ -212,6 +222,8 @@ class ApiKeyOut(ORMModel):
     project_id: str | None = None
     last_used: datetime | None
     created_at: datetime
+    expires_at: datetime | None = None
+    revoked: bool = False
 
 
 class ApiKeyCreated(ApiKeyOut):

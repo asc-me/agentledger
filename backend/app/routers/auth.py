@@ -1,22 +1,39 @@
 import uuid
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.db import get_db
 from app.models import Membership, Project, User
 from app.schemas import LoginIn, RefreshIn, RegisterIn, TokenOut, UserOut
 from app.security.deps import get_current_user
 from app.security.jwt import create_access_token, create_refresh_token, decode_token
+from app.security.net import client_ip
 from app.security.passwords import hash_password, verify_password
+from app.services import spam
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
+def _guard_login_rate(request: Request, email: str) -> None:
+    """Blunt credential stuffing / brute force (AL-72): cap attempts per-email and,
+    more loosely, per source IP. Counts every attempt, so a wrong-password flood
+    trips the limit and returns 429 instead of letting guessing run unbounded."""
+    per_email = settings.login_rate_per_min
+    per_ip = per_email * 3  # an IP may legitimately host several accounts
+    ip = client_ip(request)
+    if not spam.check_rate(f"login:email:{email.lower()}", per_email) or not spam.check_rate(
+        f"login:ip:{ip}", per_ip
+    ):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "too many login attempts; try again shortly")
+
+
 @router.post("/login", response_model=TokenOut)
-def login(body: LoginIn, db: Session = Depends(get_db)):
+def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
+    _guard_login_rate(request, body.email)
     user = db.scalar(select(User).where(User.email == body.email))
     if user is None or not verify_password(body.password, user.password_hash):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid credentials")
@@ -28,11 +45,16 @@ def login(body: LoginIn, db: Session = Depends(get_db)):
 
 @router.post("/register", response_model=TokenOut, status_code=201)
 def register(body: RegisterIn, db: Session = Depends(get_db)):
+    if not settings.open_registration:
+        # Invite-only / hosted private beta: no self-serve signup (AL-72). The invite
+        # flow lands with the org onboarding work (AL-74).
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "registration is closed")
     exists = db.scalar(
         select(User).where((User.email == body.email) | (User.handle == body.handle))
     )
     if exists is not None:
-        raise HTTPException(status.HTTP_409_CONFLICT, "email or handle already in use")
+        # Generic message — don't disclose which of email/handle is taken (AL-72).
+        raise HTTPException(status.HTTP_409_CONFLICT, "could not create account with those details")
     initials = "".join(p[0] for p in body.name.split()[:2]).upper() or body.name[:2].upper()
     user = User(
         id="u_" + uuid.uuid4().hex[:8],

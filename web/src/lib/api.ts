@@ -209,10 +209,10 @@ export const api = {
     }),
 
   apiKeys: () => request<ApiKey[]>("/api-keys"),
-  createApiKey: (name: string, projectId: string | null) =>
+  createApiKey: (name: string, projectId: string | null, expiresInDays?: number | null) =>
     request<ApiKeyCreated>("/api-keys", {
       method: "POST",
-      body: JSON.stringify({ name, project_id: projectId }),
+      body: JSON.stringify({ name, project_id: projectId, expires_in_days: expiresInDays ?? null }),
     }),
   revokeApiKey: (id: string) => request<void>(`/api-keys/${id}`, { method: "DELETE" }),
 

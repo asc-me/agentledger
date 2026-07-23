@@ -26,7 +26,9 @@ def create_key(body: ApiKeyCreate, db: Session = Depends(get_db), user: User = D
         # A key inherits its power from its owner's memberships; minting one for a
         # project the owner can't read would only produce a dead key.
         authz.require_readable(db, user.id, body.project_id)
-    row, plaintext = generate_api_key(db, user.id, body.name, body.scopes, body.project_id)
+    row, plaintext = generate_api_key(
+        db, user.id, body.name, body.scopes, body.project_id, body.expires_in_days
+    )
     events_svc.record_user(db, user, action="create_api_key", target_type="api_key",
                            target_id=row.id, project_id=row.project_id,
                            meta={"name": row.name, "scopes": row.scopes})

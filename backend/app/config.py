@@ -18,6 +18,13 @@ class Settings(BaseSettings):
     access_token_minutes: int = 30
     refresh_token_days: int = 14
 
+    # Auth hardening (AL-72). Login is rate-limited per-email and (more loosely)
+    # per-IP to blunt credential stuffing / brute force. open_registration=False
+    # closes public signup (invite-only private beta / hosted); self-host stays open.
+    login_rate_per_min: int = 10
+    open_registration: bool = True
+    min_password_length: int = 8
+
     # Security hardening for internet-exposed deploys (all safe-by-default for local):
     # verify inbound GitHub webhook HMAC when set; trust X-Forwarded-For only behind a
     # known proxy; refuse to start on a weak/default JWT secret when required.
