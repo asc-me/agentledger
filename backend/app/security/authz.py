@@ -23,21 +23,73 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import ApiKey, Membership, Project
+from app.config import settings
+from app.models import ApiKey, Membership, OrgMembership, Project
 
 
 class Forbidden(Exception):
     """Authenticated but not authorized for the attempted operation."""
 
 
+# ---- Organization authority (hosted-only, AL-74b) ------------------------------
+# The project gate above answers "which projects may this user touch". These answer
+# "which orgs is this user in, and at what rank" — the authority behind the org
+# router (create projects under an org, invite members, manage seats). Roles are
+# ordered owner > admin > member; owner is the org creator and can never be demoted
+# out of existence here (that's a billing/transfer concern, deferred to AL-75).
+
+_ORG_RANK = {"member": 0, "admin": 1, "owner": 2}
+
+
+def org_ids_for_user(db: Session, user_id: str) -> list[str]:
+    """Every org the user holds a seat in."""
+    return list(
+        db.execute(select(OrgMembership.org_id).where(OrgMembership.user_id == user_id)).scalars()
+    )
+
+
+def org_role(db: Session, user_id: str, org_id: str) -> str | None:
+    """The user's role in the org, or None if they hold no seat."""
+    return db.scalar(
+        select(OrgMembership.role).where(
+            OrgMembership.org_id == org_id, OrgMembership.user_id == user_id
+        )
+    )
+
+
+def require_org_member(db: Session, user_id: str, org_id: str) -> str:
+    """Guard: the user must hold a seat in the org. 404 (not 403) hides existence so
+    a non-member can't probe which orgs exist. Returns the caller's role."""
+    role = org_role(db, user_id, org_id)
+    if role is None:
+        raise HTTPException(404, "organization not found")
+    return role
+
+
+def require_org_admin(db: Session, user_id: str, org_id: str) -> str:
+    """Guard for org administration (invite/revoke/manage). Needs owner or admin;
+    a plain member gets an honest 403 (they can already see the org)."""
+    role = require_org_member(db, user_id, org_id)
+    if _ORG_RANK.get(role, 0) < _ORG_RANK["admin"]:
+        raise HTTPException(403, "requires an owner or admin role in this organization")
+    return role
+
+
 def _member_project_ids(db: Session, user_id: str, levels: tuple[str, ...]) -> list[str]:
-    rows = db.execute(
+    q = (
         select(Membership.project_id)
         .join(Project, Project.id == Membership.project_id)
         .where(Membership.user_id == user_id, Membership.access.in_(levels))
-        .order_by(Project.name)  # deterministic default-project resolution
-    ).scalars()
-    return list(rows)
+    )
+    if settings.hosted_mode:
+        # Hosted-only second gate (AL-74): the project must belong to an org the
+        # caller is a member of. A per-project Membership alone is not enough, so a
+        # project can never be reached from outside its tenant org. Self-host
+        # (hosted_mode off) skips this entirely — behavior is unchanged.
+        user_orgs = select(OrgMembership.org_id).where(OrgMembership.user_id == user_id)
+        q = q.where(Project.org_id.in_(user_orgs))
+    q = q.order_by(Project.name)  # deterministic default-project resolution
+    return list(db.execute(q).scalars())
 
 
 def readable_project_ids(db: Session, user_id: str) -> list[str]:

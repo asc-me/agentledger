@@ -11,6 +11,8 @@ import { FeedbackKitView } from "@/features/feedback/FeedbackKitView";
 import { LinksGraphView } from "@/features/links/LinksGraphView";
 import { McpToolsView } from "@/features/mcp/McpToolsView";
 import { MemoryReviewView } from "@/features/memory/MemoryReviewView";
+import { InviteAcceptPage } from "@/features/onboarding/InviteAcceptPage";
+import { OrganizationView } from "@/features/organization/OrganizationView";
 import { PrdEditorView } from "@/features/prds/PrdEditorView";
 import { PrdListView } from "@/features/prds/PrdListView";
 import { ProfileView } from "@/features/profile/ProfileView";
@@ -26,6 +28,8 @@ export function App() {
       {/* Public, unauthenticated embed targets. */}
       <Route path="/embed/feedback" element={<EmbedFeedbackPage />} />
       <Route path="/embed/roadmap" element={<EmbedRoadmapPage />} />
+      {/* Emailed org-invite landing — works signed in or out (AL-74b). */}
+      <Route path="/invite/:token" element={<InviteAcceptPage />} />
       <Route path="*" element={<AuthedApp />} />
     </Routes>
   );
@@ -59,6 +63,7 @@ function AuthedApp() {
         <Route path="/prds" element={<PrdListView />} />
         <Route path="/prds/:id" element={<PrdEditorView />} />
         <Route path="/feedback-kit" element={<FeedbackKitView />} />
+        <Route path="/organization" element={<OrganizationView />} />
         <Route path="/settings" element={<SettingsView />} />
         <Route path="/profile" element={<ProfileView />} />
         <Route path="*" element={<Navigate to="/tracker" replace />} />

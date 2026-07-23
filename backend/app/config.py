@@ -84,6 +84,19 @@ class Settings(BaseSettings):
     # Seed the design's dataset on startup when the DB is empty.
     seed_on_start: bool = True
 
+    # Org invites (AL-74b). Delivered by email; when SMTP is unconfigured the email
+    # service falls back to a console/outbox transport (fine for self-host + tests).
+    # `app_base_url` is the SPA origin used to build the invite-accept link in the
+    # email. `invite_expiry_days` bounds how long an emailed invite stays acceptable.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = "AgentLedger <no-reply@agentledger.dev>"
+    smtp_starttls: bool = True
+    app_base_url: str = "http://localhost:5173"
+    invite_expiry_days: int = 14
+
     # Comma-separated list of allowed CORS origins for the SPA.
     cors_origins: str = "http://localhost:5173,http://localhost:8080"
 

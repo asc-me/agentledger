@@ -7,6 +7,7 @@ import type {
   AiProvider,
   ApiKey,
   ApiKeyCreated,
+  AppConfig,
   ChatResponse,
   ProviderConfigUpdate,
   CodeAnswer,
@@ -17,10 +18,14 @@ import type {
   CodeRef,
   DashboardData,
   GraphLink,
+  Invite,
+  InvitePreview,
   Item,
   EventPage,
   GrillMessage,
   McpToolInfo,
+  Org,
+  OrgMember,
   ShardCluster,
   Member,
   PlatformConfig,
@@ -123,10 +128,19 @@ export const api = {
     setRefreshToken(data.refresh_token);
     return this.me();
   },
-  async register(name: string, email: string, handle: string, password: string): Promise<User> {
+  async register(
+    name: string,
+    email: string,
+    handle: string,
+    password: string,
+    inviteToken?: string,
+  ): Promise<User> {
     const data = await request<{ access_token: string; refresh_token: string }>(
       "/auth/register",
-      { method: "POST", body: JSON.stringify({ name, email, handle, password }) },
+      {
+        method: "POST",
+        body: JSON.stringify({ name, email, handle, password, invite_token: inviteToken ?? null }),
+      },
       false,
     );
     accessToken = data.access_token;
@@ -150,9 +164,29 @@ export const api = {
       "/auth/me/memberships",
     ),
 
+  // Deploy flags (hosted vs. self-host) the SPA reads before login.
+  config: () => request<AppConfig>("/config"),
+
   projects: () => request<Project[]>("/projects"),
-  createProject: (body: { name: string; accent?: string; description?: string }) =>
+  createProject: (body: { name: string; accent?: string; description?: string; org_id?: string }) =>
     request<Project>("/projects", { method: "POST", body: JSON.stringify(body) }),
+
+  // ── Organizations (hosted-only, AL-74b) ───────────────────────────────
+  orgs: () => request<Org[]>("/orgs"),
+  createOrg: (name: string) =>
+    request<Org>("/orgs", { method: "POST", body: JSON.stringify({ name }) }),
+  orgMembers: (orgId: string) => request<OrgMember[]>(`/orgs/${orgId}/members`),
+  invites: (orgId: string) => request<Invite[]>(`/orgs/${orgId}/invites`),
+  createInvite: (orgId: string, email: string, role: string) =>
+    request<Invite>(`/orgs/${orgId}/invites`, {
+      method: "POST",
+      body: JSON.stringify({ email, role }),
+    }),
+  revokeInvite: (orgId: string, inviteId: string) =>
+    request<void>(`/orgs/${orgId}/invites/${inviteId}`, { method: "DELETE" }),
+  previewInvite: (token: string) => request<InvitePreview>(`/invites/${token}/preview`),
+  acceptInvite: (token: string) =>
+    request<Org>("/invites/accept", { method: "POST", body: JSON.stringify({ token }) }),
 
   items: (projectId?: string) =>
     request<Item[]>(`/items${projectId ? `?project_id=${projectId}` : ""}`),

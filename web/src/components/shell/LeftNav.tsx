@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  Building2,
   Check,
   ChevronDown,
   GitFork,
@@ -29,13 +30,14 @@ import {
 import { useProjectCtx } from "@/features/ProjectContext";
 import { NewProjectDialog } from "@/features/onboarding/NewProjectDialog";
 import { cn } from "@/lib/cn";
-import { useCandidateShards, useItems, useRequests } from "@/lib/queries";
+import { useCandidateShards, useConfig, useItems, useRequests } from "@/lib/queries";
 
 export function LeftNav() {
   const { projects, active, activeId, setActiveId } = useProjectCtx();
   const { data: items } = useItems(activeId);
   const { data: requests } = useRequests(activeId);
   const { data: candidates } = useCandidateShards(activeId);
+  const { data: config } = useConfig();
   const [newProjectOpen, setNewProjectOpen] = React.useState(false);
 
   return (
@@ -100,6 +102,9 @@ export function LeftNav() {
       </nav>
 
       <div className="mt-auto flex flex-col gap-0.5 border-t border-line pt-3">
+        {config?.hosted_mode && (
+          <NavItem to="/organization" icon={<Building2 size={16} />} label="Organization" />
+        )}
         <NavItem to="/feedback-kit" icon={<Sparkles size={16} />} label="Feedback Kit" />
         <NavItem to="/settings" icon={<Settings size={16} />} label="Settings" />
       </div>

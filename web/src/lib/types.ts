@@ -23,6 +23,44 @@ export interface Project {
   embed_model: string;
 }
 
+// ── Deploy config + Organizations (hosted-only, AL-74b) ────────────────────
+export interface AppConfig {
+  hosted_mode: boolean;
+  open_registration: boolean;
+}
+
+export type OrgRole = "owner" | "admin" | "member";
+
+export interface Org {
+  id: string;
+  name: string;
+  plan: string;
+  role: OrgRole;
+}
+
+export interface OrgMember {
+  user: User;
+  role: OrgRole;
+}
+
+export interface Invite {
+  id: string;
+  org_id: string;
+  email: string;
+  role: string;
+  status: string;
+  created_at: string;
+  expires_at: string | null;
+  accept_url: string;
+}
+
+export interface InvitePreview {
+  org_name: string;
+  email: string;
+  role: string;
+  invited_by: string;
+}
+
 export interface Reporter {
   name?: string;
   handle?: string;

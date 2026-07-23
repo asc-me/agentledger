@@ -20,6 +20,9 @@ class RegisterIn(BaseModel):
     email: EmailStr
     handle: str
     password: str = Field(min_length=8, max_length=200)
+    # Hosted onboarding (AL-74b): a valid org-invite token lets a user sign up even
+    # when open self-serve registration is closed, and auto-joins them to the org.
+    invite_token: str | None = None
 
     @field_validator("password")
     @classmethod
@@ -49,6 +52,52 @@ class UserOut(ORMModel):
     initials: str
 
 
+# ---- Organizations (hosted-only, AL-74b) ----
+class OrgCreate(BaseModel):
+    name: str
+
+
+class OrgOut(BaseModel):
+    id: str
+    name: str
+    plan: str
+    role: str  # the requesting user's role in this org
+
+
+class OrgMemberOut(BaseModel):
+    user: UserOut
+    role: str
+
+
+class InviteCreate(BaseModel):
+    email: EmailStr
+    role: str = "member"  # admin | member (owner is never invitable)
+
+
+class InviteOut(ORMModel):
+    id: str
+    org_id: str
+    email: EmailStr
+    role: str
+    status: str
+    created_at: datetime
+    expires_at: datetime | None = None
+    accept_url: str = ""  # convenience: the link emailed to the invitee (copy-able by admins)
+
+
+class InvitePreviewOut(BaseModel):
+    """Unauthenticated peek at an invite (by token) so the accept page can show who/
+    what before the invitee logs in. Reveals only the org name + invited email/role."""
+    org_name: str
+    email: EmailStr
+    role: str
+    invited_by: str
+
+
+class InviteAcceptIn(BaseModel):
+    token: str
+
+
 # ---- Projects ----
 class ProjectOut(ORMModel):
     id: str
@@ -66,6 +115,10 @@ class ProjectCreate(BaseModel):
     name: str
     accent: str = "#c6f24e"
     description: str = ""
+    # Hosted-only (AL-74b): the org to create the project under. Optional when the
+    # caller belongs to exactly one org (defaulted server-side); required otherwise.
+    # Ignored on self-host, where projects have no org.
+    org_id: str | None = None
 
 
 # ---- Items ----

@@ -93,8 +93,62 @@ class Project(Base):
     auto_extract: Mapped[bool] = mapped_column(Boolean, default=True)
     mcp_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     embed_model: Mapped[str] = mapped_column(String, default="stub-384")
+    # Hosted SaaS only (AL-74): the owning organization. NULL on self-host, where
+    # the org layer is inert. In hosted mode authz additionally requires the caller
+    # to belong to this org, so a project never leaks outside its tenant.
+    org_id: Mapped[str | None] = mapped_column(ForeignKey("organizations.id"), nullable=True, index=True)
 
     memberships: Mapped[list[Membership]] = relationship(back_populates="project")
+
+
+class Organization(Base):
+    """A hosted-SaaS tenant (AL-74). Self-host never creates these; the org layer
+    is gated by HOSTED_MODE and invisible to self-hosted deployments."""
+
+    __tablename__ = "organizations"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    name: Mapped[str] = mapped_column(String)
+    plan: Mapped[str] = mapped_column(String, default="free")  # free | pro | team (AL-75)
+    stripe_customer_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class OrgMembership(Base):
+    """A user's seat in an organization (hosted-only, AL-74)."""
+
+    __tablename__ = "org_memberships"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    org_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    role: Mapped[str] = mapped_column(String, default="member")  # owner | admin | member
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (UniqueConstraint("org_id", "user_id", name="uq_org_membership"),)
+
+
+class OrgInvite(Base):
+    """A pending invitation to join an organization (hosted-only, AL-74b).
+
+    Created by an org owner/admin and delivered by email. The unguessable ``token``
+    is how the invite-accept link addresses it. ``status`` moves pending → accepted
+    (on join) or revoked (owner cancels); an invite past ``expires_at`` is refused
+    even while still ``pending``. Rows are kept after acceptance for provenance."""
+
+    __tablename__ = "org_invites"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # inv_...
+    org_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
+    email: Mapped[str] = mapped_column(String, index=True)  # invitee (may not have an account yet)
+    role: Mapped[str] = mapped_column(String, default="member")  # admin | member (never owner)
+    token: Mapped[str] = mapped_column(String, unique=True, index=True)
+    invited_by: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    status: Mapped[str] = mapped_column(String, default="pending", index=True)  # pending|accepted|revoked
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    accepted_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
 
 
 class Membership(Base):

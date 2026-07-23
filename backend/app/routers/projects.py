@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.db import get_db
 from app.models import Membership, Project, User
 from app.schemas import MemberOut, ProjectCreate, ProjectOut, ProjectUpdate, UserOut
@@ -24,6 +25,26 @@ def _unique_slug(db: Session, name: str) -> str:
     return slug
 
 
+def _resolve_org_id(db: Session, user: User, requested: str | None) -> str | None:
+    """Pick the org a new project belongs to (hosted mode only, AL-74b).
+
+    Self-host: always None — projects have no org. Hosted: the project MUST land in an
+    org the creator belongs to, otherwise the AL-74 authz gate would make it instantly
+    unreachable (org_id NULL ∉ the caller's orgs) and lock the creator out. A single-org
+    user needs no choice; anyone in multiple orgs must name one."""
+    if not settings.hosted_mode:
+        return None
+    orgs = authz.org_ids_for_user(db, user.id)
+    if requested is not None:
+        authz.require_org_member(db, user.id, requested)  # 404 if not a member
+        return requested
+    if len(orgs) == 1:
+        return orgs[0]
+    if not orgs:
+        raise HTTPException(403, "create or join an organization before creating a project")
+    raise HTTPException(422, "org_id is required: you belong to more than one organization")
+
+
 @router.get("", response_model=list[ProjectOut])
 def list_projects(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     readable = set(authz.readable_project_ids(db, user.id))
@@ -40,11 +61,13 @@ def create_project(
     name = body.name.strip()
     if not name:
         raise HTTPException(422, "project name is required")
+    org_id = _resolve_org_id(db, user, body.org_id)
     project = Project(
         id=_unique_slug(db, name),
         name=name,
         accent=body.accent or "#c6f24e",
         description=body.description or "",
+        org_id=org_id,
     )
     db.add(project)
     db.flush()

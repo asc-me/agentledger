@@ -180,6 +180,20 @@ def test_hosted_mode_forbids_global_shard_creation(client, auth, monkeypatch):
     """In hosted mode there is no cross-tenant "global" memory: creating a
     project-less shard is refused, so isolation can't be bypassed (AL-71)."""
     from app.config import settings
+    from app.db import SessionLocal
+    from app.models import OrgMembership, Organization, Project
+
+    # Attach core to an org alex belongs to, so it stays writable under the hosted
+    # org gate (AL-74) — this test is about the global-shard rule, not org access.
+    db = SessionLocal()
+    try:
+        db.add_all([Organization(id="orgH", name="Hosted Org")])
+        db.flush()
+        db.add(OrgMembership(org_id="orgH", user_id="u1", role="owner"))
+        db.get(Project, "core").org_id = "orgH"
+        db.commit()
+    finally:
+        db.close()
 
     monkeypatch.setattr(settings, "hosted_mode", True)
     r = client.post(
