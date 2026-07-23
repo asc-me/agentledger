@@ -5,7 +5,11 @@ import type { Item, RequestItem } from "./types";
 
 export const keys = {
   me: ["me"] as const,
+  config: ["config"] as const,
   projects: ["projects"] as const,
+  orgs: ["orgs"] as const,
+  orgMembers: (id: string) => ["org-members", id] as const,
+  invites: (id: string) => ["org-invites", id] as const,
   items: ["items"] as const,
   shards: ["shards"] as const,
   requests: ["requests"] as const,
@@ -14,6 +18,57 @@ export const keys = {
   prd: (id: string) => ["prd", id] as const,
   prdVersions: (id: string) => ["prd-versions", id] as const,
 };
+
+// ── Deploy config + Organizations (hosted-only, AL-74b) ────────────────────
+export function useConfig() {
+  // Deploy flags rarely change within a session; cache hard so onboarding logic is stable.
+  return useQuery({ queryKey: keys.config, queryFn: () => api.config(), staleTime: Infinity });
+}
+
+export function useOrgs(enabled = true) {
+  return useQuery({ queryKey: keys.orgs, queryFn: () => api.orgs(), enabled });
+}
+
+export function useOrgMembers(orgId?: string) {
+  return useQuery({
+    queryKey: keys.orgMembers(orgId ?? ""),
+    queryFn: () => api.orgMembers(orgId!),
+    enabled: !!orgId,
+  });
+}
+
+export function useInvites(orgId?: string) {
+  return useQuery({
+    queryKey: keys.invites(orgId ?? ""),
+    queryFn: () => api.invites(orgId!),
+    enabled: !!orgId,
+  });
+}
+
+export function useCreateOrg() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) => api.createOrg(name),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.orgs }),
+  });
+}
+
+export function useCreateInvite(orgId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ email, role }: { email: string; role: string }) =>
+      api.createInvite(orgId, email, role),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.invites(orgId) }),
+  });
+}
+
+export function useRevokeInvite(orgId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (inviteId: string) => api.revokeInvite(orgId, inviteId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.invites(orgId) }),
+  });
+}
 
 export function usePrds(projectId?: string) {
   return useQuery({ queryKey: [...keys.prds, projectId], queryFn: () => api.prds(projectId), enabled: !!projectId });

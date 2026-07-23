@@ -128,6 +128,29 @@ class OrgMembership(Base):
     __table_args__ = (UniqueConstraint("org_id", "user_id", name="uq_org_membership"),)
 
 
+class OrgInvite(Base):
+    """A pending invitation to join an organization (hosted-only, AL-74b).
+
+    Created by an org owner/admin and delivered by email. The unguessable ``token``
+    is how the invite-accept link addresses it. ``status`` moves pending → accepted
+    (on join) or revoked (owner cancels); an invite past ``expires_at`` is refused
+    even while still ``pending``. Rows are kept after acceptance for provenance."""
+
+    __tablename__ = "org_invites"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # inv_...
+    org_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
+    email: Mapped[str] = mapped_column(String, index=True)  # invitee (may not have an account yet)
+    role: Mapped[str] = mapped_column(String, default="member")  # admin | member (never owner)
+    token: Mapped[str] = mapped_column(String, unique=True, index=True)
+    invited_by: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    status: Mapped[str] = mapped_column(String, default="pending", index=True)  # pending|accepted|revoked
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    accepted_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+
 class Membership(Base):
     __tablename__ = "memberships"
 

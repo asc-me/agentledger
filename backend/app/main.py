@@ -15,6 +15,7 @@ from app.routers import (
     auth,
     items,
     memory,
+    orgs,
     platform,
     prds,
     projects,
@@ -91,6 +92,23 @@ app.include_router(platform.router, prefix=API)
 app.include_router(public.router, prefix=API)
 app.include_router(reports.router, prefix=API)
 app.include_router(mcp_router, prefix=API)
+# The Organization layer is a hosted-SaaS surface only (AL-74). It's mounted here but
+# every route is gated by a hosted-only dependency (see routers/orgs.require_hosted):
+# with HOSTED_MODE off, every org/invite endpoint 404s, so self-host has no usable
+# org surface. Gating per-request (vs. a build-time `if`) keeps the flag authoritative
+# at runtime and lets the test suite exercise the surface under a monkeypatched flag.
+app.include_router(orgs.router, prefix=API)
+
+
+@app.get("/api/config")
+def public_config():
+    """Unauthenticated deploy flags the SPA needs before login to shape onboarding:
+    whether this is a hosted (org) deployment and whether self-serve signup is open.
+    Deliberately tiny — no secrets, just the two switches that change the UI."""
+    return {
+        "hosted_mode": settings.hosted_mode,
+        "open_registration": settings.open_registration,
+    }
 
 
 @app.get("/health")

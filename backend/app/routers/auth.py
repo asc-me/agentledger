@@ -13,6 +13,7 @@ from app.security.deps import get_current_user
 from app.security.jwt import create_access_token, create_refresh_token, decode_token
 from app.security.net import client_ip
 from app.security.passwords import hash_password, verify_password
+from app.services import orgs as orgs_svc
 from app.services import spam
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -45,9 +46,17 @@ def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
 
 @router.post("/register", response_model=TokenOut, status_code=201)
 def register(body: RegisterIn, db: Session = Depends(get_db)):
-    if not settings.open_registration:
-        # Invite-only / hosted private beta: no self-serve signup (AL-72). The invite
-        # flow lands with the org onboarding work (AL-74).
+    # A valid org invite is its own authorization to sign up: it lets a user through
+    # even when open self-serve registration is closed (invite-only hosted beta),
+    # because someone already vouched for this specific email (AL-74b). We validate
+    # the token up front so a bad/expired one is rejected before an account is made.
+    invite = None
+    if body.invite_token:
+        invite = orgs_svc._validate_pending(orgs_svc.invite_by_token(db, body.invite_token))
+        if invite.email.lower() != body.email.lower():
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "this invitation was sent to a different email address")
+    elif not settings.open_registration:
+        # Invite-only / hosted private beta: no self-serve signup without an invite (AL-72).
         raise HTTPException(status.HTTP_403_FORBIDDEN, "registration is closed")
     exists = db.scalar(
         select(User).where((User.email == body.email) | (User.handle == body.handle))
@@ -66,6 +75,9 @@ def register(body: RegisterIn, db: Session = Depends(get_db)):
     )
     db.add(user)
     db.commit()
+    if invite is not None:
+        # Seat the new user in the org they were invited to (idempotent join).
+        orgs_svc.accept_invite(db, body.invite_token, user)
     return TokenOut(
         access_token=create_access_token(user.id, user.token_version),
         refresh_token=create_refresh_token(user.id, user.token_version),
