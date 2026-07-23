@@ -35,6 +35,7 @@ from app.services import items as items_svc
 from app.services import links as links_svc
 from app.services import mcp_stats
 from app.services import memory as mem_svc
+from app.services import quotas
 from app.services import prds as prd_svc
 from app.services import prioritization as prio_svc
 from app.services import requests as req_svc
@@ -902,6 +903,11 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
             "ask a project owner to grant access"
         )
 
+    # Meter this call against the org's monthly plan allowance (hosted only; raises
+    # QuotaExceeded when the cap is hit). Attributed to the org owning the target
+    # project; calls with no project in scope aren't metered.
+    quotas.meter_call(db, quotas.org_id_for_project(db, pid))
+
     if name == "get_context":
         proj = db.get(Project, pid) if pid else None
         return {
@@ -971,6 +977,7 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
             return _shard_dict(cached)
         if args.get("item_id"):
             _scoped_item(db, args["item_id"], allowed)
+        quotas.enforce_shard_quota(db, quotas.org_id_for_project(db, pid))
         # Agent-written memory enters as a CANDIDATE — it reaches the trusted
         # retrieval path only after a human publishes it (AL-49).
         shard = mem_svc.add_memory(

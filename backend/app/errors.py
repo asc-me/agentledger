@@ -37,3 +37,10 @@ class Conflict(AppError):
     """The request collides with current state: lost lease, reused idempotency key."""
 
     code = "conflict"
+
+
+class QuotaExceeded(AppError):
+    """A hosted plan limit was hit (projects/seats/shards/monthly calls). AL-75.
+    Mapped to a ``quota_exceeded`` MCP tool error and, in REST, to HTTP 402."""
+
+    code = "quota_exceeded"

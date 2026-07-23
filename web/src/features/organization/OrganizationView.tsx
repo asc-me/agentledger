@@ -5,13 +5,28 @@ import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  useBilling,
   useCreateInvite,
   useInvites,
   useOrgMembers,
   useOrgs,
   useRevokeInvite,
 } from "@/lib/queries";
-import type { Invite, Org, OrgRole } from "@/lib/types";
+import type { Invite, Org, OrgRole, PlanLimits, Usage } from "@/lib/types";
+
+/** Pull the human message out of an ApiError (body is a JSON `{detail}` envelope). */
+function errorDetail(err: unknown, fallback: string): string {
+  if (err && typeof err === "object" && "message" in err && typeof err.message === "string") {
+    try {
+      const parsed = JSON.parse(err.message);
+      if (parsed && typeof parsed.detail === "string") return parsed.detail;
+    } catch {
+      /* not JSON — fall through */
+    }
+    if (err.message) return err.message;
+  }
+  return fallback;
+}
 
 /**
  * Org management (AL-74b): members and pending invites for the caller's org(s).
@@ -57,9 +72,62 @@ export function OrganizationView() {
         )}
       </header>
 
+      <PlanSection org={org} />
       <MembersSection org={org} />
       <InvitesSection org={org} />
     </div>
+  );
+}
+
+const USAGE_ROWS: { key: keyof Usage; limit: keyof PlanLimits; label: string }[] = [
+  { key: "projects", limit: "max_projects", label: "Projects" },
+  { key: "seats", limit: "max_seats", label: "Seats" },
+  { key: "shards", limit: "max_shards", label: "Memory shards" },
+  { key: "calls_this_month", limit: "max_calls_per_month", label: "MCP calls this month" },
+];
+
+function PlanSection({ org }: { org: Org }) {
+  const { data: billing } = useBilling(org.id);
+  if (!billing) return null;
+
+  return (
+    <section className="mb-8">
+      <div className="mb-2.5 flex items-center gap-2">
+        <SectionTitle>Plan &amp; usage</SectionTitle>
+        <span className="rounded-md bg-[rgba(198,242,78,0.14)] px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-accent">
+          {billing.plan}
+        </span>
+      </div>
+      <div className="rounded-[12px] border border-line p-4">
+        <div className="flex flex-col gap-3.5">
+          {USAGE_ROWS.map((row) => {
+            const used = billing.usage[row.key];
+            const max = billing.limits[row.limit];
+            const pct = max > 0 ? Math.min(100, (used / max) * 100) : 0;
+            const near = pct >= 90;
+            return (
+              <div key={row.key}>
+                <div className="mb-1 flex items-baseline justify-between text-[12px]">
+                  <span className="text-muted">{row.label}</span>
+                  <span className="font-mono text-[11px] text-faint">
+                    {used.toLocaleString()} / {max.toLocaleString()}
+                  </span>
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-surface-4">
+                  <div
+                    className="h-full rounded-full transition-all"
+                    style={{ width: `${pct}%`, background: near ? "var(--color-st-blocked)" : "var(--color-accent)" }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <p className="mt-4 text-[11px] text-faint">
+          Need more headroom? Contact us to change your plan.
+        </p>
+      </div>
+    </section>
   );
 }
 
@@ -126,11 +194,8 @@ function InviteForm({ org }: { org: Org }) {
       await createInvite.mutateAsync({ email: email.trim(), role });
       setEmail("");
     } catch (err) {
-      setError(
-        err && typeof err === "object" && "message" in err && typeof err.message === "string"
-          ? "Could not send the invitation."
-          : "Could not send the invitation.",
-      );
+      // Surfaces the server message — e.g. a 402 "seat limit reached…" quota error.
+      setError(errorDetail(err, "Could not send the invitation."));
     }
   }
 

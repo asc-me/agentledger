@@ -10,6 +10,7 @@ from app.security import authz
 from app.security.deps import get_current_user
 from app.services import events as events_svc
 from app.services import memory as mem_svc
+from app.services import quotas
 
 router = APIRouter(prefix="/memory", tags=["memory"])
 
@@ -90,6 +91,7 @@ def promote_cluster(body: PromoteClusterIn, db: Session = Depends(get_db), user:
 def add_shard(body: ShardCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     if body.project_id is not None:
         authz.require_writable(db, user.id, body.project_id)
+        quotas.enforce_shard_quota(db, quotas.org_id_for_project(db, body.project_id))
     elif settings.hosted_mode:
         # Hosted tenants can't create project-less "global" memory — it would be
         # visible tenant-wide and break isolation (AL-71). Reads already exclude it.

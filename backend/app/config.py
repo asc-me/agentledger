@@ -48,6 +48,16 @@ class Settings(BaseSettings):
     # project-less global shards, so one tenant's memory can never reach another).
     hosted_mode: bool = False
 
+    # Plan/quota administration (AL-75). During private beta, org plans are assigned
+    # MANUALLY by an operator (Stripe self-serve billing comes later). Only accounts
+    # whose email is in this comma-separated allowlist may change an org's plan — an
+    # org owner can't upgrade their own org for free.
+    platform_admin_emails: str = ""
+
+    @property
+    def platform_admin_email_set(self) -> set[str]:
+        return {e.strip().lower() for e in self.platform_admin_emails.split(",") if e.strip()}
+
     embed_dim: int = 384
 
     # ---- AI providers (F1). Defaults are all-stub → fully offline. ----

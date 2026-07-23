@@ -98,6 +98,31 @@ class InviteAcceptIn(BaseModel):
     token: str
 
 
+# ---- Plans & quotas (hosted-only, AL-75) ----
+class PlanLimitsOut(BaseModel):
+    max_projects: int
+    max_seats: int
+    max_shards: int
+    max_calls_per_month: int
+
+
+class UsageOut(BaseModel):
+    projects: int
+    seats: int
+    shards: int
+    calls_this_month: int
+
+
+class BillingOut(BaseModel):
+    plan: str
+    limits: PlanLimitsOut
+    usage: UsageOut
+
+
+class SetPlanIn(BaseModel):
+    plan: str  # free | pro | team
+
+
 # ---- Projects ----
 class ProjectOut(ORMModel):
     id: str

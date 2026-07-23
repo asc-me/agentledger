@@ -8,6 +8,7 @@ import type {
   ApiKey,
   ApiKeyCreated,
   AppConfig,
+  Billing,
   ChatResponse,
   ProviderConfigUpdate,
   CodeAnswer,
@@ -187,6 +188,7 @@ export const api = {
   previewInvite: (token: string) => request<InvitePreview>(`/invites/${token}/preview`),
   acceptInvite: (token: string) =>
     request<Org>("/invites/accept", { method: "POST", body: JSON.stringify({ token }) }),
+  orgBilling: (orgId: string) => request<Billing>(`/orgs/${orgId}/billing`),
 
   items: (projectId?: string) =>
     request<Item[]>(`/items${projectId ? `?project_id=${projectId}` : ""}`),

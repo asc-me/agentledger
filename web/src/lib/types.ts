@@ -61,6 +61,26 @@ export interface InvitePreview {
   invited_by: string;
 }
 
+export interface PlanLimits {
+  max_projects: number;
+  max_seats: number;
+  max_shards: number;
+  max_calls_per_month: number;
+}
+
+export interface Usage {
+  projects: number;
+  seats: number;
+  shards: number;
+  calls_this_month: number;
+}
+
+export interface Billing {
+  plan: string;
+  limits: PlanLimits;
+  usage: Usage;
+}
+
 export interface Reporter {
   name?: string;
   handle?: string;

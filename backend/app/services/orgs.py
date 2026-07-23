@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models import OrgInvite, OrgMembership, Organization, User, utcnow
 from app.services import email as email_svc
+from app.services import quotas
 
 
 def create_org(db: Session, user: User, name: str) -> Organization:
@@ -55,6 +56,9 @@ def create_invite(db: Session, org: Organization, email: str, role: str, inviter
         )
     )
     if invite is None:
+        # A fresh invite reserves a seat; re-inviting the same pending email doesn't,
+        # so only gate the new-invite path against the plan's seat cap.
+        quotas.enforce_seat_quota(db, org.id)
         invite = OrgInvite(
             id="inv_" + uuid.uuid4().hex[:12],
             org_id=org.id,
