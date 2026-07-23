@@ -95,12 +95,14 @@ that migrations 0001/0013 pin 384 in the column type — see AL-46.
 | Providers/AI | [`docs/ai-providers.md`](docs/ai-providers.md) |
 | Config/env | [`docs/configuration.md`](docs/configuration.md) |
 
-## Deploy (until docs/deploy.md lands — AL-45)
+## Deploy
 
-Deploys go to a LAN host via rsync + `docker compose up -d --build`. **Always
-`rsync --exclude .env`** — the server keeps its own `.env` (remapped ports,
-secrets) and a bare `--delete` rsync destroys it; recovery notes belong in
-AL-45's runbook. Never ship the repo-root `.env`.
+Full runbook: **[`docs/deploy.md`](docs/deploy.md)** — the proven `rsync` +
+`docker compose` self-host deploy, with verification, recovery, and rollback.
+The essentials: stamp `GIT_SHA=$(git rev-parse --short HEAD)` and pass it through
+to `docker compose up -d --build`; **always `rsync --exclude .env --exclude sync`**
+(the server keeps its own `.env` with remapped ports, and `sync/` is a root-owned
+mount); verify the exact revision went live via `/health` (`git_sha` + `db`).
 
 ## Tracker
 

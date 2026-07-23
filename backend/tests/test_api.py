@@ -2,7 +2,20 @@ import json
 
 
 def test_health(client):
-    assert client.get("/health").json()["status"] == "ok"
+    from app.version import __version__
+
+    body = client.get("/health").json()
+    assert body["status"] == "ok"          # process up + DB reachable in tests
+    assert body["db"] == "ok"
+    assert body["version"] == __version__  # release identity
+    assert "git_sha" in body               # exact build (default "unknown" outside a built image)
+
+
+def test_health_reports_git_sha_from_env(client, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "git_sha", "abc1234")
+    assert client.get("/health").json()["git_sha"] == "abc1234"
 
 
 def test_login_and_me(client):

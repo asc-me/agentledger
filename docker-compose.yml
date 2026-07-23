@@ -16,9 +16,13 @@ services:
       retries: 20
 
   api:
-    build: ./backend
+    build:
+      context: ./backend
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-agentledger}:${POSTGRES_PASSWORD:-agentledger}@db:5432/${POSTGRES_DB:-agentledger}
+      GIT_SHA: ${GIT_SHA:-unknown}
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me-in-production-0123456789abcdef}
       SEED_ON_START: ${SEED_ON_START:-false}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080,http://localhost:5173}
@@ -45,7 +49,10 @@ services:
       - "${API_PORT:-8000}:8000"
 
   web:
-    build: ./web
+    build:
+      context: ./web
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
     depends_on:
       - api
     ports:

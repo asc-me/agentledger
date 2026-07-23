@@ -13,6 +13,10 @@ COPY alembic ./alembic
 COPY alembic.ini ./alembic.ini
 RUN pip install --no-cache-dir .
 
+# Release identity: passed at build time (see docs/deploy.md), surfaced by /health.
+ARG GIT_SHA=unknown
+ENV GIT_SHA=$GIT_SHA
+
 EXPOSE 8000
 
 HEALTHCHECK --interval=10s --timeout=3s --retries=10 \
