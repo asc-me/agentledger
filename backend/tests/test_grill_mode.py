@@ -54,10 +54,20 @@ def test_grill_apply_no_answers_is_noop(client, auth):
     assert r.json()["body"] == prd["body"]
 
 
-# ---- authz: reading a foreign PRD's grill is refused ----
+# ---- authz ----
 
 def test_grill_foreign_prd_hidden(client, auth):
     web_prd = client.post("/api/prds", json={"title": "W", "project_id": "web"}, headers=auth).json()
     ops = _login(client, "ops@ascme-labs.com")  # no access to web
     r = client.post(f"/api/prds/{web_prd['id']}/grill/apply", json={"history": []}, headers=ops)
     assert r.status_code == 404  # existence-hiding
+
+
+def test_grill_apply_requires_write(client, auth):
+    # ops is read-only on core → can grill (stream) but not apply (it captures shards).
+    core_prd = client.post("/api/prds", json={"title": "C", "project_id": "core"}, headers=auth).json()
+    ops = _login(client, "ops@ascme-labs.com")
+    assert client.post(f"/api/prds/{core_prd['id']}/grill/stream",
+                       json={"message": "", "history": []}, headers=ops).status_code == 200
+    assert client.post(f"/api/prds/{core_prd['id']}/grill/apply",
+                       json={"history": []}, headers=ops).status_code == 403

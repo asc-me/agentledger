@@ -399,6 +399,7 @@ class GrillApplyIn(BaseModel):
 
 class GrillApplyOut(BaseModel):
     body: str
+    decisions_captured: int = 0  # candidate memory shards created from the transcript (AL-69)
 
 
 class ChatOut(BaseModel):

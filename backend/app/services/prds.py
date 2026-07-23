@@ -196,6 +196,34 @@ def grill_context(prd: Prd, history: list[dict]) -> str:
     return "\n".join(parts)
 
 
+def capture_grill_decisions(db: Session, prd: Prd, history: list[dict]) -> list:
+    """Preserve the author's decisions from a grill as candidate memory shards
+    (AL-69). Every answer becomes a `candidate` shard (origin `agent:grill`) that
+    flows through Memory Review (AL-49) and clustering (AL-50) — so a decision
+    can't evaporate when context is cleared (the preservation principle). Deduped
+    by (source, text) so re-applying doesn't pile up copies."""
+    from app.services import memory as mem_svc
+
+    source = f"grill: {prd.id}"
+    existing = {
+        s.text
+        for s in mem_svc.list_shards(db, project_id=prd.project_id, status="candidate")
+        if s.source == source
+    }
+    created = []
+    for m in history or []:
+        text = (m.get("text") or "").strip()
+        if m.get("role") != "user" or len(text) < 8 or text in existing:
+            continue
+        shard = mem_svc.add_memory(
+            db, text_body=text, scope="global", source=source,
+            project_id=prd.project_id, status="candidate", origin="agent:grill",
+        )
+        existing.add(text)
+        created.append(shard)
+    return created
+
+
 def grill_apply(db: Session, prd_id: str, history: list[dict]) -> str:
     """Synthesize an updated PRD body that folds in the decisions from a grill
     transcript (the handoff). Returns the proposed body; the caller saves it."""

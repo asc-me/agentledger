@@ -24,6 +24,7 @@ from app.schemas import (
 )
 from app.security import authz
 from app.security.deps import get_current_user
+from app.services import events as events_svc
 from app.services import prds as prd_svc
 
 router = APIRouter(prefix="/prds", tags=["prds"])
@@ -158,11 +159,19 @@ def grill_stream(prd_id: str, body: GrillIn, db: Session = Depends(get_db), user
 
 @router.post("/{prd_id}/grill/apply", response_model=GrillApplyOut)
 def grill_apply(prd_id: str, body: GrillApplyIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Fold the grill transcript's decisions into a proposed PRD body (the handoff).
-    Returns the body; the author reviews and saves (writable) + snapshots."""
+    """Fold the grill transcript's decisions into a proposed PRD body AND preserve
+    each decision as a candidate memory shard (AL-69). Returns the body + how many
+    decisions were captured; the author reviews the shards in Memory Review and
+    reviews/saves the body separately. Mutates → writable."""
     prd = prd_svc.get_prd(db, prd_id)
     if prd is None:
         raise HTTPException(404, "prd not found")
-    authz.require_readable(db, user.id, prd.project_id, "prd")
+    authz.require_writable(db, user.id, prd.project_id, "prd")
     history = [m.model_dump() for m in body.history]
-    return GrillApplyOut(body=prd_svc.grill_apply(db, prd_id, history))
+    proposed = prd_svc.grill_apply(db, prd_id, history)
+    shards = prd_svc.capture_grill_decisions(db, prd, history)
+    if shards:
+        events_svc.record_user(db, user, action="grill_capture", target_type="prd",
+                               target_id=prd.id, project_id=prd.project_id,
+                               meta={"decisions": len(shards)})
+    return GrillApplyOut(body=proposed, decisions_captured=len(shards))

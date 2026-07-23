@@ -1,4 +1,5 @@
-import { ArrowUp, Check, MessageCircleQuestion, User as UserIcon } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { ArrowUp, Check, Inbox, MessageCircleQuestion, User as UserIcon } from "lucide-react";
 import * as React from "react";
 
 import { Markdown } from "@/lib/markdown";
@@ -12,8 +13,10 @@ export function GrillPanel({ prdId, onApply }: { prdId: string; onApply: (body: 
   const [draft, setDraft] = React.useState("");
   const [streaming, setStreaming] = React.useState(false);
   const [applying, setApplying] = React.useState(false);
+  const [captured, setCaptured] = React.useState<number | null>(null);
   const started = React.useRef(false);
   const scrollRef = React.useRef<HTMLDivElement>(null);
+  const qc = useQueryClient();
 
   const runTurn = React.useCallback(
     async (userText: string) => {
@@ -61,7 +64,11 @@ export function GrillPanel({ prdId, onApply }: { prdId: string; onApply: (body: 
   async function apply() {
     setApplying(true);
     try {
-      const { body } = await api.grillApply(prdId, messages);
+      const { body, decisions_captured } = await api.grillApply(prdId, messages);
+      setCaptured(decisions_captured);
+      // Decisions became candidate shards — refresh the Memory Review queue/badge.
+      qc.invalidateQueries({ queryKey: ["shard-candidates"] });
+      qc.invalidateQueries({ queryKey: ["shard-clusters"] });
       onApply(body);
     } finally {
       setApplying(false);
@@ -79,6 +86,14 @@ export function GrillPanel({ prdId, onApply }: { prdId: string; onApply: (body: 
       </div>
 
       <div className="flex-none pt-2">
+        {captured !== null && (
+          <div className="mb-2 flex items-center gap-1.5 rounded-lg border border-line-2 bg-surface-2 px-2.5 py-1.5 text-[11.5px] text-muted">
+            <Inbox size={12} className="text-accent" />
+            {captured > 0
+              ? `${captured} decision${captured > 1 ? "s" : ""} saved to Memory review for approval.`
+              : "Draft updated. No new decisions to preserve."}
+          </div>
+        )}
         {hasAnswers && (
           <button
             onClick={apply}

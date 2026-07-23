@@ -13,7 +13,10 @@ const { grillStream, grillApply } = vi.hoisted(() => ({
       onDelta("- What happens on bad input?");
     },
   ),
-  grillApply: vi.fn(async () => ({ body: "# PRD\n\n## Decisions from grilling\n- Mobile is out\n" })),
+  grillApply: vi.fn(async () => ({
+    body: "# PRD\n\n## Decisions from grilling\n- Mobile is out\n",
+    decisions_captured: 1,
+  })),
 }));
 
 vi.mock("@/lib/api", () => ({ api: { grillStream, grillApply } }));
