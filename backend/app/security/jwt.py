@@ -9,20 +9,22 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def create_access_token(user_id: str) -> str:
+def create_access_token(user_id: str, token_version: int = 0) -> str:
     payload = {
         "sub": user_id,
         "type": "access",
+        "tv": token_version,  # revocation epoch — see User.token_version (AL-59)
         "iat": _now(),
         "exp": _now() + timedelta(minutes=settings.access_token_minutes),
     }
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
-def create_refresh_token(user_id: str) -> str:
+def create_refresh_token(user_id: str, token_version: int = 0) -> str:
     payload = {
         "sub": user_id,
         "type": "refresh",
+        "tv": token_version,
         "iat": _now(),
         "exp": _now() + timedelta(days=settings.refresh_token_days),
     }
