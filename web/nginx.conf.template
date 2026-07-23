@@ -1,5 +1,10 @@
+# Rendered by the nginx image's envsubst entrypoint at container start: ${PORT} and
+# ${API_UPSTREAM} come from the environment (AL-27). Defaults (set in the Dockerfile)
+# keep docker-compose working — PORT=80, API_UPSTREAM=api:8000 — while a managed host
+# like Railway injects its own $PORT and the backend's internal address. NGINX_ENVSUBST_FILTER
+# restricts substitution to those two names so nginx runtime vars ($host, $uri, …) survive.
 server {
-    listen 80;
+    listen ${PORT};
     server_name _;
     root /usr/share/nginx/html;
     index index.html;
@@ -16,7 +21,7 @@ server {
 
     # Proxy API + health to the FastAPI service.
     location /api/ {
-        proxy_pass http://api:8000;
+        proxy_pass http://${API_UPSTREAM};
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -25,7 +30,7 @@ server {
     }
 
     location /health {
-        proxy_pass http://api:8000;
+        proxy_pass http://${API_UPSTREAM};
     }
 
     # SPA fallback.

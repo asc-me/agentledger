@@ -7,6 +7,7 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.errors import QuotaExceeded
+from app.observability import RequestIdMiddleware
 from app.db import SessionLocal, init_db
 from app.version import __version__
 from app.mcp_server import router as mcp_router
@@ -29,8 +30,10 @@ from app.routers import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from app.observability import configure_logging
     from app.security.startup import check_security
 
+    configure_logging()  # structured logs + request-id stamping (AL-56)
     check_security()  # refuse/warn on a weak JWT secret before serving (AL-44)
 
     if settings.is_sqlite:
@@ -86,6 +89,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Added last = outermost, so a request id is assigned before anything else runs and
+# every downstream log line carries it (AL-56).
+app.add_middleware(RequestIdMiddleware)
 
 # REST API under /api; MCP endpoint at /api/mcp.
 API = "/api"

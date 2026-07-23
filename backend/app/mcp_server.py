@@ -903,10 +903,13 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
             "ask a project owner to grant access"
         )
 
-    # Meter this call against the org's monthly plan allowance (hosted only; raises
-    # QuotaExceeded when the cap is hit). Attributed to the org owning the target
-    # project; calls with no project in scope aren't metered.
-    quotas.meter_call(db, quotas.org_id_for_project(db, pid))
+    # Rate/quota gates (hosted only; attributed to the org owning the target project;
+    # calls with no project in scope are exempt). Burst cap first — it's the cheap
+    # check that protects the monthly counter's DB write under a flood — then meter the
+    # call against the org's monthly plan allowance.
+    _org_id = quotas.org_id_for_project(db, pid)
+    quotas.enforce_org_rate(_org_id)
+    quotas.meter_call(db, _org_id)
 
     if name == "get_context":
         proj = db.get(Project, pid) if pid else None
