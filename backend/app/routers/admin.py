@@ -17,8 +17,8 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.db import get_db
-from app.models import OrgInvite, User
-from app.schemas import InviteOut, PlatformInviteCreate
+from app.models import OrgInvite, OrgRequest, User
+from app.schemas import InviteOut, OrgRequestDecision, OrgRequestOut, PlatformInviteCreate
 from app.security.deps import get_current_user
 from app.services import events as events_svc
 from app.services import orgs as orgs_svc
@@ -77,3 +77,28 @@ def revoke_platform_invite(
     orgs_svc.revoke_invite(db, invite)
     events_svc.record_user(db, admin, action="revoke_platform_invite", target_type="org_invite",
                            target_id=invite.id, meta={"email": invite.email})
+
+
+@router.get("/org-requests", response_model=list[OrgRequestOut])
+def list_org_requests(db: Session = Depends(get_db)):
+    """Pending requests to found an additional organization (AL-92)."""
+    return orgs_svc.pending_org_requests(db)
+
+
+@router.post("/org-requests/{request_id}", response_model=OrgRequestOut)
+def decide_org_request(
+    request_id: str,
+    body: OrgRequestDecision,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_platform_admin),
+):
+    """Approve or deny. An approval grants exactly ONE additional org — it's consumed
+    when spent, so it can't be replayed. Standing multi-org access comes from an
+    enterprise plan instead."""
+    req = db.get(OrgRequest, request_id)
+    if req is None or req.status != "pending":
+        raise HTTPException(404, "request not found")
+    req = orgs_svc.decide_org_request(db, req, admin, body.approve, body.note)
+    events_svc.record_user(db, admin, action="decide_org_request", target_type="org_request",
+                           target_id=req.id, meta={"status": req.status, "user_id": req.user_id})
+    return req

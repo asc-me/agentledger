@@ -147,7 +147,7 @@ def test_plan_assignment_rejects_unknown_plan(client, hosted, monkeypatch):
     monkeypatch.setattr(settings, "platform_admin_emails", "alex@ascme-labs.com")
     auth = _login(client, "alex@ascme-labs.com")
     org = _make_org(client, auth)
-    assert client.put(f"/api/orgs/{org['id']}/plan", json={"plan": "enterprise"}, headers=auth).status_code == 422
+    assert client.put(f"/api/orgs/{org['id']}/plan", json={"plan": "unobtainium"}, headers=auth).status_code == 422
 
 
 def test_upgraded_plan_lifts_the_cap(client, hosted, monkeypatch):
