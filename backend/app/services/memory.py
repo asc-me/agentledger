@@ -7,7 +7,7 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.embeddings import cosine_similarity, get_embedder
+from app.embeddings import cosine_similarity, get_embedder, safe_embed
 from app.models import MemoryShard, Project
 
 
@@ -52,7 +52,6 @@ def add_memory(
     status: str = "published",
     origin: str = "",
 ) -> MemoryShard:
-    embedder = get_embedder()
     shard = MemoryShard(
         id="m_" + uuid.uuid4().hex[:10],
         text=text_body,
@@ -60,7 +59,8 @@ def add_memory(
         source=source or ("global" if scope == "global" else (f"from {item_id}" if item_id else "")),
         item_id=item_id,
         project_id=project_id,
-        embedding=embedder.embed(text_body),
+        # Never lose the write to a down embedder — backfill fills a NULL vector later.
+        embedding=safe_embed(text_body),
         fresh=fresh,
         status=status,
         origin=origin,
@@ -122,7 +122,8 @@ def update_shard(db: Session, shard_id: str, *, text_body: str) -> MemoryShard |
     if shard is None:
         return None
     shard.text = text_body
-    shard.embedding = get_embedder().embed(text_body)
+    # An edit is a write too — don't lose the user's text to a down embedder.
+    shard.embedding = safe_embed(text_body)
     db.commit()
     db.refresh(shard)
     return shard

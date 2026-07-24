@@ -20,7 +20,7 @@ from sqlalchemy import delete, select, text
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.embeddings import cosine_similarity, get_embedder
+from app.embeddings import cosine_similarity, get_embedder, safe_embed
 from app.errors import NotFound
 from app.models import CodeEdge, CodeNode, CodeRef, Item, Request
 from app.services import items as items_svc
@@ -84,7 +84,7 @@ def upsert_node(
             summary=summary,
             content_hash=content_hash,
             fresh=fresh,
-            embedding=get_embedder().embed(new_embed_input),
+            embedding=safe_embed(new_embed_input),
         )
         db.add(node)
     else:
@@ -96,7 +96,7 @@ def upsert_node(
         node.content_hash = content_hash or node.content_hash
         node.fresh = fresh
         if new_embed_input != old_embed_input:
-            node.embedding = get_embedder().embed(new_embed_input)
+            node.embedding = safe_embed(new_embed_input)
     return node
 
 
