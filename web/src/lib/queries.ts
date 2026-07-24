@@ -46,6 +46,74 @@ export function useInvites(orgId?: string) {
   });
 }
 
+// ── Operator console (AL-94) ───────────────────────────────────────────────
+/** Probe: a 404 means "not an operator" (or not hosted) — used to gate the nav entry. */
+export function useIsPlatformAdmin() {
+  return useQuery({
+    queryKey: ["admin-me"],
+    queryFn: () => api.adminWhoami(),
+    retry: false,
+    staleTime: Infinity,
+  });
+}
+
+export function useAdminOrgs(enabled = true) {
+  return useQuery({ queryKey: ["admin-orgs"], queryFn: () => api.adminOrgs(), enabled, retry: false });
+}
+
+export function useAdminUsers(enabled = true) {
+  return useQuery({ queryKey: ["admin-users"], queryFn: () => api.adminUsers(), enabled, retry: false });
+}
+
+export function useAdminInvites(enabled = true) {
+  return useQuery({ queryKey: ["admin-invites"], queryFn: () => api.adminInvites(), enabled, retry: false });
+}
+
+export function useAdminOrgRequests(enabled = true) {
+  return useQuery({
+    queryKey: ["admin-org-requests"],
+    queryFn: () => api.adminOrgRequests(),
+    enabled,
+    retry: false,
+  });
+}
+
+export function useAdminCreateInvite() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { email: string; plan?: string | null }) => api.adminCreateInvite(body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-invites"] }),
+  });
+}
+
+export function useAdminRevokeInvite() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.adminRevokeInvite(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-invites"] }),
+  });
+}
+
+export function useAdminDecideOrgRequest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { id: string; approve: boolean; note?: string }) =>
+      api.adminDecideOrgRequest(v.id, v.approve, v.note ?? ""),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-org-requests"] }),
+  });
+}
+
+export function useSetOrgPlan() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { orgId: string; plan: string }) => api.setOrgPlan(v.orgId, v.plan),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-orgs"] });
+      qc.invalidateQueries({ queryKey: keys.orgs });
+    },
+  });
+}
+
 export function useBilling(orgId?: string) {
   return useQuery({
     queryKey: keys.billing(orgId ?? ""),

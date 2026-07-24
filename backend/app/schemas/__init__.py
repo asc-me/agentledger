@@ -115,6 +115,34 @@ class OrgRequestDecision(BaseModel):
     note: str = ""
 
 
+# ---- Operator console (hosted-only, AL-94) ----
+# Deliberately METADATA ONLY: no tenant content (items, memory, PRDs, requests, code)
+# ever appears here — that boundary is what keeps the Phase 6 isolation guarantee true.
+class AdminWhoamiOut(BaseModel):
+    is_platform_admin: bool = True
+    email: EmailStr
+
+
+class AdminOrgOut(BaseModel):
+    id: str
+    name: str
+    plan: str
+    created_at: datetime | None = None
+    owner_email: EmailStr | None = None
+    owner_name: str = ""
+    usage: UsageOut
+    limits: PlanLimitsOut
+
+
+class AdminUserOut(BaseModel):
+    id: str
+    name: str
+    handle: str
+    email: EmailStr
+    created_at: datetime | None = None
+    org_count: int = 0
+
+
 class InvitePreviewOut(BaseModel):
     """Unauthenticated peek at an invite (by token) so the accept page can show who/
     what before the invitee logs in. Reveals only the org name + invited email/role.

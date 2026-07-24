@@ -47,9 +47,14 @@ export interface OrgMember {
 
 export interface Invite {
   id: string;
-  org_id: string;
+  /** "org" seats the invitee in an existing org; "platform" onboards a new tenant. */
+  kind: "org" | "platform";
+  /** null for a platform invite — the org is founded on accept. */
+  org_id: string | null;
   email: string;
   role: string;
+  /** Platform invites only: plan pre-assigned to the org they found. */
+  plan: string | null;
   status: string;
   created_at: string;
   expires_at: string | null;
@@ -83,6 +88,40 @@ export interface Billing {
   plan: string;
   limits: PlanLimits;
   usage: Usage;
+}
+
+// ── Operator console (hosted + platform-admin only, AL-94) ────────────────
+// Metadata only by design — no tenant content ever crosses this boundary.
+export interface AdminOrg {
+  id: string;
+  name: string;
+  plan: string;
+  created_at: string | null;
+  owner_email: string | null;
+  owner_name: string;
+  usage: Usage;
+  limits: PlanLimits;
+}
+
+export interface AdminUser {
+  id: string;
+  name: string;
+  handle: string;
+  email: string;
+  created_at: string | null;
+  org_count: number;
+}
+
+export interface OrgRequest {
+  id: string;
+  user_id: string;
+  reason: string;
+  company: string;
+  status: "pending" | "approved" | "denied";
+  consumed: boolean;
+  created_at: string;
+  decided_at: string | null;
+  decision_note: string;
 }
 
 export interface Reporter {

@@ -17,8 +17,20 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.db import get_db
-from app.models import OrgInvite, OrgRequest, User
-from app.schemas import InviteOut, OrgRequestDecision, OrgRequestOut, PlatformInviteCreate
+from sqlalchemy import func, select
+
+from app.models import OrgInvite, OrgMembership, OrgRequest, Organization, User
+from app.schemas import (
+    AdminOrgOut,
+    AdminUserOut,
+    AdminWhoamiOut,
+    InviteOut,
+    OrgRequestDecision,
+    OrgRequestOut,
+    PlanLimitsOut,
+    PlatformInviteCreate,
+    UsageOut,
+)
 from app.security.deps import get_current_user
 from app.services import events as events_svc
 from app.services import orgs as orgs_svc
@@ -40,6 +52,56 @@ router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(requir
 def _invite_out(invite: OrgInvite) -> InviteOut:
     out = InviteOut.model_validate(invite)
     out.accept_url = f"{settings.app_base_url.rstrip('/')}/invite/{invite.token}"
+    return out
+
+
+@router.get("/me", response_model=AdminWhoamiOut)
+def admin_whoami(admin: User = Depends(require_platform_admin)):
+    """Cheap probe the SPA uses to decide whether to render the operator nav at all.
+    Non-admins get the same 404 as every other route here, so the console's existence
+    is never disclosed to a tenant."""
+    return AdminWhoamiOut(email=admin.email)
+
+
+@router.get("/orgs", response_model=list[AdminOrgOut])
+def list_orgs(db: Session = Depends(get_db)):
+    """Every tenant, with plan + usage against its limits. Metadata only — no tenant
+    content. Usage is computed per-org (an N+1 that's fine at beta scale; batch later)."""
+    out: list[AdminOrgOut] = []
+    for org in db.scalars(select(Organization).order_by(Organization.created_at)):
+        owner_id = db.scalar(
+            select(OrgMembership.user_id).where(
+                OrgMembership.org_id == org.id, OrgMembership.role == "owner"
+            )
+        )
+        owner = db.get(User, owner_id) if owner_id else None
+        plan = quotas.plan_of(org)
+        out.append(AdminOrgOut(
+            id=org.id, name=org.name, plan=org.plan, created_at=org.created_at,
+            owner_email=owner.email if owner else None,
+            owner_name=(owner.name or owner.handle) if owner else "",
+            usage=UsageOut(**quotas.usage(db, org.id)),
+            limits=PlanLimitsOut(
+                max_projects=plan.max_projects, max_seats=plan.max_seats,
+                max_shards=plan.max_shards, max_calls_per_month=plan.max_calls_per_month,
+            ),
+        ))
+    return out
+
+
+@router.get("/users", response_model=list[AdminUserOut])
+def list_users(db: Session = Depends(get_db)):
+    """Read-only identity lookup for support. Identity + org count only — never a
+    user's data."""
+    out: list[AdminUserOut] = []
+    for user in db.scalars(select(User).order_by(User.created_at)):
+        count = db.scalar(
+            select(func.count()).select_from(OrgMembership).where(OrgMembership.user_id == user.id)
+        ) or 0
+        out.append(AdminUserOut(
+            id=user.id, name=user.name, handle=user.handle, email=user.email,
+            created_at=user.created_at, org_count=count,
+        ))
     return out
 
 

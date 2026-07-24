@@ -13,6 +13,7 @@ import {
   Plus,
   ScrollText,
   Settings,
+  ShieldCheck,
   Sparkles,
   Star,
 } from "lucide-react";
@@ -30,7 +31,13 @@ import {
 import { useProjectCtx } from "@/features/ProjectContext";
 import { NewProjectDialog } from "@/features/onboarding/NewProjectDialog";
 import { cn } from "@/lib/cn";
-import { useCandidateShards, useConfig, useItems, useRequests } from "@/lib/queries";
+import {
+  useCandidateShards,
+  useConfig,
+  useIsPlatformAdmin,
+  useItems,
+  useRequests,
+} from "@/lib/queries";
 
 export function LeftNav() {
   const { projects, active, activeId, setActiveId } = useProjectCtx();
@@ -38,6 +45,9 @@ export function LeftNav() {
   const { data: requests } = useRequests(activeId);
   const { data: candidates } = useCandidateShards(activeId);
   const { data: config } = useConfig();
+  // 404 (the non-admin case) resolves as an error, so this is false for tenants.
+  const { data: adminMe } = useIsPlatformAdmin();
+  const isPlatformAdmin = !!adminMe?.is_platform_admin;
   const [newProjectOpen, setNewProjectOpen] = React.useState(false);
 
   return (
@@ -104,6 +114,9 @@ export function LeftNav() {
       <div className="mt-auto flex flex-col gap-0.5 border-t border-line pt-3">
         {config?.hosted_mode && (
           <NavItem to="/organization" icon={<Building2 size={16} />} label="Organization" />
+        )}
+        {isPlatformAdmin && (
+          <NavItem to="/admin" icon={<ShieldCheck size={16} />} label="Operator" />
         )}
         <NavItem to="/feedback-kit" icon={<Sparkles size={16} />} label="Feedback Kit" />
         <NavItem to="/settings" icon={<Settings size={16} />} label="Settings" />
