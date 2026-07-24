@@ -31,6 +31,23 @@ def check_security() -> None:
             "SECRET_ENCRYPTION_KEY."
         )
 
+    # Hosted + stub embeddings is a SILENT failure: stub vectors are deterministic
+    # noise, so search returns confident nonsense while every health check stays green
+    # (AL-136). Warn loudly by default — refusing outright would strand an existing
+    # deployment mid-migration — and refuse only when the operator opts in.
+    if settings.hosted_mode and settings.embed_provider == "stub":
+        message = (
+            "HOSTED_MODE is on but EMBED_PROVIDER is 'stub'. Stub vectors are "
+            "deterministic noise, so semantic search over memory and the code graph "
+            "will return meaningless results while appearing healthy. Configure a real "
+            "embedding provider (and set EMBED_DIM to match its output width)."
+        )
+        if settings.require_real_embeddings:
+            raise RuntimeError(
+                f"refusing to start: {message} (REQUIRE_REAL_EMBEDDINGS is on)"
+            )
+        print(f"\n{_BANNER}\n  CONFIGURATION WARNING: {message}\n{_BANNER}\n", flush=True)
+
     if not settings.jwt_secret_is_weak:
         return
 

@@ -40,6 +40,27 @@ def set_active_chat(provider: str = "stub", *, base_url: str = "", api_key: str 
     get_extractor.cache_clear()
 
 
+def safe_embed(text: str) -> list[float] | None:
+    """Embed for an INGEST path: never raise, return None if the provider is down.
+
+    A row is worth more than its vector. When the embedding endpoint is unreachable
+    (cold, rate-limited, gateway down) we'd rather store the shard or code node with a
+    NULL embedding than lose the write — the existing backfill (`/api/memory/backfill`,
+    and the code-graph equivalent) is the retry mechanism that fills those in later.
+    Query paths deliberately do NOT use this: a search that silently matches nothing is
+    worse than one that reports an error."""
+    import logging
+
+    try:
+        return get_embedder().embed(text)
+    except Exception:  # noqa: BLE001 — ingest must survive a dead embedder
+        logging.getLogger("agentledger.providers").warning(
+            "embedding failed; storing row without a vector (backfill will fill it in)",
+            exc_info=True,
+        )
+        return None
+
+
 def iter_reply(model: ChatModel, *, system: str, context: str, question: str):
     """Yield reply chunks. Uses the provider's native stream() when available."""
     streamer = getattr(model, "stream", None)

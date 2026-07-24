@@ -1,15 +1,24 @@
 """OpenAI-compatible embeddings adapter (opt-in).
 
 Anthropic has no embeddings endpoint, so cloud embeddings go through any
-OpenAI-compatible `/v1/embeddings` API (OpenAI, or a self-hosted gateway).
+OpenAI-compatible `/v1/embeddings` API (OpenAI, or a self-hosted gateway such as an
+Ollama instance exposing the compat surface, where the model is chosen by the
+`model` field rather than a separate endpoint).
 """
 from __future__ import annotations
+
+import logging
+import time
 
 import httpx
 
 from app.config import settings
 
-_TIMEOUT = httpx.Timeout(60.0, connect=5.0)
+logger = logging.getLogger("agentledger.providers.openai")
+
+
+def _timeout() -> httpx.Timeout:
+    return httpx.Timeout(settings.llm_timeout_seconds, connect=5.0)
 
 
 class OpenAIEmbedder:
@@ -20,14 +29,29 @@ class OpenAIEmbedder:
         self.dim = dim
 
     def embed(self, text: str) -> list[float]:
-        r = httpx.post(
-            f"{self.base_url}/embeddings",
-            headers={"Authorization": f"Bearer {self.api_key}"},
-            json={"model": self.model, "input": text or ""},
-            timeout=_TIMEOUT,
-        )
-        r.raise_for_status()
-        return r.json()["data"][0]["embedding"]
+        """Embed one string, retrying transient failures.
+
+        A cold model behind a gateway can take a while on the first call, and a blip
+        shouldn't cost an ingest — so retry a bounded number of times with a short
+        backoff before giving up. Callers that must not fail use `safe_embed`."""
+        attempts = max(1, settings.embed_max_retries + 1)
+        last: Exception | None = None
+        for attempt in range(attempts):
+            try:
+                r = httpx.post(
+                    f"{self.base_url}/embeddings",
+                    headers={"Authorization": f"Bearer {self.api_key}"},
+                    json={"model": self.model, "input": text or ""},
+                    timeout=_timeout(),
+                )
+                r.raise_for_status()
+                return r.json()["data"][0]["embedding"]
+            except Exception as e:  # noqa: BLE001 — retried, then re-raised below
+                last = e
+                if attempt + 1 < attempts:
+                    logger.warning("embed attempt %d/%d failed: %s", attempt + 1, attempts, e)
+                    time.sleep(0.5 * (attempt + 1))
+        raise last  # type: ignore[misc]
 
 
 def embedder() -> OpenAIEmbedder:

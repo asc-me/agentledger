@@ -5,12 +5,18 @@ bearer token (`auth_key`). Chat + embedding models are configured separately.
 from __future__ import annotations
 
 import json
+import logging
+import time
 
 import httpx
 
 from app.config import settings
 
-_TIMEOUT = httpx.Timeout(60.0, connect=5.0)
+logger = logging.getLogger("agentledger.providers.ollama")
+
+
+def _timeout() -> httpx.Timeout:
+    return httpx.Timeout(settings.llm_timeout_seconds, connect=5.0)
 
 
 def _headers(auth_key: str) -> dict:
@@ -25,14 +31,27 @@ class OllamaEmbedder:
         self.auth_key = auth_key or ""
 
     def embed(self, text: str) -> list[float]:
-        r = httpx.post(
-            f"{self.base_url}/api/embeddings",
-            headers=_headers(self.auth_key),
-            json={"model": self.model, "prompt": text or ""},
-            timeout=_TIMEOUT,
-        )
-        r.raise_for_status()
-        return r.json()["embedding"]
+        """Embed one string, retrying transient failures — a cold model behind a
+        gateway can be slow on the first call, and a blip shouldn't cost an ingest.
+        Callers that must not fail use `safe_embed`."""
+        attempts = max(1, settings.embed_max_retries + 1)
+        last: Exception | None = None
+        for attempt in range(attempts):
+            try:
+                r = httpx.post(
+                    f"{self.base_url}/api/embeddings",
+                    headers=_headers(self.auth_key),
+                    json={"model": self.model, "prompt": text or ""},
+                    timeout=_timeout(),
+                )
+                r.raise_for_status()
+                return r.json()["embedding"]
+            except Exception as e:  # noqa: BLE001 — retried, then re-raised below
+                last = e
+                if attempt + 1 < attempts:
+                    logger.warning("embed attempt %d/%d failed: %s", attempt + 1, attempts, e)
+                    time.sleep(0.5 * (attempt + 1))
+        raise last  # type: ignore[misc]
 
 
 class OllamaChat:
@@ -48,14 +67,13 @@ class OllamaChat:
         ]
 
     def chat(self, *, system: str, context: str, question: str) -> str:
-        r = httpx.post(
-            f"{self.base_url}/api/chat",
-            headers=_headers(self.auth_key),
-            json={"model": self.model, "messages": self._msgs(system, context, question), "stream": False},
-            timeout=_TIMEOUT,
-        )
-        r.raise_for_status()
-        return r.json()["message"]["content"].strip()
+        """Full completion as a string — assembled from the STREAM, not a blocking POST.
+
+        See the note in providers/openai_compat.py: a blocking completion's
+        time-to-first-byte equals total generation time, which an edge proxy capping
+        TTFB (~100s on Cloudflare) will sever on a long answer. Streaming makes the
+        first byte immediate while keeping the identical `-> str` contract."""
+        return "".join(self.stream(system=system, context=context, question=question)).strip()
 
     def stream(self, *, system: str, context: str, question: str):
         with httpx.stream(
@@ -63,7 +81,7 @@ class OllamaChat:
             f"{self.base_url}/api/chat",
             headers=_headers(self.auth_key),
             json={"model": self.model, "messages": self._msgs(system, context, question), "stream": True},
-            timeout=_TIMEOUT,
+            timeout=_timeout(),
         ) as r:
             r.raise_for_status()
             for line in r.iter_lines():
