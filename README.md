@@ -88,7 +88,8 @@ curl -s http://localhost:8000/api/mcp \
        "params":{"name":"create_item","arguments":{"title":"From an agent","effort":2}}}'
 ```
 
-`tools/list` returns all 27 tools; every call is metered and shows up on the **MCP Tools**
+`tools/list` returns the tools this key can call — all 30 for a read+write key, or just the
+read tools for a read-only key (the manifest is scope-gated to keep it lean). Every call is metered and shows up on the **MCP Tools**
 page. The created item appears immediately in the web Tracker — agents and the UI share
 one service layer.
 

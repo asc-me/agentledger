@@ -128,10 +128,9 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "add_memory",
         "description": (
-            "Record a memory shard (a decision, lesson, or note) on an item or the global scope. "
-            "Agent-written shards enter as a `candidate` — a human reviews and publishes them "
-            "before they surface in the default search, so an unverified note can't become ground "
-            "truth for future agents. Returns the shard incl. its `status`."
+            "Record a memory shard (decision, lesson, or note) on an item or the global scope. "
+            "Agent-written shards enter as `candidate` and surface in search only after a human "
+            "publishes them. Returns the shard incl. `status`."
         ),
         "inputSchema": {
             "type": "object",
@@ -146,9 +145,9 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "search_memory",
         "description": (
-            "Recall relevant past context before you act: semantic (meaning-based) search over "
-            "memory shards. Returns published (human-reviewed) shards ranked by similarity with a "
-            "score and `status`. Set `include_candidates: true` to also see unreviewed agent notes."
+            "Semantic search over memory shards — recall past context before acting. Returns "
+            "published shards ranked by similarity (with score and `status`); set "
+            "`include_candidates: true` to also see unreviewed agent notes."
         ),
         "inputSchema": {
             "type": "object",
@@ -166,18 +165,17 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "get_backlog",
         "description": (
-            "Prioritized backlog for planning: backlog/next items ranked ready-first then by a "
-            "composite score (status, unblocks-many, request votes, effort, staleness). Each item "
-            "carries `ready`, `blocked_by` (unfinished deps), `unblocks`, `votes`, `score`."
+            "Prioritized backlog/next items, ready-first then by composite score. Each row carries "
+            "`ready`, `blocked_by` (unfinished deps), `unblocks`, `votes`, `score`. Rows are lean "
+            "(id/title/status) by default; `fields=full` for all item fields."
         ),
         "inputSchema": {"type": "object", "properties": {"limit": {"type": "integer"}}},
     },
     {
         "name": "get_item_details",
         "description": (
-            "The full record for one item — the only tool that returns its description, blockers, "
-            "dependencies, and linked memory shards. Call it after search_items/get_backlog to read "
-            "everything before working an item."
+            "The full record for one item — its description, blockers, dependencies, and linked "
+            "memory shards. Call after search_items/get_backlog to read an item before working it."
         ),
         "inputSchema": {
             "type": "object",
@@ -188,9 +186,8 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "suggest_next",
         "description": (
-            "Advisory: the single best next item to work, ranked from backlog state + memory, "
-            "WITHOUT claiming it (unlike claim_next, which atomically locks work for a loop). "
-            "Returns {item} — item is null when nothing is ready. Use for planning; use claim_next to execute."
+            "Advisory: the single best next item to work, WITHOUT claiming it (use claim_next to "
+            "lock work in a loop). Returns {item}; item is null when nothing is ready."
         ),
         "inputSchema": {"type": "object", "properties": {}},
     },
@@ -233,10 +230,9 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "decompose_prd",
         "description": (
-            "Propose one tracked task per un-covered PRD section (the gaps). With create=true, "
-            "creates them as backlog items linked to the PRD + section — the spec drives the tracker. "
-            "Framing sections (Problem, Goals, Non-goals, Success criteria, …) are skipped: they "
-            "describe the work rather than being work."
+            "Propose one tracked task per un-covered PRD section. With `create=true`, creates them "
+            "as backlog items linked to the PRD+section. Framing sections (Problem, Goals, "
+            "Non-goals, …) are skipped unless `include_prose=true`."
         ),
         "inputSchema": {
             "type": "object",
@@ -255,8 +251,8 @@ TOOLS: list[dict[str, Any]] = [
         "name": "create_prd",
         "description": (
             "Author a PRD (the durable handoff artifact). Use `## ` markdown headings for sections — "
-            "decompose_prd turns each into tracked work and prd_coverage tracks it. Pass `body` for a "
-            "full markdown draft, or `template` (standard|blank) for a skeleton. Returns the PRD incl. id."
+            "decompose_prd turns each into tracked work. Pass `body` for a full draft or `template` "
+            "(standard|blank) for a skeleton. Returns the PRD incl. id."
         ),
         "inputSchema": {
             "type": "object",
@@ -289,11 +285,9 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "grill_prd",
         "description": (
-            "Get the next batch of relentless clarifying questions to sharpen a PRD before building "
-            "(the 'grill' technique). Surfaces unstated assumptions, scope boundaries, failure modes, and "
-            "open decisions — favoring low-fidelity questions answerable in words over high-fidelity ones "
-            "that need a prototype. Returns a markdown question list. Read-only; author answers by "
-            "update_prd."
+            "Next batch of clarifying questions to sharpen a PRD before building (the 'grill' "
+            "technique) — surfaces unstated assumptions, scope boundaries, and failure modes, "
+            "favoring questions answerable in words. Returns a markdown list; author answers via update_prd."
         ),
         "inputSchema": {
             "type": "object",
@@ -312,9 +306,8 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "next_cluster",
         "description": (
-            "Claim a whole code-neighborhood in one call: claims the best ready item plus its "
-            "related ready items (up to max_items), all assigned to you. Returns the claimed batch "
-            "(seed first). Use this to pull multiple related pieces of work simultaneously."
+            "Claim a whole code-neighborhood: the best ready item plus its related ready items "
+            "(up to max_items), all assigned to you. Returns the claimed batch, seed first."
         ),
         "inputSchema": {
             "type": "object",
@@ -364,13 +357,11 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "describe_code",
         "description": (
-            "Record the codebase's structure and relations as a queryable graph. You (the "
-            "coding agent) have the repo in context, so you are the source of truth: upsert "
-            "`nodes` (module/file/symbol, each with a one-paragraph summary of what it is and "
-            "owns) and `edges` (imports/calls/owns/tested_by/references between paths). "
-            "Idempotent per path — re-describe a file after you change it, passing its new "
-            "`content_hash`, to keep the map fresh. Pass `prune=true` when you've described a "
-            "whole subtree to mark nodes you no longer saw as stale."
+            "Upsert the codebase's structure as a queryable graph: `nodes` (module/file/symbol, "
+            "each with a one-paragraph summary) and `edges` (imports/calls/owns/tested_by/"
+            "references between paths). You have the repo in context, so you are the source of "
+            "truth. Idempotent per path — re-describe a changed file with its new `content_hash`. "
+            "Pass `prune=true` after describing a whole subtree to mark unseen nodes stale."
         ),
         "inputSchema": {
             "type": "object",
@@ -411,9 +402,8 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "get_code_map",
         "description": (
-            "The project's code graph: every described node (path, kind, summary, fresh) and the "
-            "typed edges between them. Optionally filter by `kind`. Read-only — the map an agent "
-            "or the connected LLM reads to understand the codebase without a checkout."
+            "The project's code graph: described nodes (path, kind, summary, fresh) and the typed "
+            "edges between them. Optionally filter by `kind`. Read the codebase's shape without a checkout."
         ),
         "inputSchema": {
             "type": "object",
@@ -423,10 +413,9 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "code_neighbors",
         "description": (
-            "The neighborhood around a code path: outgoing and incoming edges grouped by type, "
-            "plus the work items whose touchpoints touch it. Answers 'what depends on this / what "
-            "does it depend on / what work touches it'. Read-only; works even for a path that "
-            "isn't a described node yet (shows what points at it)."
+            "The neighborhood around a code path: incoming/outgoing edges by type plus work items "
+            "touching it. Answers what depends on this / what it depends on / what work touches it. "
+            "Works even for a path that isn't a described node yet."
         ),
         "inputSchema": {
             "type": "object",
@@ -449,11 +438,9 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "link_code",
         "description": (
-            "Bridge a tracker item OR request to a code path — the explicit, typed link between "
-            "the work (idea/bug/feature) and the code graph. Use when a bug affects a module, a "
-            "feature implements one, or a test covers it. `ref_id` is an item id (AL-12) or "
-            "request id (R-31); the type is inferred. Idempotent. Surfaces both ways: on the "
-            "code node (code_neighbors) and on the item/request."
+            "Link a tracker item or request to a code path — a typed edge between the work and the "
+            "code graph. `ref_id` is an item (AL-12) or request (R-31) id; the type is inferred. "
+            "Idempotent; surfaces on both the code node (code_neighbors) and the item/request."
         ),
         "inputSchema": {
             "type": "object",
@@ -482,10 +469,9 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "report_agentledger_issue",
         "description": (
-            "Report a bug or idea about AgentLedger ITSELF (the tool you're using), not about the "
-            "project you're working on. Sends it upstream to AgentLedger's maintainers — use when "
-            "you hit a limitation, a broken tool, or think of an improvement to AgentLedger. "
-            "Deduped on arrival. Returns the created upstream request id (or matched duplicates)."
+            "Report a bug or idea about AgentLedger ITSELF (not your project) to its maintainers — "
+            "a limitation, broken tool, or improvement. Deduped on arrival. Returns the upstream "
+            "request id (or matched duplicates)."
         ),
         "inputSchema": {
             "type": "object",
@@ -512,6 +498,9 @@ _IDEMPOTENT_CREATES = {"create_item", "add_memory", "link_items"}
 _IDEMPOTENT_WRITES = {"describe_code", "link_code"}
 # Paged reads accept limit + offset and return {results, total, limit, offset, has_more}.
 _PAGED = {"search_items", "get_backlog"}
+# Item-list reads return a lean row by default (id/title/status) and the full item
+# only on fields="full" — cuts the per-scan payload sharply (AL-78).
+_LEAN_LIST = {"search_items", "get_backlog"}
 # Write tools whose target is a tracker item (for audit target_type labeling).
 _ITEM_WRITE_TOOLS = {"create_item", "update_item", "claim_next", "heartbeat", "release_item"}
 # Read-only tools never mutate state.
@@ -728,6 +717,12 @@ for _t in TOOLS:
             "type": "string",
             "description": "Opaque token; a repeat call with the same key returns the original resource.",
         }
+    if _name in _LEAN_LIST:
+        props["fields"] = {
+            "type": "string",
+            "enum": ["lean", "full"],
+            "description": "`lean` (default) returns id/title/status per row; `full` returns every item field. Fetch one item's full record with get_item_details.",
+        }
     if _name in _PAGED:
         props["limit"] = {"type": "integer", "description": "Max results (default 25)."}
         props["offset"] = {"type": "integer", "description": "Results to skip for paging (default 0)."}
@@ -746,6 +741,17 @@ for _t in TOOLS:
 
 LIVE_TOOL_COUNT = len(TOOLS)
 _SCHEMA_BY_NAME: dict[str, dict] = {t["name"]: t["inputSchema"] for t in TOOLS}
+
+
+def _visible_tools(key: ApiKey) -> list[dict]:
+    """The manifest a given key should see. A key without the `write` scope gets a
+    `Forbidden` on every mutating tool, so shipping it the 16 write-tool schemas is
+    pure token cost — and misleading. Scope-gating the manifest roughly halves it
+    for a read-only key and keeps tools/list honest: you only see what you can call
+    (AL-78)."""
+    if "write" in (key.scopes or []):
+        return TOOLS
+    return [t for t in TOOLS if t["name"] in _READ_ONLY]
 
 # JSON-schema primitive -> (python type, label). bool is excluded from int on purpose.
 _JSON_TYPES: dict[str, tuple[type | tuple[type, ...], str]] = {
@@ -811,6 +817,19 @@ def _item_dict(item) -> dict:
         "prd_section": item.prd_section,
         "fidelity": item.fidelity,
     }
+
+
+def _lean_item(item) -> dict:
+    """The scanning shape: just enough to recognize an item and decide whether to
+    open it. List reads (search_items, get_backlog) return this by default and the
+    fat fields (touchpoints, assignee, claimed_by, prd_*, fidelity, effort) only on
+    `fields="full"` — an agent picking work calls get_item_details once it chooses,
+    so paying for 12 fields × N rows on every scan is waste (AL-78)."""
+    return {"id": item.id, "title": item.title, "status": item.status}
+
+
+def _full(args: dict) -> bool:
+    return args.get("fields") == "full"
 
 
 def _shard_dict(shard) -> dict:
@@ -927,7 +946,9 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
             "readable_projects": readable,
             "writable_projects": authz.key_writable_ids(db, key),
             "project_count": db.scalar(select(func.count()).select_from(Project)),
-            "tool_count": LIVE_TOOL_COUNT,
+            # The count the agent can actually call with this key — matches the
+            # scope-gated manifest it received, not the server-wide total (AL-78).
+            "tool_count": len(_visible_tools(key)),
         }
     if name == "list_projects":
         return {"results": [
@@ -979,7 +1000,8 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
             db, args.get("query", ""), status=args.get("status"), project_id=pid,
             tags=args.get("tags"), limit=10_000,
         )
-        return _paginate([_item_dict(i) for i in rows], args)
+        shape = _item_dict if _full(args) else _lean_item
+        return _paginate([shape(i) for i in rows], args)
     if name == "add_memory":
         cached = _idempotent_get(db, args, "add_memory", MemoryShard)
         if cached is not None:
@@ -1017,8 +1039,11 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
         return {"results": results, "returned": len(results), "top_k": top_k}
     if name == "get_backlog":
         ranked = prio_svc.prioritized(db, pid, statuses=("backlog", "next"), include_blocked=True)
+        # The ranking signal (ready/blocked_by/unblocks/votes/score) is the reason to
+        # call get_backlog, so it stays; only the fat item fields are opt-in (AL-78).
+        shape = _item_dict if _full(args) else _lean_item
         rows = [
-            {**_item_dict(r["item"]), "ready": r["ready"], "blocked_by": r["blocked_by"],
+            {**shape(r["item"]), "ready": r["ready"], "blocked_by": r["blocked_by"],
              "unblocks": r["unblocks"], "votes": r["votes"], "score": r["score"]}
             for r in ranked
         ]
@@ -1260,7 +1285,7 @@ async def mcp_endpoint(
         )
 
     if method == "tools/list":
-        return _rpc_result(id_, {"tools": TOOLS})
+        return _rpc_result(id_, {"tools": _visible_tools(key)})
 
     if method == "tools/call":
         params = body.get("params", {})

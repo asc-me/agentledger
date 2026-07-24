@@ -240,7 +240,8 @@ def test_mcp_get_context_and_list_projects(client, auth):
 def test_mcp_search_items_matches_tags(client, auth):
     # Seeded items carry tags; search by tag must find them (was a description/behavior mismatch).
     key = client.post("/api/api-keys", json={"name": "srch"}, headers=auth).json()["plaintext"]
-    page = _mcp(client, key, "search_items", {"tags": ["mcp"]})
+    # fields=full so the returned rows carry `tags` to verify the match (lean rows omit it).
+    page = _mcp(client, key, "search_items", {"tags": ["mcp"], "fields": "full"})
     hits = page["results"]
     assert hits and all("mcp" in [t.lower() for t in i["tags"]] for i in hits)
     assert page["total"] >= len(hits) and page["has_more"] in (True, False)
