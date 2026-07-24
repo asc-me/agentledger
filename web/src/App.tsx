@@ -4,6 +4,7 @@ import { AppFrame } from "@/components/shell/AppFrame";
 import { useAuth } from "@/features/auth/AuthContext";
 import { LoginPage } from "@/features/auth/LoginPage";
 import { ActivityView } from "@/features/activity/ActivityView";
+import { AdminView } from "@/features/admin/AdminView";
 import { CodeGraphView } from "@/features/code/CodeGraphView";
 import { DashboardView } from "@/features/dashboard/DashboardView";
 import { EmbedFeedbackPage } from "@/features/feedback/EmbedFeedbackPage";
@@ -64,6 +65,9 @@ function AuthedApp() {
         <Route path="/prds/:id" element={<PrdEditorView />} />
         <Route path="/feedback-kit" element={<FeedbackKitView />} />
         <Route path="/organization" element={<OrganizationView />} />
+        {/* Operator console — the API 404s for non-admins, and the view renders a
+            neutral "not available" if so, so the route itself discloses nothing. */}
+        <Route path="/admin" element={<AdminView />} />
         <Route path="/settings" element={<SettingsView />} />
         <Route path="/profile" element={<ProfileView />} />
         <Route path="*" element={<Navigate to="/tracker" replace />} />

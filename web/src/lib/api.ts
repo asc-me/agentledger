@@ -4,12 +4,15 @@
  * refresh, then retries the original request.
  */
 import type {
+  AdminOrg,
+  AdminUser,
   AiProvider,
   ApiKey,
   ApiKeyCreated,
   AppConfig,
   Billing,
   ChatResponse,
+  OrgRequest,
   ProviderConfigUpdate,
   CodeAnswer,
   CodeForRefRow,
@@ -189,6 +192,26 @@ export const api = {
   acceptInvite: (token: string) =>
     request<Org>("/invites/accept", { method: "POST", body: JSON.stringify({ token }) }),
   orgBilling: (orgId: string) => request<Billing>(`/orgs/${orgId}/billing`),
+  setOrgPlan: (orgId: string, plan: string) =>
+    request<Org>(`/orgs/${orgId}/plan`, { method: "PUT", body: JSON.stringify({ plan }) }),
+  requestAdditionalOrg: (body: { reason: string; company?: string }) =>
+    request<OrgRequest>("/orgs/requests", { method: "POST", body: JSON.stringify(body) }),
+
+  // ── Operator console (AL-94). Every call 404s unless the caller is a
+  // platform admin on a hosted deployment, so the surface is invisible to tenants.
+  adminWhoami: () => request<{ is_platform_admin: boolean; email: string }>("/admin/me"),
+  adminOrgs: () => request<AdminOrg[]>("/admin/orgs"),
+  adminUsers: () => request<AdminUser[]>("/admin/users"),
+  adminInvites: () => request<Invite[]>("/admin/invites"),
+  adminCreateInvite: (body: { email: string; plan?: string | null }) =>
+    request<Invite>("/admin/invites", { method: "POST", body: JSON.stringify(body) }),
+  adminRevokeInvite: (id: string) => request<void>(`/admin/invites/${id}`, { method: "DELETE" }),
+  adminOrgRequests: () => request<OrgRequest[]>("/admin/org-requests"),
+  adminDecideOrgRequest: (id: string, approve: boolean, note = "") =>
+    request<OrgRequest>(`/admin/org-requests/${id}`, {
+      method: "POST",
+      body: JSON.stringify({ approve, note }),
+    }),
 
   items: (projectId?: string) =>
     request<Item[]>(`/items${projectId ? `?project_id=${projectId}` : ""}`),
