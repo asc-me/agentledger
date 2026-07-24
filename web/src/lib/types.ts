@@ -196,6 +196,16 @@ export interface ShardHit {
   score: number;
 }
 
+export type ReviewSuggestion = "accept" | "reject" | "review";
+
+export interface ScoredCandidate {
+  shard: Shard;
+  suggestion: ReviewSuggestion;
+  confidence: number;
+  reasons: string[];
+  duplicate_of: string | null;
+}
+
 export interface RequestItem {
   id: string;
   project_id: string;

@@ -299,6 +299,15 @@ class ShardHit(BaseModel):
     score: float
 
 
+class ScoredCandidate(BaseModel):
+    """Advisory review suggestion for a candidate shard (AL-151)."""
+    shard: ShardOut
+    suggestion: str  # accept | reject | review
+    confidence: float
+    reasons: list[str]
+    duplicate_of: str | None = None
+
+
 # ---- Requests ----
 class RequestCreate(BaseModel):
     type: str

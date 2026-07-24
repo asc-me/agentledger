@@ -281,9 +281,18 @@ export function useCandidateClusters(projectId?: string) {
   });
 }
 
+export function useScoredCandidates(projectId?: string) {
+  return useQuery({
+    queryKey: ["shard-scored", projectId],
+    queryFn: () => api.scoredCandidates(projectId),
+    enabled: !!projectId,
+  });
+}
+
 function invalidateReview(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: ["shard-candidates"] });
   qc.invalidateQueries({ queryKey: ["shard-clusters"] });
+  qc.invalidateQueries({ queryKey: ["shard-scored"] });
   qc.invalidateQueries({ queryKey: keys.shards });
 }
 

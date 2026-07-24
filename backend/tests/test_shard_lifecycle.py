@@ -159,3 +159,55 @@ def test_extract_lessons_are_candidates(client, auth):
     res = _mcp(client, key, "extract_lessons", {"id": "AL-12"})
     assert res["results"], "stub extractor should produce at least one lesson"
     assert all(r["status"] == "candidate" for r in res["results"])
+
+
+# ---- AL-151: advisory accept/reject scoring for the review queue ----
+# Fresh projects so the published/rejected pools are empty and deterministic; the
+# stub embedder gives identical vectors for identical text (as the cluster tests rely on).
+
+def _proj(client, auth, name):
+    return client.post("/api/projects", json={"name": name}, headers=auth).json()["id"]
+
+
+def test_scored_recurring_candidate_suggests_accept(client, auth):
+    pid = _proj(client, auth, "ScoreCluster")
+    key = _key(client, auth, project_id=pid)
+    for _ in range(3):
+        _mcp(client, key, "add_memory", {"text": "always set a timeout on outbound http"})
+    scored = client.get(f"/api/memory/candidates/scored?project_id={pid}", headers=auth).json()
+    assert len(scored) == 3
+    assert all(s["suggestion"] == "accept" for s in scored)
+    assert any("recurs across 3" in r for s in scored for r in s["reasons"])
+
+
+def test_scored_duplicate_of_published_suggests_reject(client, auth):
+    pid = _proj(client, auth, "ScoreDup")
+    key = _key(client, auth, project_id=pid)
+    dup = _mcp(client, key, "add_memory", {"text": "prefer idempotency keys on writes"})
+    client.post(f"/api/memory/shards/{dup['id']}/publish", headers=auth)  # now trusted
+    _mcp(client, key, "add_memory", {"text": "prefer idempotency keys on writes"})  # identical candidate
+    scored = client.get(f"/api/memory/candidates/scored?project_id={pid}", headers=auth).json()
+    assert len(scored) == 1
+    assert scored[0]["suggestion"] == "reject"
+    assert scored[0]["duplicate_of"] == dup["id"]
+
+
+def test_scored_resembles_rejected_suggests_reject(client, auth):
+    pid = _proj(client, auth, "ScoreRej")
+    key = _key(client, auth, project_id=pid)
+    bad = _mcp(client, key, "add_memory", {"text": "disable auth in dev to move faster"})
+    client.post(f"/api/memory/shards/{bad['id']}/reject", headers=auth)
+    _mcp(client, key, "add_memory", {"text": "disable auth in dev to move faster"})  # identical candidate
+    scored = client.get(f"/api/memory/candidates/scored?project_id={pid}", headers=auth).json()
+    assert len(scored) == 1
+    assert scored[0]["suggestion"] == "reject"
+    assert any("rejected" in r for r in scored[0]["reasons"])
+
+
+def test_scored_novel_candidate_suggests_review(client, auth):
+    pid = _proj(client, auth, "ScoreNew")
+    key = _key(client, auth, project_id=pid)
+    _mcp(client, key, "add_memory", {"text": "the flux capacitor prefers 1.21 gigawatts"})
+    scored = client.get(f"/api/memory/candidates/scored?project_id={pid}", headers=auth).json()
+    assert len(scored) == 1
+    assert scored[0]["suggestion"] == "review"
