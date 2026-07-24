@@ -21,6 +21,12 @@ agent's writes are identical to a user's and appear instantly in the UI.
   `project_id` argument that overrides the key's project for that call.
 - **Metering** — every `tools/call` increments a per-tool counter (the `mcp_tool_stats`
   table) surfaced on the **MCP Tools** view.
+- **Scope-gated manifest** — `tools/list` returns only the tools the key can call: a
+  read+write key sees all 30, a read-only key sees just the read tools. A read-only key
+  never pays for write-tool schemas it would only get `unauthorized` on (AL-78).
+- **Lean list rows** — `search_items` and `get_backlog` return a compact row
+  (`id`/`title`/`status`, plus the ranking fields for the backlog) by default. Pass
+  `fields: "full"` for every item field, or call `get_item_details` once you pick one.
 
 ## Connecting clients
 
@@ -82,10 +88,10 @@ Every client authenticates the same way: the key in an `X-API-Key` header (or
 | `release_item` | `id`, `agent_id`, `to_status` | Return a claimed item to the queue |
 | `create_item` | `title`, `description`, `tags`, `touchpoints`, `effort`, `status`, `fidelity`, `project_id` | Create a tracker item (returns its `project_id`) |
 | `update_item` | `id`, `status`, `title`, `description`, `tags`, `touchpoints`, `effort`, `blocker`, `fidelity`, `prd_id`, `prd_section` | Patch / advance an item |
-| `search_items` | `query`, `tags`, `status`, `project_id` | Query the stream (query matches title, description, **and** tags) |
+| `search_items` | `query`, `tags`, `status`, `fields`, `project_id` | Query the stream (query matches title, description, **and** tags); lean rows by default, `fields="full"` for all |
 | `add_memory` | `text`, `scope`, `item_id`, `project_id` | Record a memory shard — **enters as a `candidate`** pending human publish (AL-49) |
 | `search_memory` | `query`, `top_k`, `include_candidates`, `project_id` | Semantic search over **published** shards (set `include_candidates` for unreviewed ones); returns `status`, `item_id`, `source` |
-| `get_backlog` | `limit`, `project_id` | Prioritized backlog |
+| `get_backlog` | `limit`, `fields`, `project_id` | Prioritized backlog (lean rows + ranking fields by default, `fields="full"` for all) |
 | `get_item_details` | `id` | Item + linked shards + linked requests |
 | `suggest_next` | `project_id` | Best next item from state + memory |
 | `link_items` | `a`, `b`, `type`, `reason` | Create a typed relationship |

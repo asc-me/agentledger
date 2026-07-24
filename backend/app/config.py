@@ -88,8 +88,27 @@ class Settings(BaseSettings):
 
     embed_dim: int = 384
 
+    # LLM/embedding call budget. A gateway behind an edge proxy (e.g. Cloudflare) will
+    # cut a request off at roughly 100s to FIRST byte, so keep the ceiling under that:
+    # a cold model should fail here with a clear error rather than be severed upstream.
+    # Streaming chat is unaffected by that limit — bytes start flowing immediately —
+    # which is why chat() assembles from the stream (see providers/openai_compat.py).
+    llm_timeout_seconds: float = 90.0
+    # Transient blips and cold starts get a retry before ingest degrades to "no vector".
+    embed_max_retries: int = 2
+
+    # Hosted deployments should embed with a real provider: on `stub`, vectors are
+    # deterministic noise, so search silently returns nonsense while looking healthy.
+    # Startup warns loudly; set this to refuse to boot instead.
+    require_real_embeddings: bool = False
+
     # ---- AI providers (F1). Defaults are all-stub → fully offline. ----
-    # embed_provider: stub | ollama | openai   (must match embed_dim: nomic-embed-text=768, openai text-embedding-3-small=1536)
+    # embed_provider: stub | ollama | openai. EMBED_DIM MUST match the model's output
+    # width — a mismatch is only caught when a vector is written:
+    #   stub-384 = 384 · nomic-embed-text = 768 · bge-m3 = 1024 · text-embedding-3-small = 1536
+    # Changing embed_dim on a populated database means resizing the vector columns and
+    # re-embedding everything (see migration 0019 + /api/memory/backfill), so pick it
+    # before real data lands.
     embed_provider: str = "stub"
     # chat_provider: stub | ollama | anthropic  (drives agent chat + auto-extraction)
     chat_provider: str = "stub"

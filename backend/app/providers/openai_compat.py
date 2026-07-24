@@ -8,7 +8,11 @@ import json
 
 import httpx
 
-_TIMEOUT = httpx.Timeout(60.0, connect=5.0)
+from app.config import settings
+
+
+def _timeout() -> httpx.Timeout:
+    return httpx.Timeout(settings.llm_timeout_seconds, connect=5.0)
 
 
 def _messages(system: str, context: str, question: str) -> list[dict]:
@@ -31,14 +35,15 @@ class OpenAICompatChat:
         return h
 
     def chat(self, *, system: str, context: str, question: str) -> str:
-        r = httpx.post(
-            f"{self.base_url}/chat/completions",
-            headers=self._headers(),
-            json={"model": self.model, "messages": _messages(system, context, question)},
-            timeout=_TIMEOUT,
-        )
-        r.raise_for_status()
-        return r.json()["choices"][0]["message"]["content"].strip()
+        """Full completion as a string — assembled from the STREAM, not a blocking POST.
+
+        A non-streaming completion returns nothing until the whole generation finishes,
+        so time-to-first-byte equals total generation time. Behind an edge proxy that
+        caps TTFB (~100s on Cloudflare) a long answer — the PRD rewrite in
+        `grill_apply` is the worst case — gets severed mid-thought. Streaming makes the
+        first byte immediate, so only the *total* duration matters, while callers keep
+        the identical `-> str` contract."""
+        return "".join(self.stream(system=system, context=context, question=question)).strip()
 
     def stream(self, *, system: str, context: str, question: str):
         with httpx.stream(
@@ -46,7 +51,7 @@ class OpenAICompatChat:
             f"{self.base_url}/chat/completions",
             headers=self._headers(),
             json={"model": self.model, "messages": _messages(system, context, question), "stream": True},
-            timeout=_TIMEOUT,
+            timeout=_timeout(),
         ) as r:
             r.raise_for_status()
             for line in r.iter_lines():
