@@ -234,13 +234,19 @@ TOOLS: list[dict[str, Any]] = [
         "name": "decompose_prd",
         "description": (
             "Propose one tracked task per un-covered PRD section (the gaps). With create=true, "
-            "creates them as backlog items linked to the PRD + section — the spec drives the tracker."
+            "creates them as backlog items linked to the PRD + section — the spec drives the tracker. "
+            "Framing sections (Problem, Goals, Non-goals, Success criteria, …) are skipped: they "
+            "describe the work rather than being work."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "prd_id": {"type": "string"},
                 "create": {"type": "boolean", "description": "Create the proposed tasks (default false = dry-run)."},
+                "include_prose": {
+                    "type": "boolean",
+                    "description": "Also propose tasks for framing sections (default false).",
+                },
             },
             "required": ["prd_id"],
         },
@@ -1101,7 +1107,11 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
             raise errors.NotFound(f"prd not found: {args['prd_id']}")
         if prd.project_id not in allowed:
             raise authz.Forbidden(f"prd {args['prd_id']!r} is outside this key's project scope")
-        return prd_svc.decompose(db, prd, create=bool(args.get("create", False)))
+        return prd_svc.decompose(
+            db, prd,
+            create=bool(args.get("create", False)),
+            include_prose=bool(args.get("include_prose", False)),
+        )
     if name == "create_prd":
         prd = prd_svc.create_prd(
             db, title=args["title"], template=args.get("template", "standard"),

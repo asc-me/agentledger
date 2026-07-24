@@ -302,6 +302,30 @@ def parse_sections(body: str) -> list[str]:
     return [m.group(1).strip() for m in _SECTION_RE.finditer(body or "")]
 
 
+# Conventional PRD sections that FRAME the work rather than being work themselves.
+# Treating every `## ` heading as implementable made decompose propose non-tasks
+# ("Implement: Problem") and made coverage report false gaps, which trains you to
+# ignore the metric (AL-96). Compared on an alphanumeric-only key so punctuation,
+# casing, and a trailing "(v1)" don't matter.
+_PROSE_SECTIONS = {
+    "problem", "background", "context", "overview", "motivation", "summary",
+    "goal", "goals", "nongoal", "nongoals", "outofscope",
+    "successcriteria", "successmetrics", "openquestions",
+    "appendix", "glossary", "references", "priorart",
+}
+
+
+def _section_key(title: str) -> str:
+    """Normalize a heading for classification: drop parentheticals, then keep only
+    alphanumerics — so "Non-goals (v1)", "Non Goals", and "nongoals" all agree."""
+    return re.sub(r"[^a-z0-9]+", "", re.sub(r"\(.*?\)", " ", title or "").lower())
+
+
+def is_implementable_section(title: str) -> bool:
+    """Whether a section describes work to build (vs. framing prose)."""
+    return _section_key(title) not in _PROSE_SECTIONS
+
+
 def section_bodies(body: str) -> dict[str, str]:
     """Map each `## section` to the markdown beneath it (until the next `## `)."""
     out: dict[str, str] = {}
@@ -333,24 +357,31 @@ def coverage(db: Session, prd: Prd) -> dict:
         # High-fidelity work still open in this section = prototype-first questions
         # a spec can't close in words yet (AL-68).
         open_high = sum(1 for it in its if it.fidelity == "high" and it.status != "done")
+        implementable = is_implementable_section(s)
         per.append({
             "section": s,
+            "implementable": implementable,
             "item_count": len(its),
             "done": counts.get("done", 0),
             "by_status": dict(counts),
-            "gap": len(its) == 0,
+            # Framing prose is never a gap — only buildable sections can lack work (AL-96).
+            "gap": implementable and len(its) == 0,
             "high_fidelity": sum(1 for it in its if it.fidelity == "high"),
             "open_high_fidelity": open_high,
             "item_ids": [it.id for it in its],
         })
     total = len(items)
     done = sum(1 for it in items if it.status == "done")
+    buildable = [p for p in per if p["implementable"]]
     return {
         "prd_id": prd.id, "title": prd.title, "status": prd.status,
         "sections": per,
+        # `section_count` stays the total for continuity; coverage is measured against
+        # the buildable subset so prose can't drag the ratio down.
         "section_count": len(sections),
-        "sections_with_tasks": sum(1 for p in per if not p["gap"]),
-        "gaps": [p["section"] for p in per if p["gap"]],
+        "implementable_sections": len(buildable),
+        "sections_with_tasks": sum(1 for p in buildable if not p["gap"]),
+        "gaps": [p["section"] for p in buildable if p["gap"]],
         "total_items": total, "done_items": done,
         "percent_done": round(100 * done / total) if total else 0,
         # Prototype-first work outstanding across the whole PRD.
@@ -358,14 +389,20 @@ def coverage(db: Session, prd: Prd) -> dict:
     }
 
 
-def decompose(db: Session, prd: Prd, create: bool = False) -> dict:
+def decompose(db: Session, prd: Prd, create: bool = False, include_prose: bool = False) -> dict:
     """Propose one tracked task per un-covered section (gap). With create=True, creates them
-    as backlog items linked to the PRD + section, so the spec drives the tracker."""
+    as backlog items linked to the PRD + section, so the spec drives the tracker.
+
+    Framing sections (Problem, Goals, Non-goals, Success criteria, …) are skipped — they
+    describe the work, they aren't work (AL-96). Pass ``include_prose=True`` when a PRD
+    genuinely uses one of those headings for buildable scope."""
     cov = coverage(db, prd)
     bodies = section_bodies(prd.body)
     proposals = []
     for p in cov["sections"]:
-        if not p["gap"]:
+        if not include_prose and not p["implementable"]:
+            continue
+        if p["item_count"]:  # already covered by tracked work
             continue
         body = bodies.get(p["section"], "").strip()
         # A section about how something looks/feels needs a prototype first (AL-68).

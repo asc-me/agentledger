@@ -72,13 +72,13 @@ def prd_coverage(prd_id: str, db: Session = Depends(get_db), user: User = Depend
 
 
 @router.post("/{prd_id}/decompose")
-def decompose_prd(prd_id: str, create: bool = False, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def decompose_prd(prd_id: str, create: bool = False, include_prose: bool = False, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     prd = prd_svc.get_prd(db, prd_id)
     if prd is None:
         raise HTTPException(404, "prd not found")
     if create:  # proposing tasks is a read; creating them is a write
         authz.require_writable(db, user.id, prd.project_id, "prd")
-    return prd_svc.decompose(db, prd, create=create)
+    return prd_svc.decompose(db, prd, create=create, include_prose=include_prose)
 
 
 @router.get("/{prd_id}", response_model=PrdOut)
