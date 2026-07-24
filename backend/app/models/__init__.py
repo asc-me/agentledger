@@ -128,6 +128,29 @@ class OrgMembership(Base):
     __table_args__ = (UniqueConstraint("org_id", "user_id", name="uq_org_membership"),)
 
 
+class OrgRequest(Base):
+    """A user's request to found an ADDITIONAL organization (hosted-only, AL-92).
+
+    Every account gets one org for free; founding another is privileged. A user asks
+    here, an operator approves or denies, and an approved request grants exactly ONE
+    additional org — ``consumed`` flips when it's spent, so approval can't be reused.
+    A standing (unlimited) entitlement comes from the plan instead
+    (``Plan.may_found_additional_orgs``, carried by the enterprise tier)."""
+
+    __tablename__ = "org_requests"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # oreq_...
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    reason: Mapped[str] = mapped_column(Text, default="")
+    company: Mapped[str] = mapped_column(String, default="")
+    status: Mapped[str] = mapped_column(String, default="pending", index=True)  # pending|approved|denied
+    consumed: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decided_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    decision_note: Mapped[str] = mapped_column(String, default="")
+
+
 class OrgUsage(Base):
     """Per-org, per-month usage counter for plan enforcement (hosted-only, AL-75).
 

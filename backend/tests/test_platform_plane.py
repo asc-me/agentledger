@@ -164,7 +164,7 @@ def test_platform_invite_plan_preset_applies_to_founded_org(client, operator, mo
 
 def test_platform_invite_rejects_unknown_plan(client, operator):
     r = client.post("/api/admin/invites",
-                    json={"email": "x@example.com", "plan": "enterprise"}, headers=operator)
+                    json={"email": "x@example.com", "plan": "unobtainium"}, headers=operator)
     assert r.status_code == 422
 
 

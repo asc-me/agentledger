@@ -26,6 +26,8 @@ from app.schemas import (
     OrgCreate,
     OrgMemberOut,
     OrgOut,
+    OrgRequestCreate,
+    OrgRequestOut,
     PlanLimitsOut,
     SetPlanIn,
     UsageOut,
@@ -73,8 +75,13 @@ def create_org(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    # Every account gets one org; founding another needs a standing plan entitlement or
+    # an approved one-time request, which is spent only after the org actually lands (AL-92).
+    grant = orgs_svc.require_may_found_org(db, user)
     first_org = not authz.org_ids_for_user(db, user.id)
     org = orgs_svc.create_org(db, user, body.name)
+    if grant is not None:
+        orgs_svc.consume_org_grant(db, grant)
     # A platform invite may have pre-assigned a plan (e.g. a design partner seeded onto
     # `team`). Apply it only to the FIRST org they found, which is what the invite
     # authorized — no consumed-flag needed, and the invite keeps its provenance (AL-91).
@@ -87,6 +94,26 @@ def create_org(
     events_svc.record_user(db, user, action="create_org", target_type="org",
                            target_id=org.id, meta={"name": org.name, "plan": org.plan})
     return OrgOut(id=org.id, name=org.name, plan=org.plan, role="owner")
+
+
+@router.post("/orgs/requests", response_model=OrgRequestOut, status_code=201)
+def request_additional_org(
+    body: OrgRequestCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Ask an operator for permission to found an additional organization (AL-92).
+    Refused as unnecessary if the caller can already create one."""
+    req = orgs_svc.submit_org_request(db, user, body.reason, body.company)
+    events_svc.record_user(db, user, action="request_additional_org", target_type="org_request",
+                           target_id=req.id, meta={"company": req.company})
+    return req
+
+
+@router.get("/orgs/requests/mine", response_model=OrgRequestOut | None)
+def my_org_request(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """The caller's most recent additional-org request, so the UI can show its status."""
+    return orgs_svc.latest_org_request(db, user)
 
 
 @router.get("/orgs/{org_id}/billing", response_model=BillingOut)

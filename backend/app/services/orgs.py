@@ -18,9 +18,121 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models import OrgInvite, OrgMembership, Organization, User, utcnow
+from app.models import OrgInvite, OrgMembership, OrgRequest, Organization, User, utcnow
+from app.security import authz
 from app.services import email as email_svc
 from app.services import quotas
+
+
+# ---- founding additional orgs (AL-92) -----------------------------------------
+def _has_standing_org_entitlement(db: Session, user: User) -> bool:
+    """True when the user OWNS an org whose plan carries the multi-org entitlement.
+
+    Attached to the plan rather than the user because billing lives on the org — an
+    enterprise licence is what buys the right to run more tenants."""
+    owned = db.scalars(
+        select(OrgMembership.org_id).where(
+            OrgMembership.user_id == user.id, OrgMembership.role == "owner"
+        )
+    )
+    for org_id in owned:
+        org = db.get(Organization, org_id)
+        if org is not None and quotas.plan_of(org).may_found_additional_orgs:
+            return True
+    return False
+
+
+def approved_org_grant(db: Session, user: User) -> OrgRequest | None:
+    """An approved, unspent request authorizing one additional org."""
+    return db.scalar(
+        select(OrgRequest)
+        .where(
+            OrgRequest.user_id == user.id,
+            OrgRequest.status == "approved",
+            OrgRequest.consumed.is_(False),
+        )
+        .order_by(OrgRequest.created_at)
+    )
+
+
+def require_may_found_org(db: Session, user: User) -> OrgRequest | None:
+    """Gate on founding an organization (hosted only; self-host is unlimited).
+
+    Allowed when the caller belongs to no org yet (their first), holds a standing plan
+    entitlement, or has an approved one-time request — which is returned so the caller
+    can consume it *after* the org is successfully created. Otherwise 403 with a
+    pointer to the request flow."""
+    if not settings.hosted_mode:
+        return None
+    if not authz.org_ids_for_user(db, user.id):
+        return None  # first org is free
+    if _has_standing_org_entitlement(db, user):
+        return None
+    grant = approved_org_grant(db, user)
+    if grant is not None:
+        return grant
+    raise HTTPException(
+        403,
+        "founding an additional organization needs approval — submit a request and an "
+        "operator will review it (an enterprise plan grants this standing)",
+    )
+
+
+def consume_org_grant(db: Session, grant: OrgRequest) -> None:
+    """Spend a one-time approval so it can't found a second org. Commits."""
+    grant.consumed = True
+    db.commit()
+
+
+def submit_org_request(db: Session, user: User, reason: str, company: str) -> OrgRequest:
+    """Ask an operator for permission to found an additional org. Commits.
+
+    Idempotent while one is pending — re-submitting updates the existing request
+    rather than queueing duplicates for the operator."""
+    if not authz.org_ids_for_user(db, user.id) or _has_standing_org_entitlement(db, user):
+        raise HTTPException(400, "you can already create an organization; no request needed")
+    existing = db.scalar(
+        select(OrgRequest).where(OrgRequest.user_id == user.id, OrgRequest.status == "pending")
+    )
+    req = existing or OrgRequest(id="oreq_" + uuid.uuid4().hex[:10], user_id=user.id)
+    req.reason = (reason or "").strip()
+    req.company = (company or "").strip()
+    if existing is None:
+        db.add(req)
+    db.commit()
+    db.refresh(req)
+    return req
+
+
+def latest_org_request(db: Session, user: User) -> OrgRequest | None:
+    return db.scalar(
+        select(OrgRequest)
+        .where(OrgRequest.user_id == user.id)
+        .order_by(OrgRequest.created_at.desc())
+    )
+
+
+def pending_org_requests(db: Session) -> list[OrgRequest]:
+    return list(
+        db.scalars(
+            select(OrgRequest)
+            .where(OrgRequest.status == "pending")
+            .order_by(OrgRequest.created_at)
+        )
+    )
+
+
+def decide_org_request(
+    db: Session, req: OrgRequest, admin: User, approve: bool, note: str = ""
+) -> OrgRequest:
+    """Operator decision. Commits."""
+    req.status = "approved" if approve else "denied"
+    req.decided_at = utcnow()
+    req.decided_by = admin.id
+    req.decision_note = (note or "").strip()
+    db.commit()
+    db.refresh(req)
+    return req
 
 
 def create_org(db: Session, user: User, name: str) -> Organization:

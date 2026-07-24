@@ -92,6 +92,29 @@ class PlatformInviteCreate(BaseModel):
     plan: str | None = None  # optional preset, e.g. seed a design partner onto `team`
 
 
+# ---- Additional-org requests (hosted-only, AL-92) ----
+class OrgRequestCreate(BaseModel):
+    reason: str = ""
+    company: str = ""
+
+
+class OrgRequestOut(ORMModel):
+    id: str
+    user_id: str
+    reason: str = ""
+    company: str = ""
+    status: str  # pending | approved | denied
+    consumed: bool = False
+    created_at: datetime
+    decided_at: datetime | None = None
+    decision_note: str = ""
+
+
+class OrgRequestDecision(BaseModel):
+    approve: bool
+    note: str = ""
+
+
 class InvitePreviewOut(BaseModel):
     """Unauthenticated peek at an invite (by token) so the accept page can show who/
     what before the invitee logs in. Reveals only the org name + invited email/role.

@@ -40,6 +40,10 @@ class Plan:
     max_seats: int
     max_shards: int
     max_calls_per_month: int
+    # Standing entitlement to found ADDITIONAL organizations (AL-92). Off for the
+    # self-serve tiers — one org each, more by request — and carried by `enterprise`,
+    # which is the licensed multi-org offering. Billing lights this up later (AL-82).
+    may_found_additional_orgs: bool = False
 
 
 # Starting private-beta limits — tunable in one place. Free stays generous on the
@@ -49,6 +53,10 @@ PLANS: dict[str, Plan] = {
     "free": Plan(max_projects=2, max_seats=3, max_shards=250, max_calls_per_month=10_000),
     "pro": Plan(max_projects=10, max_seats=15, max_shards=10_000, max_calls_per_month=100_000),
     "team": Plan(max_projects=50, max_seats=100, max_shards=100_000, max_calls_per_month=1_000_000),
+    "enterprise": Plan(
+        max_projects=500, max_seats=1_000, max_shards=1_000_000,
+        max_calls_per_month=10_000_000, may_found_additional_orgs=True,
+    ),
 }
 DEFAULT_PLAN = "free"
 

@@ -76,7 +76,16 @@ def test_project_created_under_sole_org_is_reachable(client, hosted):
     assert client.get(f"/api/items?project_id={pid}", headers=auth).status_code == 200
 
 
-def test_multi_org_project_requires_org_id(client, hosted):
+def test_multi_org_project_requires_org_id(client, hosted, monkeypatch):
+    # Founding a second org normally needs approval (AL-92); this test is about project
+    # org_id resolution, so grant the entitlement on the default plan rather than
+    # threading the whole request/approve flow through it.
+    from app.services import quotas
+
+    monkeypatch.setitem(
+        quotas.PLANS, "free",
+        quotas.Plan(**{**quotas.PLANS["free"].__dict__, "may_found_additional_orgs": True}),
+    )
     auth = _login(client, "alex@ascme-labs.com")
     _make_org(client, auth, "Acme")
     org2 = _make_org(client, auth, "Beta")
