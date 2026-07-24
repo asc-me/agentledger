@@ -312,6 +312,8 @@ export interface Prd extends PrdSummary {
 
 export interface PrdCoverageSection {
   section: string;
+  /** False for framing prose (Problem, Goals, Non-goals, …) — never counted as a gap. */
+  implementable: boolean;
   item_count: number;
   done: number;
   by_status: Record<string, number>;
@@ -327,6 +329,8 @@ export interface PrdCoverage {
   status: PrdStatus;
   sections: PrdCoverageSection[];
   section_count: number;
+  /** Buildable sections — the denominator coverage is measured against. */
+  implementable_sections: number;
   sections_with_tasks: number;
   gaps: string[];
   total_items: number;
