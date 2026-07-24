@@ -35,7 +35,7 @@ PROVIDERS: list[dict] = [
     {"id": "mistral", "label": "Mistral", "kind": "openai", "embeds": False,
      "base_url": "https://api.mistral.ai/v1", "chat_model": "mistral-large-latest", "embed_model": "", "auth": True},
     {"id": "ollama", "label": "Ollama", "kind": "ollama", "embeds": True,
-     "base_url": "http://localhost:11434", "chat_model": "llama3.1:8b",
+     "base_url": "http://localhost:11434", "chat_model": "qwen2.5-coder",
      "embed_model": "nomic-embed-text", "auth": True},
 ]
 

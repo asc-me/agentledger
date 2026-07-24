@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app import errors
 from app.db import get_db
 from app.models import User
-from app.providers import get_chat_model, iter_reply
+from app.providers import iter_reply
 from app.schemas import (
     ChatIn,
     ChatOut,
@@ -36,6 +36,7 @@ from app.security.deps import get_current_user
 from app.services import code_graph as code_svc
 from app.services import items as items_svc
 from app.services import memory as mem_svc
+from app.services import platform as platform_svc
 from app.services.projects import resolve_project_id
 
 router = APIRouter(prefix="/agent", tags=["agent"])
@@ -94,7 +95,7 @@ def chat(body: ChatIn, db: Session = Depends(get_db), user: User = Depends(get_c
     pid = _readable_pid(db, user, body.project_id)
     hits = mem_svc.search_memory(db, body.message, top_k=3, project_id=pid)
     context = _build_context(db, pid, hits)
-    reply = get_chat_model().chat(system=SYSTEM, context=context, question=body.message)
+    reply = platform_svc.chat_model_for(db, pid).chat(system=SYSTEM, context=context, question=body.message)
     return ChatOut(
         reply=reply,
         shards=[ShardHit(shard=ShardOut.model_validate(s), score=round(sc, 4)) for s, sc in hits],
@@ -116,9 +117,11 @@ def chat_stream(body: ChatIn, db: Session = Depends(get_db), user: User = Depend
         for s, sc in hits
     ]
 
+    chat = platform_svc.chat_model_for(db, pid)  # resolve while the request DB session is open
+
     def gen():
         yield _sse("shards", json.dumps(shards))
-        for piece in iter_reply(get_chat_model(), system=SYSTEM, context=context, question=body.message):
+        for piece in iter_reply(chat, system=SYSTEM, context=context, question=body.message):
             yield _sse("delta", json.dumps({"text": piece}))
         yield _sse("done", "{}")
 
@@ -247,7 +250,7 @@ def code_chat(body: ChatIn, db: Session = Depends(get_db), user: User = Depends(
     pid = _readable_pid(db, user, body.project_id)
     hits = _code_hits(db, body.message, pid)
     context = _build_code_context(db, pid, hits)
-    reply = get_chat_model().chat(system=CODE_SYSTEM, context=context, question=body.message)
+    reply = platform_svc.chat_model_for(db, pid).chat(system=CODE_SYSTEM, context=context, question=body.message)
     return CodeAnswerOut(
         reply=reply,
         nodes=[CodeHit(node=CodeNodeOut.model_validate(n), score=round(sc, 4)) for n, sc in hits],
@@ -266,9 +269,11 @@ def code_chat_stream(body: ChatIn, db: Session = Depends(get_db), user: User = D
         for n, sc in hits
     ]
 
+    chat = platform_svc.chat_model_for(db, pid)  # resolve while the request DB session is open
+
     def gen():
         yield _sse("nodes", json.dumps(nodes))
-        for piece in iter_reply(get_chat_model(), system=CODE_SYSTEM, context=context, question=body.message):
+        for piece in iter_reply(chat, system=CODE_SYSTEM, context=context, question=body.message):
             yield _sse("delta", json.dumps({"text": piece}))
         yield _sse("done", "{}")
 

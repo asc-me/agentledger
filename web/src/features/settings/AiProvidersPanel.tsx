@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, ChevronRight } from "lucide-react";
 import * as React from "react";
 
+import { NoModelBanner } from "@/components/NoModelBanner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useProjectCtx } from "@/features/ProjectContext";
@@ -62,9 +63,16 @@ export function AiProvidersPanel() {
   return (
     <div className="mb-6 max-w-2xl">
       <div className="text-[14px] font-semibold">AI providers</div>
-      <p className="mb-3 mt-0.5 text-[12.5px] text-muted">
+      <p className="mb-1.5 mt-0.5 text-[12.5px] text-muted">
         Choose the provider that drives agent chat &amp; extraction. Switches take effect immediately.
       </p>
+      <p className="mb-3 text-[11.5px] text-faint">
+        AgentLedger is a technical product (PRDs, code maps, code-aware chat) — <span className="text-fg-2">coding-oriented
+        models</span> give noticeably better output than general chat models. For local Ollama, a{" "}
+        <span className="font-mono text-muted-2">qwen2.5-coder</span> model is a good default.
+      </p>
+
+      <NoModelBanner withSettingsLink={false} className="mb-3" />
 
       <div className="space-y-2">
         {providers.map((p) => {
@@ -125,6 +133,12 @@ export function AiProvidersPanel() {
                       <Field label="Chat model">
                         <Input value={d.chat_model} onChange={(e) => setField(p, "chat_model", e.target.value)}
                           placeholder={p.chat_model} className="font-mono text-[12px]" />
+                        {p.kind === "ollama" && (
+                          <p className="mt-1 text-[10.5px] text-faint">
+                            Recommended: a coder model like <span className="font-mono">qwen2.5-coder</span> (or{" "}
+                            <span className="font-mono">qwen2.5-coder:7b</span> for lighter hardware).
+                          </p>
+                        )}
                       </Field>
                       {p.embeds && (
                         <Field label="Embedding model">

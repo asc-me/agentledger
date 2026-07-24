@@ -3,6 +3,7 @@ import { ArrowLeft, ChevronDown, Eye, History, Link2, ListChecks, MessageCircleQ
 import * as React from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
+import { NoModelBanner } from "@/components/NoModelBanner";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -153,6 +154,8 @@ export function PrdEditorView() {
           </div>
         </div>
       </div>
+
+      <NoModelBanner className="mx-5 mt-2 flex-none" />
 
       {/* Body: editor | right pane */}
       <div className="grid min-h-0 flex-1 grid-cols-2">
