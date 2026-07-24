@@ -127,10 +127,10 @@ def _auto_extract_lessons(db: Session, item: Item) -> None:
                 if s.source == f"lesson from {item.id}"]
     if existing:
         return
-    from app.providers import get_extractor
+    from app.services import platform as platform_svc
 
     try:
-        lessons = get_extractor().extract(title=item.title, description=item.description)
+        lessons = platform_svc.extractor_for(db, item.project_id).extract(title=item.title, description=item.description)
     except Exception:
         return  # never let extraction failure block a status change
     for text in lessons:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field, field_validator
 
 
 class ORMModel(BaseModel):
@@ -391,6 +391,21 @@ class PlatformConfigOut(ORMModel):
     provider_config: dict = {}  # redacted per-provider config (api keys → key_set bool)
     public_share_enabled: bool = False
     share_token: str | None = None  # the share-link token (shown to authed members only)
+
+    @computed_field
+    @property
+    def effective_chat_provider(self) -> str:
+        """Provider that will actually serve chat for THIS project, resolved from its own
+        config (mirrors platform._chat_params). 'stub' means no real AI is in effect, which
+        the UI surfaces as a no-model banner. Per-project — one project's provider is never
+        conflated with another's."""
+        if self.active_chat_provider:
+            return self.active_chat_provider
+        if self.llm_mode == "local":
+            return "ollama"
+        if self.llm_mode == "cloud":
+            return "anthropic"
+        return "stub"
 
 
 class PlatformUpdate(BaseModel):

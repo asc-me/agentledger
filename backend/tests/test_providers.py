@@ -70,3 +70,37 @@ def test_openai_compat_provider_uses_registry_default_base(client, auth):
 
 def test_unknown_provider_rejected(client, auth):
     assert client.patch("/api/platform", json={"active_chat_provider": "nope"}, headers=auth).status_code == 422
+
+
+def test_configured_provider_reaches_prd_ai(client, auth, monkeypatch):
+    """Regression (AL-148): when a real provider resolves for a PRD's project, the AI
+    command uses the model — not the offline stub. The gate used to key off a stale
+    app_settings.chat_provider flag the registry path never updated."""
+    class FakeChat:
+        def chat(self, *, system, context, question):
+            return "REAL-MODEL-OUTPUT"
+
+    monkeypatch.setattr("app.services.platform.resolve_chat", lambda db, pid: ("openai", FakeChat()))
+    r = client.post("/api/prds/PRD-1/ai", json={"command": "risks"}, headers=auth).json()
+    assert r["text"] == "REAL-MODEL-OUTPUT"  # real model, not _stub_command()
+
+
+def test_chat_provider_resolves_per_project(client, auth):
+    """Regression (AL-148 multi-project): configuring one project's provider must not
+    change another's. The old process-global providers._active held a single provider, so
+    the last project saved (or the alphabetically-first applied at startup) leaked into
+    every project's AI calls."""
+    client.post("/api/projects", json={"name": "Glyph"}, headers=auth)  # -> id "glyph"
+    client.patch("/api/platform?project_id=glyph", json={
+        "active_chat_provider": "openai",
+        "providers": {"openai": {"api_key": "sk-x", "chat_model": "gpt-4o-mini"}},
+    }, headers=auth)
+
+    # glyph was configured last (old global would now point everything at openai), but
+    # core (seeded stub) must still resolve to the stub — per project, not per process.
+    assert client.get("/api/platform?project_id=core", headers=auth).json()["effective_chat_provider"] == "stub"
+    assert client.get("/api/platform?project_id=glyph", headers=auth).json()["effective_chat_provider"] == "openai"
+
+    # End-to-end: a core PRD command still uses the offline stub despite glyph's openai.
+    r = client.post("/api/prds/PRD-1/ai", json={"command": "risks"}, headers=auth).json()
+    assert "local stub" in r["text"].lower()

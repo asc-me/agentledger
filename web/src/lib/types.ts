@@ -254,6 +254,8 @@ export interface PlatformConfig {
   turnstile_sitekey: string;
   turnstile_secret_set: boolean;
   active_chat_provider: string;
+  /** Provider actually serving chat right now (live). "stub" → no real AI is in effect. */
+  effective_chat_provider: string;
   provider_config: Record<string, ProviderConfigView>;
   public_share_enabled: boolean;
   share_token: string | null;

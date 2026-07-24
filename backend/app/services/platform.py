@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings as app_settings
 from app import providers
+from app.providers.base import ChatModel, Extractor
 from app.models import PlatformConfig
 from app.security import secrets
 
@@ -36,6 +37,7 @@ def apply_llm(cfg: PlatformConfig) -> None:
     if cfg.active_chat_provider:
         # New provider-registry path.
         pconf = (cfg.providers or {}).get(cfg.active_chat_provider, {})
+        app_settings.chat_provider = cfg.active_chat_provider  # keep the legacy mirror in sync
         providers.set_active_chat(
             provider=cfg.active_chat_provider,
             base_url=pconf.get("base_url", ""),
@@ -66,6 +68,42 @@ def apply_llm(cfg: PlatformConfig) -> None:
     if ollama_conf.get("api_key"):
         app_settings.ollama_auth_key = secrets.decrypt(ollama_conf["api_key"])
     providers.reset()
+
+
+def _chat_params(cfg: PlatformConfig) -> tuple[str, str, str, str]:
+    """(provider, base_url, api_key, model) for a project's own saved config. This is the
+    per-project resolver — the live chat/extraction provider is derived here at call time,
+    NOT from the process-global providers._active, which can only hold one project at once."""
+    if cfg.active_chat_provider:
+        pconf = (cfg.providers or {}).get(cfg.active_chat_provider, {})
+        return (
+            cfg.active_chat_provider,
+            pconf.get("base_url", ""),
+            secrets.decrypt(pconf.get("api_key", "")),
+            pconf.get("chat_model", ""),
+        )
+    if cfg.llm_mode == "local":
+        return ("ollama", cfg.local_base_url, "", cfg.local_model)
+    if cfg.llm_mode == "cloud":
+        return ("anthropic", "", "", cfg.cloud_model)
+    return ("stub", "", "", "")
+
+
+def resolve_chat(db: Session, project_id: str) -> tuple[str, ChatModel]:
+    """(provider_id, chat model) for a specific project. Callers gate on the provider id
+    (== "stub" → offline placeholder) and otherwise use the model. Per-project, so one
+    project's provider never leaks into another's AI calls."""
+    provider, base_url, api_key, model = _chat_params(get_config(db, project_id))
+    return provider, providers.build_chat(provider, base_url=base_url, api_key=api_key, model=model)
+
+
+def chat_model_for(db: Session, project_id: str) -> ChatModel:
+    return resolve_chat(db, project_id)[1]
+
+
+def extractor_for(db: Session, project_id: str) -> Extractor:
+    provider, base_url, api_key, model = _chat_params(get_config(db, project_id))
+    return providers.build_extractor(provider, base_url=base_url, api_key=api_key, model=model)
 
 
 _LLM_FIELDS = {

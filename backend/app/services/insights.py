@@ -3,9 +3,9 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from app.providers import get_extractor
 from app.services import items as items_svc
 from app.services import memory as memory_svc
+from app.services import platform as platform_svc
 
 
 def extract_lessons(db: Session, item_id: str) -> list[dict]:
@@ -13,7 +13,7 @@ def extract_lessons(db: Session, item_id: str) -> list[dict]:
     item = items_svc.get_item(db, item_id)
     if item is None:
         raise ValueError(f"item not found: {item_id}")
-    lessons = get_extractor().extract(title=item.title, description=item.description)
+    lessons = platform_svc.extractor_for(db, item.project_id).extract(title=item.title, description=item.description)
     created = []
     for text in lessons:
         # Auto-extracted lessons are agent telemetry — enter as candidates for

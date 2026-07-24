@@ -8,10 +8,9 @@ from sqlalchemy.orm import Session
 
 from collections import Counter
 
-from app.config import settings
 from app.models import Prd, PrdVersion
-from app.providers import get_chat_model
 from app.services import items as items_svc
+from app.services import platform as platform_svc
 
 STATUSES = ["draft", "review", "approved"]
 
@@ -146,10 +145,11 @@ def ai_command(db: Session, prd_id: str, command: str) -> str:
     if command not in _COMMANDS:
         raise ValueError(f"unknown command: {command}")
 
-    if settings.chat_provider == "stub":
+    provider, chat = platform_svc.resolve_chat(db, prd.project_id)
+    if provider == "stub":
         return _stub_command(command, prd)
 
-    return get_chat_model().chat(
+    return chat.chat(
         system="You are a precise PRD writing assistant. Return only the requested markdown snippet.",
         context=prd.body,
         question=_COMMANDS[command],
@@ -230,14 +230,15 @@ def grill_apply(db: Session, prd_id: str, history: list[dict]) -> str:
     prd = get_prd(db, prd_id)
     if prd is None:
         raise ValueError(f"prd not found: {prd_id}")
-    if settings.chat_provider == "stub":
+    provider, chat = platform_svc.resolve_chat(db, prd.project_id)
+    if provider == "stub":
         answers = [m.get("text", "").strip() for m in history if m.get("role") == "user"]
         answers = [a for a in answers if a]
         if not answers:
             return prd.body
         block = "## Decisions from grilling\n" + "\n".join(f"- {a}" for a in answers) + "\n"
         return prd.body.rstrip() + "\n\n" + block
-    return get_chat_model().chat(
+    return chat.chat(
         system=GRILL_APPLY_SYSTEM,
         context=grill_context(prd, history),
         question="Return the updated PRD markdown body incorporating the decisions above.",

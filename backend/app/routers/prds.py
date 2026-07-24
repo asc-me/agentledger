@@ -4,10 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.config import settings
 from app.db import get_db
 from app.models import User
-from app.providers import get_chat_model, iter_reply
+from app.providers import iter_reply
 from app.schemas import (
     GrillApplyIn,
     GrillApplyOut,
@@ -25,6 +24,7 @@ from app.schemas import (
 from app.security import authz
 from app.security.deps import get_current_user
 from app.services import events as events_svc
+from app.services import platform as platform_svc
 from app.services import prds as prd_svc
 
 router = APIRouter(prefix="/prds", tags=["prds"])
@@ -143,13 +143,16 @@ def grill_stream(prd_id: str, body: GrillIn, db: Session = Depends(get_db), user
     context = prd_svc.grill_context(prd, history)
     question = body.message or "Begin — ask your opening clarifying questions about this PRD."
 
+    # Resolve the project's provider eagerly, while the request DB session is open.
+    provider, chat = platform_svc.resolve_chat(db, prd.project_id)
+
     def gen():
-        if settings.chat_provider == "stub":
+        if provider == "stub":
             # Offline: stream the deterministic opening questions.
             for line in prd_svc._stub_command("grill", prd).splitlines(keepends=True):
                 yield _sse("delta", json.dumps({"text": line}))
         else:
-            for piece in iter_reply(get_chat_model(), system=prd_svc.GRILL_CHAT_SYSTEM,
+            for piece in iter_reply(chat, system=prd_svc.GRILL_CHAT_SYSTEM,
                                     context=context, question=question):
                 yield _sse("delta", json.dumps({"text": piece}))
         yield _sse("done", "{}")

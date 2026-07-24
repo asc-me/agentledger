@@ -24,6 +24,8 @@ __all__ = [
     "iter_reply",
     "reset",
     "set_active_chat",
+    "build_chat",
+    "build_extractor",
 ]
 
 
@@ -38,6 +40,45 @@ def set_active_chat(provider: str = "stub", *, base_url: str = "", api_key: str 
     )
     get_chat_model.cache_clear()
     get_extractor.cache_clear()
+
+
+def build_chat(provider: str = "stub", *, base_url: str = "", api_key: str = "", model: str = "") -> ChatModel:
+    """Construct a chat adapter from an explicit provider config — no global state, so
+    each project can resolve its own provider at call time (platform.resolve_chat)."""
+    provider = provider or "stub"
+    if provider == "ollama":
+        from app.providers import ollama
+
+        return ollama.chat(base_url=base_url, model=model, auth_key=api_key)
+    if provider == "anthropic":
+        from app.providers import anthropic_provider
+
+        return anthropic_provider.chat(api_key=api_key, model=model)
+    if registry.is_openai_compat(provider):
+        from app.providers import openai_compat
+
+        meta = registry.get(provider) or {}
+        return openai_compat.chat(base_url or meta.get("base_url", ""), api_key, model or meta.get("chat_model", ""))
+    return StubChat()
+
+
+def build_extractor(provider: str = "stub", *, base_url: str = "", api_key: str = "", model: str = "") -> Extractor:
+    """Extractor counterpart of build_chat — same per-project resolution, no global state."""
+    provider = provider or "stub"
+    if provider == "ollama":
+        from app.providers import ollama
+
+        return ollama.extractor(base_url=base_url, model=model, auth_key=api_key)
+    if provider == "anthropic":
+        from app.providers import anthropic_provider
+
+        return anthropic_provider.extractor(api_key=api_key, model=model)
+    if registry.is_openai_compat(provider):
+        from app.providers import openai_compat
+
+        meta = registry.get(provider) or {}
+        return openai_compat.extractor(base_url or meta.get("base_url", ""), api_key, model or meta.get("chat_model", ""))
+    return StubExtractor()
 
 
 def safe_embed(text: str) -> list[float] | None:
@@ -84,47 +125,16 @@ def get_embedder() -> Embedder:
     return StubEmbedder()
 
 
-def _resolved_base_model(p: str) -> tuple[str, str]:
-    meta = registry.get(p) or {}
-    return (_active["base_url"] or meta.get("base_url", ""), _active["model"] or meta.get("chat_model", ""))
-
-
 @lru_cache
 def get_chat_model() -> ChatModel:
-    p = _active["provider"]
-    if p == "ollama":
-        from app.providers import ollama
-
-        return ollama.chat(base_url=_active["base_url"], model=_active["model"], auth_key=_active["api_key"])
-    if p == "anthropic":
-        from app.providers import anthropic_provider
-
-        return anthropic_provider.chat(api_key=_active["api_key"], model=_active["model"])
-    if registry.is_openai_compat(p):
-        from app.providers import openai_compat
-
-        base, model = _resolved_base_model(p)
-        return openai_compat.chat(base, _active["api_key"], model)
-    return StubChat()
+    """The process-global chat model (env/legacy default via set_active_chat). Per-project
+    call sites resolve their own via platform.resolve_chat; this stays for env-only setups."""
+    return build_chat(_active["provider"], base_url=_active["base_url"], api_key=_active["api_key"], model=_active["model"])
 
 
 @lru_cache
 def get_extractor() -> Extractor:
-    p = _active["provider"]
-    if p == "ollama":
-        from app.providers import ollama
-
-        return ollama.extractor(base_url=_active["base_url"], model=_active["model"], auth_key=_active["api_key"])
-    if p == "anthropic":
-        from app.providers import anthropic_provider
-
-        return anthropic_provider.extractor(api_key=_active["api_key"], model=_active["model"])
-    if registry.is_openai_compat(p):
-        from app.providers import openai_compat
-
-        base, model = _resolved_base_model(p)
-        return openai_compat.extractor(base, _active["api_key"], model)
-    return StubExtractor()
+    return build_extractor(_active["provider"], base_url=_active["base_url"], api_key=_active["api_key"], model=_active["model"])
 
 
 def reset() -> None:
