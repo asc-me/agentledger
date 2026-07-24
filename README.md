@@ -29,10 +29,10 @@ opt-in. A hosted multi-tenant service is a later, additive layer.
 | **Links** | Interactive force-directed graph of typed relationships (dependency / code / semantic / tag) |
 | **Dashboard** | KPI tiles, status distribution, request breakdown, recent activity |
 | **Roadmap** | MVP → Post-MVP → Later with progress; shareable read-only public link |
-| **MCP Tools** | **27 live tools** with per-tool call metering, params, and descriptions |
+| **MCP Tools** | **30 live tools** with per-tool call metering, params, and descriptions |
 | **Feedback Kit** | Themeable embeddable widget generator (accent / radius / types) with live preview + copy-paste snippet |
 | **Settings / Profile** | AI provider switch, GitHub/Drive connection config, project config, members, API keys; profile + project access |
-| **MCP** | `create_item` · `update_item` · `search_items` · `add_memory` · `search_memory` · `get_backlog` · `get_item_details` · `suggest_next` · `link_items` · `extract_lessons` · `generate_digest` |
+| **MCP** | Orientation `get_context` · `list_projects` — Work queue `claim_next` · `next_cluster` · `heartbeat` · `release_item` · `get_backlog` · `suggest_next` — Items `create_item` · `update_item` · `search_items` · `get_item_details` · `related_work` · `link_items` — Memory `add_memory` · `search_memory` · `extract_lessons` · `generate_digest` — PRDs `create_prd` · `update_prd` · `grill_prd` · `decompose_prd` · `prd_coverage` — Code graph `describe_code` · `get_code_map` · `code_neighbors` · `search_code` · `link_code` · `unlink_code` — Upstream `report_agentledger_issue` |
 | **Auth** | JWT login (users/roles/memberships) + scoped API keys for agents |
 | **Integrations** | Inbound **GitHub issues webhook** → tracker items (live); GitHub/Drive connection config |
 
