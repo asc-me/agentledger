@@ -73,9 +73,19 @@ def create_org(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    first_org = not authz.org_ids_for_user(db, user.id)
     org = orgs_svc.create_org(db, user, body.name)
+    # A platform invite may have pre-assigned a plan (e.g. a design partner seeded onto
+    # `team`). Apply it only to the FIRST org they found, which is what the invite
+    # authorized — no consumed-flag needed, and the invite keeps its provenance (AL-91).
+    if first_org:
+        preset = orgs_svc.platform_plan_for(db, user)
+        if preset in quotas.PLANS:
+            org.plan = preset
+            db.commit()
+            db.refresh(org)
     events_svc.record_user(db, user, action="create_org", target_type="org",
-                           target_id=org.id, meta={"name": org.name})
+                           target_id=org.id, meta={"name": org.name, "plan": org.plan})
     return OrgOut(id=org.id, name=org.name, plan=org.plan, role="owner")
 
 
@@ -182,15 +192,24 @@ def preview_invite(token: str, db: Session = Depends(get_db)):
     """Unauthenticated: what org/email a token invites. Used by the accept page before
     the invitee has logged in. A used/expired/unknown token 404s identically."""
     invite = orgs_svc._validate_pending(orgs_svc.invite_by_token(db, token))
+    inviter = db.get(User, invite.invited_by)
+    invited_by = (inviter.name or inviter.handle) if inviter else ""
+    if invite.kind == "platform":
+        # No org yet — the accept page renders the "create your account, then found
+        # your organization" flow instead of a join-this-org prompt (AL-91).
+        return InvitePreviewOut(
+            kind="platform", org_name="", email=invite.email,
+            role=invite.role, invited_by=invited_by,
+        )
     org = db.get(Organization, invite.org_id)
     if org is None:
         raise HTTPException(404, "invitation not found or already used")
-    inviter = db.get(User, invite.invited_by)
     return InvitePreviewOut(
+        kind="org",
         org_name=org.name,
         email=invite.email,
         role=invite.role,
-        invited_by=(inviter.name or inviter.handle) if inviter else "",
+        invited_by=invited_by,
     )
 
 

@@ -76,19 +76,29 @@ class InviteCreate(BaseModel):
 
 class InviteOut(ORMModel):
     id: str
-    org_id: str
+    kind: str = "org"  # org | platform (AL-91)
+    org_id: str | None = None  # NULL for a platform invite — the org doesn't exist yet
     email: EmailStr
     role: str
+    plan: str | None = None  # platform invites only: plan preset for the org they found
     status: str
     created_at: datetime
     expires_at: datetime | None = None
     accept_url: str = ""  # convenience: the link emailed to the invitee (copy-able by admins)
 
 
+class PlatformInviteCreate(BaseModel):
+    email: EmailStr
+    plan: str | None = None  # optional preset, e.g. seed a design partner onto `team`
+
+
 class InvitePreviewOut(BaseModel):
     """Unauthenticated peek at an invite (by token) so the accept page can show who/
-    what before the invitee logs in. Reveals only the org name + invited email/role."""
-    org_name: str
+    what before the invitee logs in. Reveals only the org name + invited email/role.
+    For a platform invite (AL-91) there is no org yet, so ``org_name`` is empty and
+    ``kind`` tells the page to render the found-your-own-org flow instead."""
+    kind: str = "org"  # org | platform
+    org_name: str = ""
     email: EmailStr
     role: str
     invited_by: str

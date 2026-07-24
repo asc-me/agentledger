@@ -12,6 +12,7 @@ from app.db import SessionLocal, init_db
 from app.version import __version__
 from app.mcp_server import router as mcp_router
 from app.routers import (
+    admin,
     agent,
     analytics,
     apikeys,
@@ -114,6 +115,9 @@ app.include_router(mcp_router, prefix=API)
 # org surface. Gating per-request (vs. a build-time `if`) keeps the flag authoritative
 # at runtime and lets the test suite exercise the surface under a monkeypatched flag.
 app.include_router(orgs.router, prefix=API)
+# Operator plane (AL-91): hosted + platform-admin gated at the router level; every
+# route 404s for tenants, so the surface is invisible outside the operator allowlist.
+app.include_router(admin.router, prefix=API)
 
 
 @app.get("/api/config")
@@ -123,7 +127,7 @@ def public_config():
     Deliberately tiny — no secrets, just the two switches that change the UI."""
     return {
         "hosted_mode": settings.hosted_mode,
-        "open_registration": settings.open_registration,
+        "signup_mode": settings.signup_mode,
     }
 
 

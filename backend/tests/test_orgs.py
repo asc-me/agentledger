@@ -105,7 +105,7 @@ def test_invite_emails_and_registration_joins_org(client, hosted, monkeypatch):
     from app.config import settings
     from app.services.email import outbox
 
-    monkeypatch.setattr(settings, "open_registration", False)
+    monkeypatch.setattr(settings, "signup_mode", "invite_only")
     alex = _login(client, "alex@ascme-labs.com")
     org = _make_org(client, alex, "Acme")
 
@@ -134,7 +134,7 @@ def test_invite_emails_and_registration_joins_org(client, hosted, monkeypatch):
 def test_registration_still_closed_without_invite(client, hosted, monkeypatch):
     from app.config import settings
 
-    monkeypatch.setattr(settings, "open_registration", False)
+    monkeypatch.setattr(settings, "signup_mode", "invite_only")
     r = client.post("/api/auth/register", json={
         "name": "No One", "handle": "noone", "email": "noone@example.com", "password": "sup3rsecret",
     })

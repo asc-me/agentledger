@@ -143,19 +143,30 @@ class OrgUsage(Base):
 
 
 class OrgInvite(Base):
-    """A pending invitation to join an organization (hosted-only, AL-74b).
+    """A pending invitation, of one of two kinds (hosted-only, AL-74b / AL-91).
 
-    Created by an org owner/admin and delivered by email. The unguessable ``token``
-    is how the invite-accept link addresses it. ``status`` moves pending → accepted
-    (on join) or revoked (owner cancels); an invite past ``expires_at`` is refused
-    even while still ``pending``. Rows are kept after acceptance for provenance."""
+    - ``kind="org"`` — seats the invitee in an EXISTING org (``org_id`` set). Created
+      by an org owner/admin.
+    - ``kind="platform"`` — authorizes a brand-new account to sign up and found its
+      OWN org (``org_id`` NULL, since that org doesn't exist yet). Created by a
+      platform operator; may carry a ``plan`` to pre-assign to the org they found.
+
+    Both share one pipeline: the unguessable ``token`` addresses the accept link,
+    ``status`` moves pending → accepted or revoked, and an invite past ``expires_at``
+    is refused even while still ``pending``. Rows are kept after acceptance for
+    provenance."""
 
     __tablename__ = "org_invites"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)  # inv_...
-    org_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
+    kind: Mapped[str] = mapped_column(String, default="org", index=True)  # org | platform
+    # NULL for a platform invite — the org is founded on accept.
+    org_id: Mapped[str | None] = mapped_column(ForeignKey("organizations.id"), nullable=True, index=True)
     email: Mapped[str] = mapped_column(String, index=True)  # invitee (may not have an account yet)
     role: Mapped[str] = mapped_column(String, default="member")  # admin | member (never owner)
+    # Platform invites only: plan to stamp on the org the invitee founds (e.g. seed a
+    # design partner straight onto `team`). NULL = the default free plan.
+    plan: Mapped[str | None] = mapped_column(String, nullable=True)
     token: Mapped[str] = mapped_column(String, unique=True, index=True)
     invited_by: Mapped[str] = mapped_column(ForeignKey("users.id"))
     status: Mapped[str] = mapped_column(String, default="pending", index=True)  # pending|accepted|revoked
