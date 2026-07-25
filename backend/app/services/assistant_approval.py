@@ -22,12 +22,13 @@ from app.security import authz
 from app.services import assistant_tools as at
 from app.services import events as events_svc
 
-_REVERTIBLE = {"update_item", "update_prd"}  # tools whose prior_value can be re-applied
+_REVERTIBLE = {"update_item", "update_prd", "grill_apply"}  # tools whose prior_value can be re-applied
 
 
 def _ctx(db: Session, thread: AssistantThread, user_id: str) -> at.ToolContext:
     return at.ToolContext(db=db, user_id=user_id, project_id=thread.project_id,
-                          entity_type=thread.entity_type, entity_id=thread.entity_id)
+                          entity_type=thread.entity_type, entity_id=thread.entity_id,
+                          thread_id=thread.id)
 
 
 def process_call(
@@ -135,7 +136,9 @@ def revert(db: Session, action_id: str, *, user_id: str) -> tuple[AssistantPropo
         return action, f"{action.tool} is not revertible"
     thread = db.get(AssistantThread, action.thread_id)
     ctx = _ctx(db, thread, user_id)
-    result = at.dispatch(ctx, ToolCall(id=action.id, name=action.tool, input=action.prior_value))
+    # grill_apply rewrote the body via synthesis; undo it with a plain body restore.
+    revert_tool = "update_prd" if action.tool == "grill_apply" else action.tool
+    result = at.dispatch(ctx, ToolCall(id=action.id, name=revert_tool, input=action.prior_value))
     if result.is_error:
         return action, result.content
     action.status = "reverted"
@@ -170,6 +173,10 @@ def _capture_prior(db: Session, ctx: at.ToolContext, action: AssistantProposedAc
         prd = db.get(Prd, ctx.entity_id)
         if prd:
             return {k: getattr(prd, k) for k in action.args if k in ("body", "status")}
+    elif action.tool == "grill_apply":  # a whole-body rewrite — snapshot the body to restore
+        prd = db.get(Prd, ctx.entity_id)
+        if prd:
+            return {"body": prd.body}
     return None
 
 
@@ -185,4 +192,10 @@ def _summarize(thread: AssistantThread, call: ToolCall) -> str:
     if call.name == "add_memory":
         text = str(args.get("text", ""))
         return f"Propose memory: {text[:60]}"
+    if call.name == "link_items":
+        return f"Link {thread.entity_id} → {args.get('target_id', '?')} ({args.get('type', 'dependency')})"
+    if call.name == "decompose_prd":
+        return f"Decompose PRD {thread.entity_id} into tracked tasks"
+    if call.name == "grill_apply":
+        return f"Rewrite PRD {thread.entity_id} body from this conversation"
     return f"{call.name}({args})"

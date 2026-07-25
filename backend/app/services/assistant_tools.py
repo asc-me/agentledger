@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from app.providers.toolcall import ToolCall, ToolResult, ToolSpec
 from app.security import authz
 from app.services import items as items_svc
+from app.services import links as links_svc
 from app.services import memory as mem_svc
 from app.services import prds as prd_svc
 
@@ -35,6 +36,7 @@ class ToolContext:
     project_id: str
     entity_type: str  # item | prd
     entity_id: str
+    thread_id: str = ""  # set for tools that read the conversation itself (grill_apply)
 
 
 @dataclass(frozen=True)
@@ -102,6 +104,59 @@ def _add_memory(ctx: ToolContext, inp: dict) -> str:
     return f"proposed memory {shard.id} (candidate — needs review)"
 
 
+def _link_items(ctx: ToolContext, inp: dict) -> str:
+    # Scoped to THIS item as one endpoint; the model names the other + link type.
+    target = (inp.get("target_id") or "").strip()
+    if not target:
+        return "target_id is required"
+    if target == ctx.entity_id:
+        return "cannot link an item to itself"
+    if not items_svc.get_item_details(ctx.db, target):
+        return f"target item not found: {target}"
+    link = links_svc.create_link(  # raises ValueError on a bad type → surfaced as a tool error
+        ctx.db, a=ctx.entity_id, b=target, type_=inp.get("type") or "dependency",
+        reason=inp.get("reason", ""), project_id=ctx.project_id)
+    return f"linked {ctx.entity_id} → {target} ({link.type})"
+
+
+def _decompose_prd(ctx: ToolContext, inp: dict) -> str:
+    prd = prd_svc.get_prd(ctx.db, ctx.entity_id)
+    if prd is None:
+        return f"prd not found: {ctx.entity_id}"
+    result = prd_svc.decompose(ctx.db, prd, create=True, include_prose=bool(inp.get("include_prose")))
+    created = result.get("created", [])
+    if not created:
+        return f"{prd.id}: no uncovered sections to decompose (already fully tracked)"
+    return f"decomposed {prd.id}: created {len(created)} task(s): {', '.join(created)}"
+
+
+def _thread_history(ctx: ToolContext) -> list[dict]:
+    """This conversation as a grill transcript ({role, text}) for grill_apply."""
+    if not ctx.thread_id:
+        return []
+    from app.services import assistant as asst_svc  # lazy: avoids a service import cycle
+
+    thread = asst_svc.get_thread(ctx.db, ctx.thread_id)
+    if thread is None:
+        return []
+    return [{"role": m.role, "text": m.content} for m in thread.messages
+            if m.content and m.role in ("user", "assistant")]
+
+
+def _grill_apply(ctx: ToolContext, inp: dict) -> str:
+    prd = prd_svc.get_prd(ctx.db, ctx.entity_id)
+    if prd is None:
+        return f"prd not found: {ctx.entity_id}"
+    history = _thread_history(ctx)
+    if not history:
+        return "no conversation yet to fold into the PRD"
+    new_body = prd_svc.grill_apply(ctx.db, ctx.entity_id, history)
+    updated = prd_svc.update_prd(ctx.db, ctx.entity_id, body=new_body)
+    if updated is None:
+        return f"prd not found: {ctx.entity_id}"
+    return f"rewrote PRD {ctx.entity_id} body from the conversation ({len(new_body)} chars)"
+
+
 _TOOLS: dict[str, _Tool] = {
     "get_item_details": _Tool(
         ToolSpec("get_item_details", "Read an item's full detail.",
@@ -133,6 +188,19 @@ _TOOLS: dict[str, _Tool] = {
         ToolSpec("add_memory", "Propose a memory shard (enters review as a candidate).",
                  {"type": "object", "properties": {"text": _STR}, "required": ["text"]}),
         "write", _add_memory),
+    "link_items": _Tool(
+        ToolSpec("link_items", "Link THIS item to another item (default type: dependency).",
+                 {"type": "object", "properties": {"target_id": _STR, "type": _STR, "reason": _STR},
+                  "required": ["target_id"]}),
+        "write", _link_items, entity_types=("item",)),
+    "decompose_prd": _Tool(
+        ToolSpec("decompose_prd", "Break THIS PRD's un-covered sections into tracked backlog items.",
+                 {"type": "object", "properties": {"include_prose": {"type": "boolean"}}}),
+        "write", _decompose_prd, entity_types=("prd",)),
+    "grill_apply": _Tool(
+        ToolSpec("grill_apply", "Rewrite THIS PRD's body to fold in the decisions from this conversation.",
+                 {"type": "object", "properties": {}}),
+        "write", _grill_apply, entity_types=("prd",)),
 }
 
 

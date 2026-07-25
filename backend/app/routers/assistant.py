@@ -172,7 +172,8 @@ def send_message(thread_id: str, body: MessageIn, db: Session = Depends(get_db),
     db.refresh(thread)  # pick up the just-added message for context
     provider, chat = platform_svc.resolve_chat_for(db, thread.project_id, thread.provider or "stub")
     ctx = at.ToolContext(db=db, user_id=user.id, project_id=thread.project_id,
-                         entity_type=thread.entity_type, entity_id=thread.entity_id)
+                         entity_type=thread.entity_type, entity_id=thread.entity_id,
+                         thread_id=thread.id)
     tools = at.available_tools(ctx)
     # Resolve context + session eagerly while the request DB session is open.
     session = chat.tool_session(system=_SYSTEM, context=_context(db, thread), question=body.message)
