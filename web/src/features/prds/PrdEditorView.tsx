@@ -19,6 +19,7 @@ import { Markdown } from "@/lib/markdown";
 import { keys, useItems, usePrd, usePrdVersions } from "@/lib/queries";
 import type { PrdStatus, PrdVersion } from "@/lib/types";
 
+import { AssistantPanel } from "@/features/assistant/AssistantPanel";
 import { GrillPanel } from "./GrillPanel";
 import { PRD_STATUS_META, PRD_STATUS_ORDER } from "./meta";
 
@@ -37,7 +38,7 @@ export function PrdEditorView() {
 
   const [title, setTitle] = React.useState("");
   const [body, setBody] = React.useState("");
-  const [rightTab, setRightTab] = React.useState<"preview" | "history" | "coverage" | "grill">("preview");
+  const [rightTab, setRightTab] = React.useState<"preview" | "history" | "coverage" | "grill" | "assistant">("preview");
   const [diffVersion, setDiffVersion] = React.useState<PrdVersion | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [aiBusy, setAiBusy] = React.useState<string | null>(null);
@@ -148,6 +149,7 @@ export function PrdEditorView() {
           <LinkItemsMenu prdId={id} linked={prd.linked} onChange={refresh} />
           <div className="flex items-center gap-1 rounded-lg border border-line-2 bg-surface-2 p-0.5">
             <TabBtn active={rightTab === "preview"} onClick={() => setRightTab("preview")} icon={<Eye size={12} />} label="Preview" />
+            <TabBtn active={rightTab === "assistant"} onClick={() => setRightTab("assistant")} icon={<Sparkles size={12} />} label="Assistant" />
             <TabBtn active={rightTab === "grill"} onClick={() => setRightTab("grill")} icon={<MessageCircleQuestion size={12} />} label="Grill" />
             <TabBtn active={rightTab === "coverage"} onClick={() => setRightTab("coverage")} icon={<ListChecks size={12} />} label="Coverage" />
             <TabBtn active={rightTab === "history"} onClick={() => setRightTab("history")} icon={<History size={12} />} label="History" />
@@ -168,6 +170,8 @@ export function PrdEditorView() {
         <div className="min-h-0 overflow-y-auto p-5">
           {rightTab === "preview" ? (
             <Markdown source={body} />
+          ) : rightTab === "assistant" ? (
+            <AssistantPanel entityType="prd" entityId={id} projectId={prd.project_id} />
           ) : rightTab === "grill" ? (
             <GrillPanel prdId={id} onApply={(b) => { setBody(b); setRightTab("preview"); }} />
           ) : rightTab === "coverage" ? (

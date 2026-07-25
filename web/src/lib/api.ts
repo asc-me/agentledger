@@ -42,6 +42,10 @@ import type {
   RequestItem,
   RoadmapPhase,
   ScoredCandidate,
+  AssistantThread,
+  AssistantThreadDetail,
+  AssistantProvider,
+  ProposedAction,
   Shard,
   ShardHit,
   Status,
@@ -341,6 +345,73 @@ export const api = {
         const event = frame.match(/^event: (.*)$/m)?.[1];
         const data = frame.match(/^data: ([\s\S]*)$/m)?.[1];
         if (event === "delta" && data !== undefined) onDelta(JSON.parse(data).text);
+      }
+    }
+  },
+
+  // ── In-app AI assistant (AL-175) ──────────────────────────────────────────
+  assistantThreads: (projectId: string, entityType: string, entityId: string) =>
+    request<AssistantThread[]>(
+      `/assistant/threads?project_id=${projectId}&entity_type=${entityType}&entity_id=${encodeURIComponent(entityId)}`,
+    ),
+  createAssistantThread: (body: { project_id: string; entity_type: string; entity_id: string; provider?: string }) =>
+    request<AssistantThread>("/assistant/threads", { method: "POST", body: JSON.stringify(body) }),
+  getAssistantThread: (id: string) => request<AssistantThreadDetail>(`/assistant/threads/${id}`),
+  assistantProviders: (projectId: string) =>
+    request<{ providers: AssistantProvider[] }>(`/assistant/providers?project_id=${projectId}`),
+  setThreadModel: (id: string, provider: string, model: string) =>
+    request<AssistantThread>(`/assistant/threads/${id}/model`, {
+      method: "POST",
+      body: JSON.stringify({ provider, model }),
+    }),
+  applyAction: (id: string) =>
+    request<{ status: string; result: string }>(`/assistant/actions/${id}/apply`, { method: "POST" }),
+  rejectAction: (id: string) =>
+    request<{ status: string }>(`/assistant/actions/${id}/reject`, { method: "POST" }),
+
+  /** Stream one assistant turn over SSE, dispatching each event to a handler. */
+  async assistantStream(
+    threadId: string,
+    message: string,
+    handlers: {
+      onDelta?: (text: string) => void;
+      onToolCall?: (c: { id: string; name: string; input: Record<string, unknown> }) => void;
+      onToolResult?: (r: { id: string; content: string; is_error: boolean }) => void;
+      onProposed?: (a: ProposedAction) => void;
+      onError?: (message: string) => void;
+    },
+    retry = true,
+  ): Promise<void> {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+    const res = await fetch(`/api/assistant/threads/${threadId}/message`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ message }),
+    });
+    if (res.status === 401 && retry && (await refresh())) {
+      return this.assistantStream(threadId, message, handlers, false);
+    }
+    if (!res.ok || !res.body) throw new Error(`assistant stream failed: ${res.status}`);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let idx: number;
+      while ((idx = buf.indexOf("\n\n")) >= 0) {
+        const frame = buf.slice(0, idx);
+        buf = buf.slice(idx + 2);
+        const event = frame.match(/^event: (.*)$/m)?.[1];
+        const data = frame.match(/^data: ([\s\S]*)$/m)?.[1];
+        if (data === undefined) continue;
+        if (event === "delta") handlers.onDelta?.(JSON.parse(data).text);
+        else if (event === "tool_call") handlers.onToolCall?.(JSON.parse(data));
+        else if (event === "tool_result") handlers.onToolResult?.(JSON.parse(data));
+        else if (event === "proposed_action") handlers.onProposed?.(JSON.parse(data));
+        else if (event === "error") handlers.onError?.(JSON.parse(data).message);
       }
     }
   },

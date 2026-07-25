@@ -16,6 +16,7 @@ from app.routers import (
     agent,
     analytics,
     apikeys,
+    assistant,
     auth,
     items,
     memory,
@@ -103,6 +104,7 @@ app.include_router(requests.router, prefix=API)
 app.include_router(memory.router, prefix=API)
 app.include_router(apikeys.router, prefix=API)
 app.include_router(agent.router, prefix=API)
+app.include_router(assistant.router, prefix=API)
 app.include_router(prds.router, prefix=API)
 app.include_router(analytics.router, prefix=API)
 app.include_router(platform.router, prefix=API)
