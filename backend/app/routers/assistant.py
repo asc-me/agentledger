@@ -5,8 +5,9 @@ SSE, and approve/reject the writes it proposes. The message loop ties the epic t
 the AL-172 tool-calling session (driven by the AL-176-resolved provider for the thread),
 the AL-173 tool surface, the AL-177 propose-then-approve executor, and AL-174 persistence.
 
-Per the AL-180 spike, tool-call turns run non-streaming; the assistant's text is emitted
-as `delta` events, tool activity as `tool_call` / `tool_result` / `proposed_action`.
+The assistant's text streams token-level as `delta` events (AL-183); tool-call arguments
+stay buffered for AL-180 parity, and tool activity surfaces as `tool_call` /
+`tool_result` / `proposed_action`.
 """
 from __future__ import annotations
 
@@ -92,6 +93,24 @@ def _thread_out(t) -> dict:
 
 def _sse(event: str, data: str) -> str:
     return f"event: {event}\ndata: {data}\n\n"
+
+
+def _run_turn(session, tools):
+    """One model turn, streamed when the session supports it (AL-183): forwards each text
+    delta as an SSE `delta` frame and returns the completed ToolTurn. Falls back to the
+    buffered `run_turn` (emitting the whole text as one delta) for sessions that can't
+    stream."""
+    if hasattr(session, "stream_turn"):
+        gen = session.stream_turn(tools)
+        try:
+            while True:
+                yield _sse("delta", json.dumps({"text": next(gen)}))
+        except StopIteration as stop:
+            return stop.value
+    turn = session.run_turn(tools)
+    if turn.text:
+        yield _sse("delta", json.dumps({"text": turn.text}))
+    return turn
 
 
 # ---- threads ----
@@ -196,7 +215,7 @@ def send_message(thread_id: str, body: MessageIn, db: Session = Depends(get_db),
         final_text, calls, results_log, proposals = "", [], [], []
         try:
             for _ in range(MAX_ITERS):
-                turn = session.run_turn(tools)
+                turn = yield from _run_turn(session, tools)  # text streams token-level here
                 if turn.usage:  # meter tokens per conversation
                     thread.input_tokens += turn.usage.get("input", 0)
                     thread.output_tokens += turn.usage.get("output", 0)
@@ -205,7 +224,6 @@ def send_message(thread_id: str, body: MessageIn, db: Session = Depends(get_db),
                         "thread_input": thread.input_tokens, "thread_output": thread.output_tokens}))
                 if turn.text:
                     final_text = turn.text
-                    yield _sse("delta", json.dumps({"text": turn.text}))
                 if not turn.wants_tools or not turn.tool_calls:
                     break
                 fed_back = []
