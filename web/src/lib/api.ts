@@ -41,6 +41,7 @@ import type {
   Project,
   RequestItem,
   RoadmapPhase,
+  ScoredCandidate,
   Shard,
   ShardHit,
   Status,
@@ -244,6 +245,8 @@ export const api = {
     request<Shard[]>(`/memory/candidates${projectId ? `?project_id=${projectId}` : ""}`),
   candidateClusters: (projectId?: string) =>
     request<ShardCluster[]>(`/memory/candidate-clusters${projectId ? `?project_id=${projectId}` : ""}`),
+  scoredCandidates: (projectId?: string) =>
+    request<ScoredCandidate[]>(`/memory/candidates/scored${projectId ? `?project_id=${projectId}` : ""}`),
   publishShard: (id: string) =>
     request<Shard>(`/memory/shards/${id}/publish`, { method: "POST" }),
   rejectShard: (id: string) =>

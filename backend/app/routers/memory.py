@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.db import get_db
 from app.models import MemoryShard, User
-from app.schemas import MemorySearchIn, ShardCreate, ShardHit, ShardOut
+from app.schemas import MemorySearchIn, ScoredCandidate, ShardCreate, ShardHit, ShardOut
 from app.security import authz
 from app.security.deps import get_current_user
 from app.services import events as events_svc
@@ -44,6 +44,28 @@ def list_candidates(
     """The review queue (AL-49): agent-written shards awaiting human publish."""
     authz.require_readable(db, user.id, project_id)
     return mem_svc.list_shards(db, project_id=project_id, status="candidate")
+
+
+@router.get("/candidates/scored", response_model=list[ScoredCandidate])
+def scored_candidates(
+    project_id: str | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """The review queue with advisory accept/reject suggestions (AL-151): each candidate
+    scored by similarity to trusted/rejected memory + recurrence, most actionable first.
+    Advisory only — publishing/rejecting is still the human's call."""
+    authz.require_readable(db, user.id, project_id)
+    return [
+        ScoredCandidate(
+            shard=ShardOut.model_validate(r["shard"]),
+            suggestion=r["suggestion"],
+            confidence=r["confidence"],
+            reasons=r["reasons"],
+            duplicate_of=r["duplicate_of"],
+        )
+        for r in mem_svc.score_candidates(db, project_id=project_id)
+    ]
 
 
 class ShardCluster(BaseModel):

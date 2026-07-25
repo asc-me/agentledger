@@ -1,8 +1,15 @@
 import { Check, Layers, Sparkles, X } from "lucide-react";
 
+import { cn } from "@/lib/cn";
 import { useProjectCtx } from "@/features/ProjectContext";
-import { useCandidateClusters, useCandidateShards, usePromoteCluster, useReviewShard } from "@/lib/queries";
-import type { Shard, ShardCluster } from "@/lib/types";
+import {
+  useCandidateClusters,
+  useCandidateShards,
+  usePromoteCluster,
+  useReviewShard,
+  useScoredCandidates,
+} from "@/lib/queries";
+import type { ReviewSuggestion, ScoredCandidate, Shard, ShardCluster } from "@/lib/types";
 
 /** AL-49: the review queue. Agent-written memory enters as a candidate and only
  *  reaches the trusted retrieval path once a human publishes it here.
@@ -12,6 +19,7 @@ export function MemoryReviewView() {
   const { activeId } = useProjectCtx();
   const { data: candidates, isLoading } = useCandidateShards(activeId);
   const { data: clusters } = useCandidateClusters(activeId);
+  const { data: scored } = useScoredCandidates(activeId);
   const { publish, reject } = useReviewShard();
   const promoteCluster = usePromoteCluster();
 
@@ -20,7 +28,11 @@ export function MemoryReviewView() {
   }
 
   const clustered = new Set((clusters ?? []).flatMap((c) => [c.representative.id, ...c.members.map((m) => m.id)]));
-  const loose = candidates.filter((s) => !clustered.has(s.id));
+  const scoreById = new Map((scored ?? []).map((s) => [s.shard.id, s]));
+  // Loose candidates ordered most-actionable first (highest suggestion confidence).
+  const loose = candidates
+    .filter((s) => !clustered.has(s.id))
+    .sort((a, b) => (scoreById.get(b.id)?.confidence ?? 0) - (scoreById.get(a.id)?.confidence ?? 0));
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -59,6 +71,7 @@ export function MemoryReviewView() {
               <CandidateCard
                 key={s.id}
                 shard={s}
+                score={scoreById.get(s.id)}
                 onPublish={() => publish.mutate(s.id)}
                 onReject={() => reject.mutate(s.id)}
                 busy={publish.isPending || reject.isPending}
@@ -71,28 +84,57 @@ export function MemoryReviewView() {
   );
 }
 
+// AL-151: advisory review suggestion — colour + label per suggestion category.
+const SUGGESTION_META: Record<ReviewSuggestion, { label: string; className: string }> = {
+  accept: { label: "suggest publish", className: "border-[#1c2620] bg-[rgba(95,208,122,0.1)] text-st-done" },
+  reject: { label: "suggest reject", className: "border-[rgba(255,107,107,0.3)] bg-[rgba(255,107,107,0.08)] text-st-blocked" },
+  review: { label: "needs a look", className: "border-line-2 bg-surface-3 text-muted" },
+};
+
 function CandidateCard({
   shard,
+  score,
   onPublish,
   onReject,
   busy,
 }: {
   shard: Shard;
+  score?: ScoredCandidate;
   onPublish: () => void;
   onReject: () => void;
   busy: boolean;
 }) {
+  const meta = score ? SUGGESTION_META[score.suggestion] : null;
   return (
     <div className="rounded-[12px] border border-line-2 bg-surface-2 p-3.5">
       <div className="mb-2 flex items-center gap-2">
         <Sparkles size={13} className="text-[#a78bfa]" />
         <span className="font-mono text-[10.5px] text-faint">{shard.origin || "agent"}</span>
         {shard.source && <span className="font-mono text-[10.5px] text-faint">· {shard.source}</span>}
-        <span className="ml-auto rounded border border-[#3a2f1a] bg-[rgba(224,179,74,0.08)] px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wide text-[#e0b34a]">
+        {meta && (
+          <span
+            title={score ? `${Math.round(score.confidence * 100)}% confidence` : undefined}
+            className={cn(
+              "ml-auto rounded border px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wide",
+              meta.className,
+            )}
+          >
+            {meta.label}
+          </span>
+        )}
+        <span
+          className={cn(
+            "rounded border border-[#3a2f1a] bg-[rgba(224,179,74,0.08)] px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wide text-[#e0b34a]",
+            !meta && "ml-auto",
+          )}
+        >
           candidate
         </span>
       </div>
-      <p className="mb-3 whitespace-pre-wrap text-[13px] leading-relaxed text-ink">{shard.text}</p>
+      <p className="mb-2 whitespace-pre-wrap text-[13px] leading-relaxed text-ink">{shard.text}</p>
+      {score && score.reasons.length > 0 && (
+        <p className="mb-3 text-[11.5px] text-faint">Why: {score.reasons.join(" · ")}</p>
+      )}
       <div className="flex items-center gap-2">
         <button
           onClick={onPublish}

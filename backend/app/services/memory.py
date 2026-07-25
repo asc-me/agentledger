@@ -103,6 +103,87 @@ def cluster_candidates(
     return clusters
 
 
+# --- Candidate scoring (AL-151) -------------------------------------------------
+# Similarity + heuristics over embeddings we already store — no LLM, works offline.
+_SIM_STRONG = 0.88     # corroborated by / clusters with trusted memory (matches cluster threshold)
+_SIM_DUP = 0.95        # near-identical → duplicate of an existing published shard
+_SIM_REJECTED = 0.85   # resembles something a human already rejected
+
+
+def _best_match(vec: list[float], pool: list[tuple[MemoryShard, list[float]]]) -> tuple[MemoryShard | None, float]:
+    """The most-similar shard in `pool` and its cosine score (0.0 if the pool is empty)."""
+    best, score = None, 0.0
+    for shard, svec in pool:
+        sim = cosine_similarity(vec, svec)
+        if sim > score:
+            best, score = shard, sim
+    return best, score
+
+
+def score_candidates(db: Session, *, project_id: str | None = None) -> list[dict]:
+    """Advisory accept/reject suggestions for the review queue (AL-151).
+
+    For each candidate, compare its embedding against the trusted (`published`) and
+    vetoed (`rejected`) pools and its own recurrence (clusters), then emit a suggestion
+    (`accept` | `reject` | `review`), a confidence, and human-readable reasons. Never
+    mutates and never auto-publishes — the AL-49 human boundary holds. Sorted most
+    actionable first (highest confidence), so obvious accepts/dupes rise to the top.
+
+    Similarity-only, so it degrades to noise (not an error) when embeddings are the
+    offline stub — it needs no chat provider."""
+    cands = [s for s in list_shards(db, project_id=project_id, status="candidate") if s.embedding is not None]
+    published = [(s, list(s.embedding)) for s in list_shards(db, project_id=project_id, status="published") if s.embedding is not None]
+    rejected = [(s, list(s.embedding)) for s in list_shards(db, project_id=project_id, status="rejected") if s.embedding is not None]
+
+    # Recurrence: how many candidates each one clusters with (reuse AL-50 clustering).
+    cluster_size: dict[str, int] = {}
+    for group in cluster_candidates(db, project_id=project_id):
+        for s in group:
+            cluster_size[s.id] = len(group)
+
+    out: list[dict] = []
+    for c in cands:
+        cv = list(c.embedding)
+        best_pub, corr = _best_match(cv, published)
+        _, rej = _best_match(cv, rejected)
+        support = cluster_size.get(c.id, 1)
+        human_derived = c.origin.startswith("user:") or "grill" in c.origin
+        reasons: list[str] = []
+        duplicate_of: str | None = None
+
+        # Vetoes (rejection resemblance, duplication) win over accept signals.
+        if rej >= _SIM_REJECTED:
+            suggestion, confidence = "reject", rej
+            reasons.append(f"resembles a previously rejected shard ({rej:.0%})")
+        elif corr >= _SIM_DUP and best_pub is not None:
+            suggestion, confidence = "reject", corr
+            duplicate_of = best_pub.id
+            reasons.append(f"near-duplicate of published {best_pub.id} ({corr:.0%}) — merge candidate")
+        elif support >= 2 or corr >= _SIM_STRONG:
+            suggestion = "accept"
+            confidence = min(1.0, max(corr, 0.6 + 0.1 * support) + (0.1 if human_derived else 0.0))
+            if support >= 2:
+                reasons.append(f"recurs across {support} candidates")
+            if corr >= _SIM_STRONG and best_pub is not None:
+                reasons.append(f"corroborated by trusted {best_pub.id} ({corr:.0%})")
+            if human_derived:
+                reasons.append("from a human-reviewed decision")
+        else:
+            suggestion, confidence = "review", 0.3
+            reasons.append("novel — no strong signal either way")
+
+        out.append({
+            "shard": c,
+            "suggestion": suggestion,
+            "confidence": round(confidence, 3),
+            "reasons": reasons,
+            "duplicate_of": duplicate_of,
+        })
+
+    out.sort(key=lambda r: r["confidence"], reverse=True)
+    return out
+
+
 def set_status(db: Session, shard_id: str, status: str) -> MemoryShard | None:
     """Promote (→published) or reject (→rejected) a candidate shard (AL-49)."""
     if status not in ("candidate", "published", "rejected"):
