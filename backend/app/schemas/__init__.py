@@ -232,6 +232,7 @@ class ItemUpdate(BaseModel):
     touchpoints: list[str] | None = None
     prd_id: str | None = None
     prd_section: str | None = None
+    evidence: list[dict] | None = None  # proof-on-done receipts (AL-53)
 
 
 class ReorderIn(BaseModel):
@@ -253,6 +254,7 @@ class ItemOut(ORMModel):
     reporter: dict
     pr: dict | None
     github_url: str = ""
+    evidence: list[dict] = []
     assignee: str = ""
     claimed_by: str | None = None
     prd_id: str | None = None
@@ -261,7 +263,7 @@ class ItemOut(ORMModel):
     created_at: datetime
     updated_at: datetime
 
-    @field_validator("touchpoints", mode="before")
+    @field_validator("touchpoints", "evidence", mode="before")
     @classmethod
     def _tp_default(cls, v):
         return v or []

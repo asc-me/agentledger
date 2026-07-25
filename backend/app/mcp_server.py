@@ -109,6 +109,20 @@ TOOLS: list[dict[str, Any]] = [
                              "description": "`low` or `high` (needs a prototype first)."},
                 "prd_id": {"type": "string"},
                 "prd_section": {"type": "string"},
+                "evidence": {
+                    "type": "array",
+                    "description": "Proof-on-done receipts — match evidence to the completion claim. "
+                                   "Attach when marking an item done: a test-run summary, a URL, a "
+                                   "screenshot ref, or a deployed-health check.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "kind": {"type": "string", "enum": ["test", "url", "screenshot", "health", "note"]},
+                            "detail": {"type": "string", "description": "Short human-readable summary of the proof."},
+                            "url": {"type": "string", "description": "Optional link to the artifact (CI run, PR, deploy)."},
+                        },
+                    },
+                },
             },
             "required": ["id"],
         },
@@ -539,6 +553,7 @@ _ITEM_SCHEMA = {
         "prd_id": _NULLABLE_STR,
         "prd_section": _STR,
         "fidelity": {"type": "string", "enum": _FIDELITY_ENUM},
+        "evidence": {"type": "array", "items": {"type": "object"}},
     },
 }
 _SHARD_SCHEMA = {
@@ -816,6 +831,7 @@ def _item_dict(item) -> dict:
         "prd_id": item.prd_id,
         "prd_section": item.prd_section,
         "fidelity": item.fidelity,
+        "evidence": item.evidence or [],
     }
 
 
@@ -991,6 +1007,7 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
             touchpoints=args.get("touchpoints"),
             prd_id=args.get("prd_id"),
             prd_section=args.get("prd_section"),
+            evidence=args.get("evidence"),
         )
         if item is None:
             raise errors.NotFound(f"item not found: {args['id']}")
@@ -1207,14 +1224,18 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
 def _audit_tool(db: Session, key: ApiKey, name: str, result: Any) -> None:
     """Best-effort audit of an accepted agent mutation. Pulls the target id and
     project from the tool result where present (most write tools echo them)."""
-    target_id, project_id = "", None
+    target_id, project_id, meta = "", None, None
     if isinstance(result, dict):
         target_id = str(result.get("id") or result.get("request_id") or "")
         project_id = result.get("project_id")
+        # Proof-on-done (AL-53): carry the receipts into the ledger so a completion
+        # is auditable against its evidence, not just its green check.
+        if result.get("evidence"):
+            meta = {"status": result.get("status"), "evidence": result["evidence"]}
     events_svc.record_key(
         db, key, action=name,
         target_type="item" if name in _ITEM_WRITE_TOOLS else "",
-        target_id=target_id, project_id=project_id,
+        target_id=target_id, project_id=project_id, meta=meta,
     )
 
 
