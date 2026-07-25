@@ -561,3 +561,44 @@ class Event(Base):
     target_id: Mapped[str] = mapped_column(String, default="")
     project_id: Mapped[str | None] = mapped_column(ForeignKey("projects.id"), nullable=True, index=True)
     meta: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
+class AssistantThread(Base):
+    """A conversation with the in-app AI assistant, scoped to one item or PRD (AL-174).
+
+    Threads give brainstorming continuity across sessions and a durable record of what
+    the assistant proposed and whether it was applied. `provider`/`model` pin which model
+    drives the thread (AL-176 model picker)."""
+    __tablename__ = "assistant_threads"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # th_...
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    entity_type: Mapped[str] = mapped_column(String)  # item | prd
+    entity_id: Mapped[str] = mapped_column(String, index=True)
+    provider: Mapped[str] = mapped_column(String, default="")
+    model: Mapped[str] = mapped_column(String, default="")
+    title: Mapped[str] = mapped_column(String, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    messages: Mapped[list[AssistantMessage]] = relationship(
+        back_populates="thread", cascade="all, delete-orphan", order_by="AssistantMessage.seq")
+
+
+class AssistantMessage(Base):
+    """One ordered turn in an AssistantThread. Carries plain content plus the structured
+    tool-calling record (calls the model made, results fed back) and any staged
+    proposed-actions with their approval status (AL-177 fills in the approval flow)."""
+    __tablename__ = "assistant_messages"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # msg_...
+    thread_id: Mapped[str] = mapped_column(ForeignKey("assistant_threads.id"), index=True)
+    seq: Mapped[int] = mapped_column(Integer)  # ordering within the thread
+    role: Mapped[str] = mapped_column(String)  # user | assistant | tool
+    content: Mapped[str] = mapped_column(Text, default="")
+    tool_calls: Mapped[list] = mapped_column(JSON, default=list)       # [{id, name, input}]
+    tool_results: Mapped[list] = mapped_column(JSON, default=list)     # [{id, content, is_error}]
+    proposed_actions: Mapped[list] = mapped_column(JSON, default=list) # staged writes + status (AL-177)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    thread: Mapped[AssistantThread] = relationship(back_populates="messages")
