@@ -62,6 +62,11 @@ class StubChat:
             def run_turn(self, tools):
                 return ToolTurn(text=reply, tool_calls=[], wants_tools=False)
 
+            def stream_turn(self, tools):  # emit in chunks to simulate a token stream (AL-183)
+                for i in range(0, len(reply), 24):
+                    yield reply[i : i + 24]
+                return ToolTurn(text=reply, tool_calls=[], wants_tools=False)
+
             def add_results(self, results):  # never reached (wants_tools is always False)
                 pass
 

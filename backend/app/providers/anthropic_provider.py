@@ -89,6 +89,31 @@ class AnthropicToolSession:
                         usage={"input": getattr(usage, "input_tokens", 0),
                                "output": getattr(usage, "output_tokens", 0)} if usage else None)
 
+    def stream_turn(self, tools: list[ToolSpec]):
+        """Streaming run_turn (AL-183): yield text deltas, then return the ToolTurn.
+        text_stream carries only text; tool_use blocks + usage + stop_reason come from
+        the buffered final message, so tool-call parsing stays identical to run_turn."""
+        text_parts: list[str] = []
+        with _client(self._chat.api_key).messages.stream(
+            model=self._chat.model,
+            max_tokens=_MAX_TOKENS,
+            system=self.system,
+            tools=[{"name": t.name, "description": t.description, "input_schema": t.input_schema} for t in tools],
+            messages=self.messages,
+        ) as s:
+            for delta in s.text_stream:
+                text_parts.append(delta)
+                yield delta
+            message = s.get_final_message()
+        self.messages.append({"role": "assistant", "content": message.content})
+        calls = [ToolCall(id=b.id, name=b.name, input=dict(b.input))
+                 for b in message.content if getattr(b, "type", None) == "tool_use"]
+        usage = getattr(message, "usage", None)
+        return ToolTurn(text="".join(text_parts), tool_calls=calls,
+                        wants_tools=message.stop_reason == "tool_use",
+                        usage={"input": getattr(usage, "input_tokens", 0),
+                               "output": getattr(usage, "output_tokens", 0)} if usage else None)
+
     def add_results(self, results: list[ToolResult]) -> None:
         # Anthropic: a SINGLE user message carrying all tool_result blocks.
         self.messages.append({"role": "user", "content": [

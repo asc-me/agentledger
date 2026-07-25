@@ -6,9 +6,11 @@ wire format (OpenAI function calling vs Anthropic native tools) behind a `ToolSe
 the driver here is provider-neutral. Design + parity proof: the AL-180 spike
 (docs/spikes/al-180-tool-calling-parity.md).
 
-Tool-call turns run NON-streaming (buffer the whole turn, then translate) — the two
-providers fragment streaming tool-call arguments differently, so buffering is the
-low-risk parity choice; only the final assistant text is streamed by callers.
+Tool-call *arguments* are always buffered — the two providers fragment streaming
+tool-call arguments differently, so a session assembles them from fragments and decodes
+once complete (the AL-180 parity choice). Assistant *text*, by contrast, can be streamed
+token-level via the optional `stream_turn` (AL-183); `run_turn` remains the buffered
+variant for non-SSE callers (run_tool_loop).
 """
 from __future__ import annotations
 
@@ -66,6 +68,13 @@ class ToolSession(Protocol):
 
     def add_results(self, results: list[ToolResult]) -> None:
         """Append tool results to history in the provider's expected shape."""
+        ...
+
+    def stream_turn(self, tools: list[ToolSpec]):
+        """Optional streaming variant of `run_turn` (AL-183): a GENERATOR that yields
+        assistant text deltas (str) as they arrive and RETURNS the normalized `ToolTurn`
+        via `StopIteration.value` (tool_calls + usage assembled from the buffered turn).
+        Adapters that can't stream may omit this; SSE callers fall back to `run_turn`."""
         ...
 
 

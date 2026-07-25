@@ -68,21 +68,32 @@ class OpenAICompatChat:
                 if delta:
                     yield delta
 
+    def _tool_defs(self, tools: list[ToolSpec]) -> list[dict]:
+        return [
+            {"type": "function",
+             "function": {"name": t.name, "description": t.description, "parameters": t.input_schema}}
+            for t in tools
+        ]
+
     def _complete(self, messages: list[dict], tools: list[ToolSpec]) -> dict:
         """Non-streaming completion advertising `tools` — the tool-call turn (AL-172).
         Buffered on purpose: OpenAI streams tool-call arguments as partial fragments,
         so parity with Anthropic is simpler off the stream."""
         body: dict = {"model": self.model, "messages": messages}
         if tools:
-            body["tools"] = [
-                {"type": "function",
-                 "function": {"name": t.name, "description": t.description, "parameters": t.input_schema}}
-                for t in tools
-            ]
+            body["tools"] = self._tool_defs(tools)
         r = httpx.post(f"{self.base_url}/chat/completions", headers=self._headers(),
                        json=body, timeout=_timeout())
         r.raise_for_status()
         return r.json()
+
+    def _stream_body(self, messages: list[dict], tools: list[ToolSpec]) -> dict:
+        # include_usage asks for a final usage-only chunk (AL-179 token metering while streaming).
+        body: dict = {"model": self.model, "messages": messages, "stream": True,
+                      "stream_options": {"include_usage": True}}
+        if tools:
+            body["tools"] = self._tool_defs(tools)
+        return body
 
     def tool_session(self, *, system: str, context: str, question: str) -> "OpenAICompatToolSession":
         return OpenAICompatToolSession(self, system, context, question)
@@ -113,6 +124,68 @@ class OpenAICompatToolSession:
                         wants_tools=choice.get("finish_reason") == "tool_calls",
                         usage={"input": u.get("prompt_tokens", 0), "output": u.get("completion_tokens", 0)}
                         if u else None)
+
+    def stream_turn(self, tools: list[ToolSpec]):
+        """Streaming run_turn (AL-183): yield content deltas; assemble fragmented
+        tool_call arguments by index and decode ONLY once fully buffered — so the
+        text streams token-level while tool-call parsing keeps AL-180 parity."""
+        text_parts: list[str] = []
+        frags: dict[int, dict] = {}  # index -> {id, name, args}
+        usage, finish = None, None
+        with httpx.stream("POST", f"{self._chat.base_url}/chat/completions",
+                          headers=self._chat._headers(),
+                          json=self._chat._stream_body(self.messages, tools),
+                          timeout=_timeout()) as r:
+            r.raise_for_status()
+            for line in r.iter_lines():
+                if not line or not line.startswith("data:"):
+                    continue
+                data = line[len("data:"):].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
+                if chunk.get("usage"):  # the include_usage tail chunk (choices empty)
+                    usage = chunk["usage"]
+                if not (chunk.get("choices") or []):
+                    continue
+                choice = chunk["choices"][0]
+                delta = choice.get("delta") or {}
+                if delta.get("content"):
+                    text_parts.append(delta["content"])
+                    yield delta["content"]
+                for tc in delta.get("tool_calls") or []:
+                    frag = frags.setdefault(tc.get("index", 0), {"id": "", "name": "", "args": ""})
+                    if tc.get("id"):
+                        frag["id"] = tc["id"]
+                    fn = tc.get("function") or {}
+                    if fn.get("name"):
+                        frag["name"] = fn["name"]
+                    if fn.get("arguments"):
+                        frag["args"] += fn["arguments"]  # partial fragments — concatenate
+                if choice.get("finish_reason"):
+                    finish = choice["finish_reason"]
+        # Echo the assembled assistant turn into history (OpenAI needs its tool_calls back).
+        assembled = [{"id": f["id"], "type": "function",
+                      "function": {"name": f["name"], "arguments": f["args"]}}
+                     for _, f in sorted(frags.items())]
+        msg: dict = {"role": "assistant", "content": "".join(text_parts) or None}
+        if assembled:
+            msg["tool_calls"] = assembled
+        self.messages.append(msg)
+        calls = []
+        for f in assembled:
+            try:  # arguments is a JSON *string* — decode once whole
+                args = json.loads(f["function"]["arguments"] or "{}")
+            except json.JSONDecodeError:
+                args = {}
+            calls.append(ToolCall(id=f["id"], name=f["function"]["name"], input=args))
+        return ToolTurn(text="".join(text_parts), tool_calls=calls,
+                        wants_tools=finish == "tool_calls",
+                        usage={"input": usage.get("prompt_tokens", 0), "output": usage.get("completion_tokens", 0)}
+                        if usage else None)
 
     def add_results(self, results: list[ToolResult]) -> None:
         for r in results:
