@@ -148,6 +148,13 @@ def tool_kind(name: str) -> str | None:
     return tool.kind if tool else None
 
 
+def is_available(ctx: ToolContext, name: str) -> bool:
+    """Whether a tool exists and applies to this thread's entity type — lets the approval
+    engine (AL-177) validate a staged write without executing it."""
+    tool = _TOOLS.get(name)
+    return bool(tool) and (not tool.entity_types or ctx.entity_type in tool.entity_types)
+
+
 def dispatch(ctx: ToolContext, call: ToolCall) -> ToolResult:
     """Run a tool call, scoped + authz-gated. Never raises — failures come back as an
     `is_error` result so the model can self-correct."""
