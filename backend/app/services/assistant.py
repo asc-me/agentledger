@@ -49,6 +49,19 @@ def get_thread(db: Session, thread_id: str) -> AssistantThread | None:
     return db.get(AssistantThread, thread_id)
 
 
+def set_thread_model(db: Session, thread_id: str, *, provider: str, model: str = "") -> AssistantThread | None:
+    """Pick the provider/model that drives a thread (AL-176 model picker)."""
+    thread = db.get(AssistantThread, thread_id)
+    if thread is None:
+        return None
+    thread.provider = provider
+    thread.model = model
+    thread.updated_at = utcnow()
+    db.commit()
+    db.refresh(thread)
+    return thread
+
+
 def list_threads(
     db: Session, *, project_id: str, entity_type: str | None = None, entity_id: str | None = None
 ) -> list[AssistantThread]:

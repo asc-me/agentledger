@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings as app_settings
 from app import providers
+from app.providers import registry as provider_registry
 from app.providers.base import ChatModel, Extractor
 from app.models import PlatformConfig
 from app.security import secrets
@@ -104,6 +105,52 @@ def chat_model_for(db: Session, project_id: str) -> ChatModel:
 def extractor_for(db: Session, project_id: str) -> Extractor:
     provider, base_url, api_key, model = _chat_params(get_config(db, project_id))
     return providers.build_extractor(provider, base_url=base_url, api_key=api_key, model=model)
+
+
+# ---- Per-conversation model picker (AL-176) --------------------------------------------
+# The assistant lets each thread pick its OWN provider (chat with Claude on one, Grok on
+# another) independent of the project's single active chat provider — extends the
+# per-project resolution above to an arbitrary configured provider.
+def _provider_params_for(cfg: PlatformConfig, provider_id: str) -> tuple[str, str, str, str]:
+    pconf = (cfg.providers or {}).get(provider_id, {})
+    return (provider_id, pconf.get("base_url", ""), secrets.decrypt(pconf.get("api_key", "")),
+            pconf.get("chat_model", ""))
+
+
+def resolve_chat_for(db: Session, project_id: str, provider_id: str) -> tuple[str, ChatModel]:
+    """(provider_id, chat model) for a SPECIFIC provider a thread chose — not the project's
+    active one. An unconfigured / stub pick resolves to the offline stub."""
+    provider, base_url, api_key, model = _provider_params_for(get_config(db, project_id), provider_id)
+    return provider, providers.build_chat(provider, base_url=base_url, api_key=api_key, model=model)
+
+
+def _is_configured(cfg: PlatformConfig, prov: dict) -> bool:
+    """A provider is selectable for the assistant only if it's actually usable: the offline
+    stub can't drive tool-calling; Ollama needs an endpoint; the rest need a key."""
+    pconf = (cfg.providers or {}).get(prov["id"], {})
+    if prov["kind"] == "stub":
+        return False
+    if prov["kind"] == "ollama":
+        return bool(pconf.get("base_url") or prov.get("base_url"))
+    return bool(pconf.get("api_key"))
+
+
+def selectable_providers(db: Session, project_id: str) -> list[dict]:
+    """The provider catalog for the assistant's model picker: each real provider with
+    whether it's `configured` (selectable) and whether it's the project's `active` one.
+    The UI disables unconfigured picks with a pointer to Settings."""
+    cfg = get_config(db, project_id)
+    out = []
+    for prov in provider_registry.PROVIDERS:
+        if prov["kind"] == "stub":
+            continue  # the offline stub is never an assistant model
+        out.append({
+            "id": prov["id"], "label": prov["label"], "kind": prov["kind"],
+            "chat_model": (cfg.providers or {}).get(prov["id"], {}).get("chat_model") or prov["chat_model"],
+            "configured": _is_configured(cfg, prov),
+            "active": prov["id"] == cfg.active_chat_provider,
+        })
+    return out
 
 
 _LLM_FIELDS = {
