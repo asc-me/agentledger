@@ -96,7 +96,8 @@ class OpenAICompatToolSession:
         self.messages: list[dict] = _messages(system, context, question)
 
     def run_turn(self, tools: list[ToolSpec]) -> ToolTurn:
-        choice = self._chat._complete(self.messages, tools)["choices"][0]
+        resp = self._chat._complete(self.messages, tools)
+        choice = resp["choices"][0]
         msg = choice.get("message", {})
         self.messages.append(msg)  # echo the assistant turn verbatim (keeps its tool_calls)
         calls = []
@@ -107,8 +108,11 @@ class OpenAICompatToolSession:
             except json.JSONDecodeError:
                 args = {}
             calls.append(ToolCall(id=tc.get("id", ""), name=fn.get("name", ""), input=args))
+        u = resp.get("usage") or {}
         return ToolTurn(text=msg.get("content") or "", tool_calls=calls,
-                        wants_tools=choice.get("finish_reason") == "tool_calls")
+                        wants_tools=choice.get("finish_reason") == "tool_calls",
+                        usage={"input": u.get("prompt_tokens", 0), "output": u.get("completion_tokens", 0)}
+                        if u else None)
 
     def add_results(self, results: list[ToolResult]) -> None:
         for r in results:

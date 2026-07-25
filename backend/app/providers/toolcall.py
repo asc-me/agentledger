@@ -51,6 +51,7 @@ class ToolTurn:
     text: str = ""
     tool_calls: list[ToolCall] = field(default_factory=list)
     wants_tools: bool = False  # provider's stop signal, normalized (tool_calls / tool_use)
+    usage: dict | None = None  # {input, output} token counts when the provider reports them (AL-179)
 
 
 @runtime_checkable

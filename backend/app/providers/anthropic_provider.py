@@ -83,8 +83,11 @@ class AnthropicToolSession:
                 text.append(block.text)
             elif btype == "tool_use":
                 calls.append(ToolCall(id=block.id, name=block.name, input=dict(block.input)))
+        usage = getattr(message, "usage", None)
         return ToolTurn(text="".join(text), tool_calls=calls,
-                        wants_tools=message.stop_reason == "tool_use")
+                        wants_tools=message.stop_reason == "tool_use",
+                        usage={"input": getattr(usage, "input_tokens", 0),
+                               "output": getattr(usage, "output_tokens", 0)} if usage else None)
 
     def add_results(self, results: list[ToolResult]) -> None:
         # Anthropic: a SINGLE user message carrying all tool_result blocks.
