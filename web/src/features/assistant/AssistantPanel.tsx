@@ -10,14 +10,36 @@ import type { AssistantProvider, ProposedAction } from "@/lib/types";
  *  approve (the AL-177 propose-then-approve guarantee). */
 type Msg = { role: "user" | "assistant"; content: string; proposed: ProposedAction[] };
 
+// Per-surface one-tap prompts that seed the conversation (AL-178) — preset opening
+// messages, not new backend logic. Items split by whether they're tagged a bug.
+const INTENTS = {
+  bug: [
+    ["Triage", "Triage this bug: likely severity, probable cause, and the next step."],
+    ["Find duplicates", "Search for duplicate or closely related items and list them."],
+    ["Propose repro", "Propose a minimal, concrete reproduction for this bug."],
+  ],
+  ticket: [
+    ["Refine", "Refine this into a crisp, buildable spec — clarify scope and acceptance criteria."],
+    ["Estimate", "Estimate the effort and flag the main risks."],
+    ["Split", "Split this into smaller, independently shippable tasks."],
+  ],
+  prd: [
+    ["Brainstorm", "Brainstorm what's missing or underspecified in this PRD."],
+    ["Draft risks", "Draft a 'Risks & Open Questions' section for this PRD."],
+    ["Decompose", "Decompose this PRD into implementable tasks."],
+  ],
+} as const;
+
 export function AssistantPanel({
   entityType,
   entityId,
   projectId,
+  entityTags = [],
 }: {
   entityType: "item" | "prd";
   entityId: string;
   projectId: string;
+  entityTags?: string[];
 }) {
   const [threadId, setThreadId] = React.useState<string | null>(null);
   const [messages, setMessages] = React.useState<Msg[]>([]);
@@ -58,8 +80,12 @@ export function AssistantPanel({
     return t.id;
   }
 
-  async function send() {
-    const text = draft.trim();
+  const intents = entityType === "prd"
+    ? INTENTS.prd
+    : entityTags.map((t) => t.toLowerCase()).includes("bug") ? INTENTS.bug : INTENTS.ticket;
+
+  async function send(override?: string) {
+    const text = (override ?? draft).trim();
     if (!text || streaming) return;
     setDraft("");
     setMessages((m) => [...m, { role: "user", content: text, proposed: [] },
@@ -116,9 +142,23 @@ export function AssistantPanel({
 
       <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
         {messages.length === 0 && (
-          <p className="mt-6 text-center text-[12.5px] text-faint">
-            Brainstorm or review this {entityType}. The assistant can propose changes — you approve them.
-          </p>
+          <div className="mt-6 text-center">
+            <p className="text-[12.5px] text-faint">
+              Brainstorm or review this {entityType}. The assistant can propose changes — you approve them.
+            </p>
+            <div className="mt-3 flex flex-wrap justify-center gap-1.5">
+              {intents.map(([label, prompt]) => (
+                <button
+                  key={label}
+                  onClick={() => send(prompt)}
+                  disabled={streaming}
+                  className="rounded-full border border-line-2 bg-surface-2 px-2.5 py-1 text-[11.5px] text-muted transition-colors hover:border-line-hover hover:text-fg-2 disabled:opacity-50"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
         )}
         {messages.map((m, mi) => (
           <div key={mi} className="flex gap-2">
@@ -168,7 +208,7 @@ export function AssistantPanel({
           className="min-h-0 flex-1 resize-none rounded-[10px] border border-line-2 bg-surface-2 px-3 py-2 text-[12.5px] text-fg-2 outline-none focus:border-line-hover"
         />
         <button
-          onClick={send}
+          onClick={() => send()}
           disabled={streaming || !draft.trim()}
           className="flex-none rounded-lg bg-accent p-2 text-ink disabled:opacity-40"
         >
