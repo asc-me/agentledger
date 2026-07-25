@@ -143,20 +143,33 @@ def test_read_only_user_cannot_apply(client, auth, monkeypatch):
 
 def test_ollama_thread_does_not_500(client, auth, monkeypatch):
     """AL-184: an Ollama-backed thread used to crash (OllamaChat had no tool_session).
-    It now streams through Ollama's OpenAI-compatible endpoint."""
+    It now streams through Ollama's OpenAI-compatible endpoint — over the AL-183 token
+    stream, so the transport we mock is httpx.stream (not the buffered httpx.post)."""
     from app.providers import openai_compat
 
     client.patch("/api/platform", json={"providers": {
         "ollama": {"base_url": "http://ollama.local:11434", "chat_model": "qwen2.5-coder"}}}, headers=auth)
 
-    class _R:
+    lines = [
+        'data: {"choices":[{"delta":{"content":"Hi from Ollama."}}]}',
+        'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}',
+        "data: [DONE]",
+    ]
+
+    class _Stream:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
         def raise_for_status(self):
             pass
 
-        def json(self):
-            return {"choices": [{"finish_reason": "stop", "message": {"content": "Hi from Ollama."}}]}
+        def iter_lines(self):
+            yield from lines
 
-    monkeypatch.setattr(openai_compat.httpx, "post", lambda *a, **k: _R())
+    monkeypatch.setattr(openai_compat.httpx, "stream", lambda *a, **k: _Stream())
 
     t = client.post("/api/assistant/threads", json={
         "project_id": "core", "entity_type": "item", "entity_id": "AL-08", "provider": "ollama"},
