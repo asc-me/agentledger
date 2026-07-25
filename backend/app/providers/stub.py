@@ -50,6 +50,23 @@ class StubChat:
         for i in range(0, len(reply), 24):  # emit in chunks to simulate token stream
             yield reply[i : i + 24]
 
+    def tool_session(self, *, system: str, context: str, question: str):
+        """No-op tool session (AL-172): the offline stub can't call tools, so it answers
+        in one text-only turn and the driver terminates immediately — graceful
+        degradation when no real provider is configured."""
+        from app.providers.toolcall import ToolTurn
+
+        reply = self.chat(system=system, context=context, question=question)
+
+        class _StubToolSession:
+            def run_turn(self, tools):
+                return ToolTurn(text=reply, tool_calls=[], wants_tools=False)
+
+            def add_results(self, results):  # never reached (wants_tools is always False)
+                pass
+
+        return _StubToolSession()
+
 
 class StubExtractor:
     """Heuristic lesson extraction: pull decision/learning-flavored sentences."""

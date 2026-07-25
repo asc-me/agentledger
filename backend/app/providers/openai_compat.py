@@ -9,6 +9,7 @@ import json
 import httpx
 
 from app.config import settings
+from app.providers.toolcall import ToolCall, ToolResult, ToolSpec, ToolTurn
 
 
 def _timeout() -> httpx.Timeout:
@@ -66,6 +67,54 @@ class OpenAICompatChat:
                     continue
                 if delta:
                     yield delta
+
+    def _complete(self, messages: list[dict], tools: list[ToolSpec]) -> dict:
+        """Non-streaming completion advertising `tools` — the tool-call turn (AL-172).
+        Buffered on purpose: OpenAI streams tool-call arguments as partial fragments,
+        so parity with Anthropic is simpler off the stream."""
+        body: dict = {"model": self.model, "messages": messages}
+        if tools:
+            body["tools"] = [
+                {"type": "function",
+                 "function": {"name": t.name, "description": t.description, "parameters": t.input_schema}}
+                for t in tools
+            ]
+        r = httpx.post(f"{self.base_url}/chat/completions", headers=self._headers(),
+                       json=body, timeout=_timeout())
+        r.raise_for_status()
+        return r.json()
+
+    def tool_session(self, *, system: str, context: str, question: str) -> "OpenAICompatToolSession":
+        return OpenAICompatToolSession(self, system, context, question)
+
+
+class OpenAICompatToolSession:
+    """Owns the OpenAI-format message history for one tool-calling conversation."""
+
+    def __init__(self, chat: OpenAICompatChat, system: str, context: str, question: str):
+        self._chat = chat
+        self.messages: list[dict] = _messages(system, context, question)
+
+    def run_turn(self, tools: list[ToolSpec]) -> ToolTurn:
+        choice = self._chat._complete(self.messages, tools)["choices"][0]
+        msg = choice.get("message", {})
+        self.messages.append(msg)  # echo the assistant turn verbatim (keeps its tool_calls)
+        calls = []
+        for tc in msg.get("tool_calls") or []:
+            fn = tc.get("function", {})
+            try:  # arguments is a JSON *string* — decode at the boundary
+                args = json.loads(fn.get("arguments") or "{}")
+            except json.JSONDecodeError:
+                args = {}
+            calls.append(ToolCall(id=tc.get("id", ""), name=fn.get("name", ""), input=args))
+        return ToolTurn(text=msg.get("content") or "", tool_calls=calls,
+                        wants_tools=choice.get("finish_reason") == "tool_calls")
+
+    def add_results(self, results: list[ToolResult]) -> None:
+        for r in results:
+            # OpenAI: one role:"tool" message per result. No error flag — mark it in text.
+            content = f"ERROR: {r.content}" if r.is_error else r.content
+            self.messages.append({"role": "tool", "tool_call_id": r.id, "content": content})
 
 
 class OpenAICompatExtractor:

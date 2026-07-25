@@ -6,6 +6,7 @@ the standard ANTHROPIC_API_KEY env var. Model defaults to claude-opus-4-8.
 from __future__ import annotations
 
 from app.config import settings
+from app.providers.toolcall import ToolCall, ToolResult, ToolSpec, ToolTurn
 
 _MAX_TOKENS = 1024
 
@@ -50,6 +51,47 @@ class AnthropicChat:
             ],
         ) as s:
             yield from s.text_stream
+
+    def tool_session(self, *, system: str, context: str, question: str) -> "AnthropicToolSession":
+        return AnthropicToolSession(self, system, context, question)
+
+
+class AnthropicToolSession:
+    """Owns the Anthropic-format message history for one tool-calling conversation."""
+
+    def __init__(self, chat: AnthropicChat, system: str, context: str, question: str):
+        self._chat = chat
+        self.system = system
+        self.messages: list[dict] = [
+            {"role": "user", "content": f"Project context:\n{context}\n\nQuestion: {question}"}
+        ]
+
+    def run_turn(self, tools: list[ToolSpec]) -> ToolTurn:
+        message = _client(self._chat.api_key).messages.create(
+            model=self._chat.model,
+            max_tokens=_MAX_TOKENS,
+            system=self.system,
+            tools=[{"name": t.name, "description": t.description, "input_schema": t.input_schema} for t in tools],
+            messages=self.messages,
+        )
+        # Echo the assistant turn's content blocks verbatim (the documented replay pattern).
+        self.messages.append({"role": "assistant", "content": message.content})
+        text, calls = [], []
+        for block in message.content:
+            btype = getattr(block, "type", None)
+            if btype == "text":
+                text.append(block.text)
+            elif btype == "tool_use":
+                calls.append(ToolCall(id=block.id, name=block.name, input=dict(block.input)))
+        return ToolTurn(text="".join(text), tool_calls=calls,
+                        wants_tools=message.stop_reason == "tool_use")
+
+    def add_results(self, results: list[ToolResult]) -> None:
+        # Anthropic: a SINGLE user message carrying all tool_result blocks.
+        self.messages.append({"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": r.id, "content": r.content, "is_error": r.is_error}
+            for r in results
+        ]})
 
 
 class AnthropicExtractor:
