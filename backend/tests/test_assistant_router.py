@@ -141,6 +141,35 @@ def test_read_only_user_cannot_apply(client, auth, monkeypatch):
     assert client.post(f"/api/assistant/actions/{action['id']}/apply", headers=ops).status_code == 403
 
 
+def test_ollama_thread_does_not_500(client, auth, monkeypatch):
+    """AL-184: an Ollama-backed thread used to crash (OllamaChat had no tool_session).
+    It now streams through Ollama's OpenAI-compatible endpoint."""
+    from app.providers import openai_compat
+
+    client.patch("/api/platform", json={"providers": {
+        "ollama": {"base_url": "http://ollama.local:11434", "chat_model": "qwen2.5-coder"}}}, headers=auth)
+
+    class _R:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"choices": [{"finish_reason": "stop", "message": {"content": "Hi from Ollama."}}]}
+
+    monkeypatch.setattr(openai_compat.httpx, "post", lambda *a, **k: _R())
+
+    t = client.post("/api/assistant/threads", json={
+        "project_id": "core", "entity_type": "item", "entity_id": "AL-08", "provider": "ollama"},
+        headers=auth).json()
+    r = client.post(f"/api/assistant/threads/{t['id']}/message", json={"message": "hi"}, headers=auth)
+
+    assert r.status_code == 200
+    kinds = [e for e, _ in _events(r.text)]
+    assert "delta" in kinds and kinds[-1] == "done"
+    detail = client.get(f"/api/assistant/threads/{t['id']}", headers=auth).json()
+    assert detail["messages"][-1]["content"] == "Hi from Ollama."
+
+
 def test_providers_and_set_model(client, auth):
     client.patch("/api/platform", json={"active_chat_provider": "openai",
                  "providers": {"openai": {"api_key": "sk-x", "chat_model": "gpt-4o-mini"}}}, headers=auth)
