@@ -602,3 +602,23 @@ class AssistantMessage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     thread: Mapped[AssistantThread] = relationship(back_populates="messages")
+
+
+class AssistantProposedAction(Base):
+    """A write the assistant proposed but has NOT executed (AL-177). Propose-then-approve:
+    a write tool call is staged here as `pending`; the human `apply`s (executes + audits,
+    capturing `prior_value` for reversibility) or `reject`s. Nothing mutates until approval,
+    so prompt-injected content can at most propose a rejected action."""
+    __tablename__ = "assistant_proposed_actions"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # pa_...
+    thread_id: Mapped[str] = mapped_column(ForeignKey("assistant_threads.id"), index=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"))
+    tool: Mapped[str] = mapped_column(String)          # the write tool name
+    args: Mapped[dict] = mapped_column(JSON, default=dict)
+    summary: Mapped[str] = mapped_column(String, default="")  # human-readable diff/summary
+    status: Mapped[str] = mapped_column(String, default="pending", index=True)  # pending|applied|rejected|reverted
+    prior_value: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # captured on apply for revert
+    provider: Mapped[str] = mapped_column(String, default="")  # origin attribution: assistant:<provider>
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
