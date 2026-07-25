@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.errors import QuotaExceeded
 from app.models import AssistantProposedAction, User
 from app.providers.toolcall import MAX_ITERS
 from app.security import authz
@@ -26,6 +27,7 @@ from app.services import assistant as asst_svc
 from app.services import assistant_approval as approval
 from app.services import assistant_tools as at
 from app.services import platform as platform_svc
+from app.services import quotas
 
 router = APIRouter(prefix="/assistant", tags=["assistant"])
 
@@ -55,6 +57,8 @@ class ThreadOut(BaseModel):
     provider: str
     model: str
     title: str
+    input_tokens: int = 0
+    output_tokens: int = 0
 
 
 class MessageOut(BaseModel):
@@ -82,7 +86,8 @@ class ModelIn(BaseModel):
 
 def _thread_out(t) -> dict:
     return {"id": t.id, "project_id": t.project_id, "entity_type": t.entity_type,
-            "entity_id": t.entity_id, "provider": t.provider, "model": t.model, "title": t.title}
+            "entity_id": t.entity_id, "provider": t.provider, "model": t.model, "title": t.title,
+            "input_tokens": t.input_tokens, "output_tokens": t.output_tokens}
 
 
 def _sse(event: str, data: str) -> str:
@@ -172,11 +177,31 @@ def send_message(thread_id: str, body: MessageIn, db: Session = Depends(get_db),
     # Resolve context + session eagerly while the request DB session is open.
     session = chat.tool_session(system=_SYSTEM, context=_context(db, thread), question=body.message)
 
+    org_id = quotas.org_id_for_project(db, thread.project_id)
+
     def gen():
+        # Meter this turn against the org's hosted call quota (AL-75); no-op when
+        # hosted_mode is off. On quota exhaustion, explain it — the thread stays readable.
+        try:
+            quotas.meter_call(db, org_id)
+        except QuotaExceeded as e:
+            yield _sse("error", json.dumps({"message": str(e)}))
+            yield _sse("done", "{}")
+            return
+        if provider == "stub":  # graceful degradation, not a blank error
+            yield _sse("notice", json.dumps({"message":
+                "No AI model is active — replies use the offline stub. Pick a model above or configure one in Settings."}))
+
         final_text, calls, results_log, proposals = "", [], [], []
         try:
             for _ in range(MAX_ITERS):
                 turn = session.run_turn(tools)
+                if turn.usage:  # meter tokens per conversation
+                    thread.input_tokens += turn.usage.get("input", 0)
+                    thread.output_tokens += turn.usage.get("output", 0)
+                    yield _sse("usage", json.dumps({
+                        "input": turn.usage.get("input", 0), "output": turn.usage.get("output", 0),
+                        "thread_input": thread.input_tokens, "thread_output": thread.output_tokens}))
                 if turn.text:
                     final_text = turn.text
                     yield _sse("delta", json.dumps({"text": turn.text}))
