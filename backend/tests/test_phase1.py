@@ -100,7 +100,29 @@ def test_mcp_all_new_tools(client, auth):
     assert isinstance(lessons["results"], list) and len(lessons["results"]) >= 1
 
     digest = _call(client, key, "generate_digest", {})
-    assert "digest" in digest and "Status:" in digest["digest"]
+    # Decision-packet shape (AL-52): state + the five decision-ready sections.
+    assert "digest" in digest
+    text = digest["digest"]
+    assert "**State**" in text
+    assert "**Smallest unresolved choice**" in text
+
+
+def test_digest_is_a_decision_packet(client, auth):
+    """AL-52: the digest leads with state and ends on the smallest unresolved choice;
+    an in-review item is the choice to make."""
+    pid = client.post("/api/projects", json={"name": "Packet"}, headers=auth).json()["id"]
+    key = client.post("/api/api-keys", json={"name": "d", "project_id": pid}, headers=auth).json()["plaintext"]
+    rev = _call(client, key, "create_item", {"title": "Ship the API"})["id"]
+    _call(client, key, "update_item", {"id": rev, "status": "review"})
+    wip = _call(client, key, "create_item", {"title": "Fix the parser"})["id"]
+    _call(client, key, "update_item", {"id": wip, "status": "in_progress"})
+
+    text = _call(client, key, "generate_digest", {})["digest"]
+    for section in ("**State**", "**Attempted**", "**Evidence**", "**Risk**", "**Smallest unresolved choice**"):
+        assert section in text, f"missing section {section}"
+    assert wip in text.split("**Evidence**")[0]  # in-flight item under Attempted
+    choice = text.split("**Smallest unresolved choice**")[1]
+    assert rev in choice and "send back" in choice  # a review item is the decision
 
 
 def test_link_items_rejects_bad_type(client, auth):
