@@ -125,6 +125,38 @@ def test_digest_is_a_decision_packet(client, auth):
     assert rev in choice and "send back" in choice  # a review item is the decision
 
 
+def test_proof_on_done_records_evidence_and_audit(client, auth):
+    """AL-53: update_item accepts proof receipts (normalized), and the proof rides into
+    the audit ledger so a completion is auditable against its evidence."""
+    pid = client.post("/api/projects", json={"name": "Proof"}, headers=auth).json()["id"]
+    key = client.post("/api/api-keys", json={"name": "pf", "project_id": pid}, headers=auth).json()["plaintext"]
+    it = _call(client, key, "create_item", {"title": "Ship parser"})
+    updated = _call(client, key, "update_item", {
+        "id": it["id"], "status": "done",
+        "evidence": [
+            {"kind": "test", "detail": "142 passed", "url": "https://ci/run/9"},
+            {"kind": "bogus", "detail": "looks fine"},  # unknown kind → note
+            {"detail": "", "url": ""},                   # no detail/url → dropped
+        ],
+    })
+    assert updated["status"] == "done"
+    assert updated["evidence"] == [
+        {"kind": "test", "detail": "142 passed", "url": "https://ci/run/9"},
+        {"kind": "note", "detail": "looks fine", "url": ""},
+    ]
+    events = client.get("/api/events", headers=auth).json()["results"]
+    ev = next(e for e in events if e["action"] == "update_item" and e["target_id"] == it["id"])
+    assert ev["meta"]["evidence"][0]["detail"] == "142 passed"
+
+
+def test_proof_on_done_via_rest(client, auth):
+    it = client.post("/api/items", json={"title": "Do X", "project_id": "core"}, headers=auth).json()
+    up = client.patch(f"/api/items/{it['id']}",
+                      json={"status": "done", "evidence": [{"kind": "health", "detail": "prod green"}]},
+                      headers=auth).json()
+    assert up["evidence"] == [{"kind": "health", "detail": "prod green", "url": ""}]
+
+
 def test_link_items_rejects_bad_type(client, auth):
     key = _key(client, auth)
     out = client.post(

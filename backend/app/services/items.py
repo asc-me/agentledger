@@ -88,6 +88,29 @@ def create_item(
     return item
 
 
+_EVIDENCE_KINDS = {"test", "url", "screenshot", "health", "note"}
+
+
+def normalize_evidence(raw) -> list[dict]:
+    """Coerce evidence receipts to {kind, detail, url}; drop empties (AL-53).
+
+    `kind` is advisory (test | url | screenshot | health | note) and falls back to
+    `note`; a receipt with neither detail nor url is dropped."""
+    out: list[dict] = []
+    for e in raw or []:
+        if not isinstance(e, dict):
+            continue
+        kind = str(e.get("kind") or "note").lower()
+        if kind not in _EVIDENCE_KINDS:
+            kind = "note"
+        detail = str(e.get("detail") or "").strip()
+        url = str(e.get("url") or "").strip()
+        if not detail and not url:
+            continue
+        out.append({"kind": kind, "detail": detail, "url": url})
+    return out
+
+
 def update_item(db: Session, item_id: str, **fields) -> Item | None:
     item = db.get(Item, item_id)
     if item is None:
@@ -102,6 +125,8 @@ def update_item(db: Session, item_id: str, **fields) -> Item | None:
                 "github_url", "assignee", "touchpoints", "prd_id", "prd_section", "fidelity"):
         if key in fields and fields[key] is not None:
             setattr(item, key, fields[key])
+    if fields.get("evidence") is not None:
+        item.evidence = normalize_evidence(fields["evidence"])
     db.commit()
     db.refresh(item)
 

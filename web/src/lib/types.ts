@@ -141,6 +141,14 @@ export interface PR {
   ago: string;
 }
 
+export type EvidenceKind = "test" | "url" | "screenshot" | "health" | "note";
+
+export interface EvidenceReceipt {
+  kind: EvidenceKind;
+  detail: string;
+  url: string;
+}
+
 export interface Item {
   id: string;
   project_id: string;
@@ -156,6 +164,7 @@ export interface Item {
   reporter: Reporter;
   pr: PR | null;
   github_url: string;
+  evidence: EvidenceReceipt[];
   assignee: string;
   claimed_by: string | null;
   prd_id: string | null;

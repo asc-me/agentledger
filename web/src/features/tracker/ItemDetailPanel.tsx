@@ -1,4 +1,4 @@
-import { FlaskConical, GitPullRequest, X } from "lucide-react";
+import { BadgeCheck, ExternalLink, FlaskConical, GitPullRequest, X } from "lucide-react";
 
 import { Avatar } from "@/components/ui/avatar";
 import { LinkedCode } from "@/features/code/LinkedCode";
@@ -185,6 +185,32 @@ export function ItemDetailPanel({
                   </span>
                   <span className="ml-auto">{item.pr.ago}</span>
                 </div>
+              </div>
+            </Section>
+          )}
+
+          {item.evidence?.length > 0 && (
+            <Section label="Proof of done">
+              <div className="space-y-2">
+                {item.evidence.map((e, i) => (
+                  <div key={i} className="rounded-[10px] border border-[rgba(95,208,122,0.25)] bg-[rgba(95,208,122,0.05)] p-2.5">
+                    <div className="mb-1 flex items-center gap-1.5">
+                      <BadgeCheck size={12} className="text-st-done" />
+                      <span className="font-mono text-[9px] uppercase tracking-wide text-st-done">{e.kind}</span>
+                    </div>
+                    {e.detail && <p className="text-[12px] leading-relaxed text-fg-2">{e.detail}</p>}
+                    {e.url && (
+                      <a
+                        href={e.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-1 inline-flex items-center gap-1 font-mono text-[10.5px] text-accent hover:underline"
+                      >
+                        <ExternalLink size={10} /> {e.url}
+                      </a>
+                    )}
+                  </div>
+                ))}
               </div>
             </Section>
           )}

@@ -229,6 +229,9 @@ class Item(Base):
     reporter: Mapped[dict] = mapped_column(JSON, default=dict)
     pr: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     github_url: Mapped[str] = mapped_column(String, default="")  # linked issue/PR
+    # Proof-on-done (AL-53): receipts that match evidence to the completion claim —
+    # a list of {kind: test|url|screenshot|health|note, detail, url}.
+    evidence: Mapped[list] = mapped_column(JSON, default=list)
     # Assignment / agent claiming (feature A).
     assignee: Mapped[str] = mapped_column(String, default="")  # durable owner (human or agent)
     claimed_by: Mapped[str | None] = mapped_column(String, nullable=True)  # agent holding the lease
