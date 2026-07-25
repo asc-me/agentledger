@@ -233,7 +233,7 @@ export function ItemDetailPanel({
 
           <Section label="Assistant">
             <div className="h-[420px] rounded-[11px] border border-line-2 bg-surface-2 p-2.5">
-              <AssistantPanel entityType="item" entityId={item.id} projectId={item.project_id} />
+              <AssistantPanel entityType="item" entityId={item.id} projectId={item.project_id} entityTags={item.tags} />
             </div>
           </Section>
 
