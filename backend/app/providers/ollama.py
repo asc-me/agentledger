@@ -94,6 +94,17 @@ class OllamaChat:
                 if obj.get("done"):
                     break
 
+    def tool_session(self, *, system: str, context: str, question: str):
+        """Tool-calling for the in-app assistant (AL-184). Ollama exposes an
+        OpenAI-compatible endpoint at `{base_url}/v1`, so we reuse the shared
+        OpenAI-compat session — tool-call parsing and AL-183 token streaming come for
+        free. Needs a model that supports tools (e.g. qwen2.5-coder, llama3.1); a model
+        without tool support just won't emit tool_calls and answers in plain text."""
+        from app.providers.openai_compat import OpenAICompatChat
+
+        oai = OpenAICompatChat(f"{self.base_url}/v1", self.auth_key, self.model)
+        return oai.tool_session(system=system, context=context, question=question)
+
 
 class OllamaExtractor:
     def __init__(self, base_url: str, model: str, auth_key: str = ""):

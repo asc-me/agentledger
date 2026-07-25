@@ -132,6 +132,39 @@ def test_anthropic_tool_round_trip(monkeypatch):
     assert final.text == "Done — AL-9 is marked done." and not final.wants_tools
 
 
+# --------------------------------- Ollama (self-hosted) ---------------------------------
+def test_ollama_tool_session_routes_through_openai_compat_endpoint(monkeypatch):
+    """AL-184: OllamaChat can drive tool calls by reusing the OpenAI-compat session
+    against Ollama's `/v1` endpoint — so an Ollama-backed assistant thread works."""
+    from app.providers import ollama, openai_compat
+
+    responses = [
+        {"choices": [{"finish_reason": "tool_calls", "message": {
+            "role": "assistant", "content": None,
+            "tool_calls": [{"id": "call_1", "type": "function",
+                            "function": {"name": "update_item", "arguments": '{"status": "done"}'}}]}}]},
+        {"choices": [{"finish_reason": "stop", "message": {"content": "Done."}}]},
+    ]
+    urls, headers_seen = [], []
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        urls.append(url)
+        headers_seen.append(headers)
+        return _FakeResp(responses[len(urls) - 1])
+
+    monkeypatch.setattr(openai_compat.httpx, "post", fake_post)
+
+    session = ollama.chat(base_url="http://ollama.local:11434", model="qwen2.5-coder",
+                          auth_key="tok").tool_session(system="s", context="c", question="mark done")
+    execute, seen = _execute_capture()
+    final = run_tool_loop(session, [_SPEC], execute)
+
+    assert seen == [("update_item", {"status": "done"})]  # tool call decoded + run
+    assert urls[0] == "http://ollama.local:11434/v1/chat/completions"  # the /v1 compat path
+    assert headers_seen[0]["Authorization"] == "Bearer tok"  # gateway bearer token forwarded
+    assert final.text == "Done." and not final.wants_tools
+
+
 # --------------------------------- Stub degradation ---------------------------------
 def test_stub_tool_session_terminates_without_tools():
     from app.providers.stub import StubChat
