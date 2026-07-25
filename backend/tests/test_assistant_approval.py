@@ -23,6 +23,11 @@ def _item_thread(db, provider="anthropic"):
                               provider=provider)
 
 
+def _prd_thread(db, entity_id="PRD-3", provider="anthropic"):
+    return asst.create_thread(db, project_id="core", entity_type="prd", entity_id=entity_id,
+                              provider=provider)
+
+
 def test_write_is_staged_not_executed(db):
     thread = _item_thread(db)
     before = db.get(Item, "AL-08").status
@@ -107,3 +112,46 @@ def test_read_only_user_cannot_stage_a_write(db):
     assert res.is_error and "not authorized" in res.content
     assert approval.list_pending(db, thread.id) == []  # nothing staged
     assert db.get(Item, "AL-08").status == before
+
+
+# ---- AL-182: the new write tools flow through the same propose-then-approve gate ----
+def test_link_items_stages_then_applies(db):
+    from app.services import links as links_svc
+
+    thread = _item_thread(db)
+    def _link(): return [l for l in links_svc.list_links(db, project_id="core")
+                         if l.a == "AL-08" and l.b == "AL-04"]
+    res = approval.executor(db, thread, user_id="u1")(
+        ToolCall(id="c1", name="link_items", input={"target_id": "AL-04"}))
+
+    assert "awaiting your approval" in res.content
+    (pa,) = approval.list_pending(db, thread.id)
+    assert pa.tool == "link_items" and "AL-08 → AL-04" in pa.summary
+    assert not _link()  # staged, not linked yet
+
+    approval.apply(db, pa.id, user_id="u1")
+    assert _link()  # now linked
+
+
+def test_grill_apply_stages_applies_and_is_revertible(db):
+    from app.services import prds as prd_svc
+
+    thread = _prd_thread(db)  # PRD-3
+    asst.add_message(db, thread.id, role="user", content="Ship read-only mode first.")
+    before = prd_svc.get_prd(db, "PRD-3").body
+    execute = approval.executor(db, thread, user_id="u1")
+
+    res = execute(ToolCall(id="c1", name="grill_apply", input={}))
+    assert "awaiting your approval" in res.content
+    assert prd_svc.get_prd(db, "PRD-3").body == before  # synthesis deferred until approval
+    (pa,) = approval.list_pending(db, thread.id)
+    assert pa.summary.startswith("Rewrite PRD PRD-3")
+
+    action, _ = approval.apply(db, pa.id, user_id="u1")
+    assert action.status == "applied"
+    assert "Ship read-only mode first." in prd_svc.get_prd(db, "PRD-3").body
+    assert action.prior_value == {"body": before}  # whole-body snapshot captured
+
+    action, _ = approval.revert(db, pa.id, user_id="u1")
+    assert action.status == "reverted"
+    assert prd_svc.get_prd(db, "PRD-3").body == before  # restored verbatim
