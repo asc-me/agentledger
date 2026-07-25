@@ -205,6 +205,47 @@ export interface ShardHit {
   score: number;
 }
 
+// ── In-app AI assistant (AL-175) ───────────────────────────────────────────
+export interface AssistantThread {
+  id: string;
+  project_id: string;
+  entity_type: "item" | "prd";
+  entity_id: string;
+  provider: string;
+  model: string;
+  title: string;
+}
+
+export interface ProposedAction {
+  id: string;
+  tool: string;
+  summary: string;
+  status: "pending" | "applied" | "rejected" | "reverted";
+}
+
+export interface AssistantMessage {
+  id: string;
+  seq: number;
+  role: "user" | "assistant" | "tool";
+  content: string;
+  tool_calls: { id: string; name: string; input: Record<string, unknown> }[];
+  tool_results: { id: string; content: string; is_error: boolean }[];
+  proposed_actions: ProposedAction[];
+}
+
+export interface AssistantThreadDetail extends AssistantThread {
+  messages: AssistantMessage[];
+}
+
+export interface AssistantProvider {
+  id: string;
+  label: string;
+  kind: string;
+  chat_model: string;
+  configured: boolean;
+  active: boolean;
+}
+
 export type ReviewSuggestion = "accept" | "reject" | "review";
 
 export interface ScoredCandidate {

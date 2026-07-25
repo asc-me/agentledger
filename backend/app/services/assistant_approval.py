@@ -30,25 +30,33 @@ def _ctx(db: Session, thread: AssistantThread, user_id: str) -> at.ToolContext:
                           entity_type=thread.entity_type, entity_id=thread.entity_id)
 
 
-def executor(db: Session, thread: AssistantThread, user_id: str):
-    """The `execute` callback for run_tool_loop: reads execute; writes stage a proposal and
-    return a 'queued for approval' result so the model knows it did not run."""
+def process_call(
+    db: Session, thread: AssistantThread, user_id: str, call: ToolCall
+) -> tuple[ToolResult, AssistantProposedAction | None]:
+    """Route one tool call for the assistant loop: reads execute immediately; writes stage
+    a pending proposal. Returns (result-fed-back-to-model, proposed action or None). The
+    SSE surface uses the returned action to emit a `proposed_action` event."""
     ctx = _ctx(db, thread, user_id)
+    kind = at.tool_kind(call.name)
+    if kind is None:
+        return ToolResult(id=call.id, content=f"unknown tool: {call.name}", is_error=True), None
+    if kind == "read":
+        return at.dispatch(ctx, call), None  # dispatch enforces read authz
+    # write → stage behind approval
+    if not at.is_available(ctx, call.name):
+        return ToolResult(id=call.id, is_error=True,
+                          content=f"{call.name} is not available on a {ctx.entity_type} thread"), None
+    if not authz.can_write(db, user_id, thread.project_id):
+        return ToolResult(id=call.id, content="not authorized to write in this project", is_error=True), None
+    action = stage(db, thread, call)
+    return ToolResult(id=call.id, content=f"Proposed (awaiting your approval): {action.summary}"), action
 
+
+def executor(db: Session, thread: AssistantThread, user_id: str):
+    """The `execute` callback for run_tool_loop (non-streaming callers): reads execute,
+    writes stage. SSE callers use process_call directly to surface proposals."""
     def execute(call: ToolCall) -> ToolResult:
-        kind = at.tool_kind(call.name)
-        if kind is None:
-            return ToolResult(id=call.id, content=f"unknown tool: {call.name}", is_error=True)
-        if kind == "read":
-            return at.dispatch(ctx, call)  # dispatch enforces read authz
-        # write → stage behind approval
-        if not at.is_available(ctx, call.name):
-            return ToolResult(id=call.id, is_error=True,
-                              content=f"{call.name} is not available on a {ctx.entity_type} thread")
-        if not authz.can_write(db, user_id, thread.project_id):
-            return ToolResult(id=call.id, content="not authorized to write in this project", is_error=True)
-        action = stage(db, thread, call)
-        return ToolResult(id=call.id, content=f"Proposed (awaiting your approval): {action.summary}")
+        return process_call(db, thread, user_id, call)[0]
 
     return execute
 

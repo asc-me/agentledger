@@ -1,6 +1,7 @@
 import { BadgeCheck, ExternalLink, FlaskConical, GitPullRequest, X } from "lucide-react";
 
 import { Avatar } from "@/components/ui/avatar";
+import { AssistantPanel } from "@/features/assistant/AssistantPanel";
 import { LinkedCode } from "@/features/code/LinkedCode";
 import { useProjectCtx } from "@/features/ProjectContext";
 import { CHECK_COLOR, PR_STATE_COLOR } from "@/lib/meta";
@@ -228,6 +229,12 @@ export function ItemDetailPanel({
                 ))}
               </div>
             )}
+          </Section>
+
+          <Section label="Assistant">
+            <div className="h-[420px] rounded-[11px] border border-line-2 bg-surface-2 p-2.5">
+              <AssistantPanel entityType="item" entityId={item.id} projectId={item.project_id} />
+            </div>
           </Section>
 
           {item.reporter?.name && (
