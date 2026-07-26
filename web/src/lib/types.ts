@@ -524,6 +524,10 @@ export interface Event {
   actor_type: "user" | "apikey" | "system";
   actor_id: string;
   actor_label: string;
+  /** The human on whose behalf the action ran (AL-197). */
+  principal?: string;
+  /** The agent that performed it (API key name or "assistant:<provider>"), if any. */
+  agent?: string;
   surface: "mcp" | "rest" | "public";
   action: string;
   target_type: string;

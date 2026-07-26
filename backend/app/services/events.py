@@ -44,11 +44,16 @@ def record(
 
 def record_key(db: Session, key: ApiKey, *, action: str, target_type: str = "",
                target_id: str = "", project_id: str | None = None, meta: dict | None = None) -> None:
-    """Record an agent action, attributed to the API key that performed it."""
+    """Record an agent action, attributed to the API key that performed it — and to the
+    HUMAN principal that owns the key, so the audit shows who was behind the agent (AL-197)."""
+    owner = db.get(User, key.user_id) if key.user_id else None
+    m = dict(meta or {})
+    if owner is not None:
+        m["principal"] = {"id": owner.id, "label": owner.handle or owner.name}
     record(
         db, actor_type="apikey", actor_id=key.id, actor_label=key.name or key.id,
         surface="mcp", action=action, target_type=target_type, target_id=target_id,
-        project_id=project_id, meta=meta,
+        project_id=project_id, meta=m or None,
     )
 
 
@@ -80,13 +85,34 @@ def list_events(db: Session, *, project_ids: list[str], limit: int = 50, offset:
     }
 
 
+def _principal_and_agent(e: Event) -> tuple[str, str]:
+    """Normalize an event to (human principal, agent): the person on whose behalf it ran,
+    and the agent that performed it — empty when none. AL-197.
+
+    - API-key action: the key IS the agent; the human is its owner (meta.principal).
+    - assistant action: the human is the actor; the agent is meta.origin (assistant:<provider>).
+    - plain user action: the human is the actor; no agent.
+    """
+    meta = e.meta or {}
+    if e.actor_type == "apikey":
+        principal = (meta.get("principal") or {}).get("label") or ""
+        return principal, (e.actor_label or e.actor_id)
+    origin = str(meta.get("origin") or "")
+    if origin.startswith("assistant:"):
+        return (e.actor_label or e.actor_id), origin
+    return (e.actor_label or e.actor_id), ""
+
+
 def _event_dict(e: Event) -> dict:
+    principal, agent = _principal_and_agent(e)
     return {
         "id": e.id,
         "ts": e.ts.isoformat() if e.ts else None,
         "actor_type": e.actor_type,
         "actor_id": e.actor_id,
         "actor_label": e.actor_label,
+        "principal": principal,  # the human behind the action (AL-197)
+        "agent": agent,          # the agent that performed it, if any
         "surface": e.surface,
         "action": e.action,
         "target_type": e.target_type,

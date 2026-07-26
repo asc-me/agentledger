@@ -43,25 +43,34 @@ export function ActivityView() {
 }
 
 function EventRow({ event: e }: { event: Event }) {
-  const isAgent = e.actor_type === "apikey";
+  // The agent that performed it (API key or assistant); the human behind it, if known.
+  const agent = e.agent || (e.actor_type === "apikey" ? e.actor_label : "");
+  const principal = e.principal || (e.actor_type === "apikey" ? "" : e.actor_label) || e.actor_id;
+  const isAgent = !!agent;
+  const primary = principal || agent;
   return (
     <div className="flex items-center gap-3 rounded-[10px] border border-line-2 bg-surface-2 px-3.5 py-2.5">
       <span
         className={`flex h-7 w-7 flex-none items-center justify-center rounded-full ${
           isAgent ? "bg-[rgba(167,139,250,0.12)] text-[#a78bfa]" : "bg-[rgba(95,208,122,0.1)] text-st-done"
         }`}
-        title={e.actor_type}
+        title={isAgent ? `${primary}${principal && agent ? ` via ${agent}` : ""}` : e.actor_type}
       >
         {isAgent ? <KeyRound size={13} /> : <UserIcon size={13} />}
       </span>
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 text-[13px]">
-          <span className="font-medium text-ink">{e.actor_label || e.actor_id}</span>
+          <span className="font-medium text-ink">{primary}</span>
+          {principal && agent && (
+            <span className="text-[11px] text-faint">
+              via <span className="text-[#a78bfa]">{agent}</span>
+            </span>
+          )}
           <span className="font-mono text-[11.5px] text-accent">{e.action}</span>
           {e.target_id && <span className="font-mono text-[11px] text-muted">{e.target_id}</span>}
         </div>
-        {e.meta && Object.keys(e.meta).length > 0 && (
+        {e.meta && summarizeMeta(e.meta) && (
           <div className="mt-0.5 truncate font-mono text-[10.5px] text-faint">{summarizeMeta(e.meta)}</div>
         )}
       </div>
@@ -78,6 +87,7 @@ function EventRow({ event: e }: { event: Event }) {
 
 function summarizeMeta(meta: Record<string, unknown>): string {
   return Object.entries(meta)
+    .filter(([k]) => k !== "principal" && k !== "origin") // shown in the header (AL-197)
     .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(", ") : String(v)}`)
     .join(" · ");
 }
