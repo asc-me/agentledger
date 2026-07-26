@@ -42,7 +42,7 @@ config lives:
 | opencode | `opencode.json` | `mcp.<name>.{type: "remote", url, headers}` |
 | Hermes | `~/.hermes/config.yaml` | `mcp_servers.<name>.{url, headers}` |
 | OpenClaw | `~/.openclaw/openclaw.json` | `mcp.servers.<name>.{url, transport, headers}` |
-| Grok CLI | `.grok/settings.json` | stdio bridge via `mcp-remote` |
+| Grok Build | `grok mcp add --transport http …` (`~/.grok/config.toml`) | streamable-HTTP, direct — see [grok-build.md](grok-build.md) |
 
 **Hermes** — add under `mcp_servers` in `~/.hermes/config.yaml`, then run `/reload-mcp`:
 
