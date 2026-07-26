@@ -10,7 +10,8 @@ const page: EventPage = {
   results: [
     {
       id: 2, ts: new Date().toISOString(), actor_type: "apikey", actor_id: "k1",
-      actor_label: "loop-agent", surface: "mcp", action: "create_item",
+      actor_label: "loop-agent", principal: "alex", agent: "loop-agent",
+      surface: "mcp", action: "create_item",
       target_type: "item", target_id: "AL-42", project_id: "core", meta: null,
     },
     {
@@ -41,7 +42,10 @@ describe("Activity ledger", () => {
       </QueryClientProvider>,
     );
 
-    expect(await screen.findByText("loop-agent")).toBeInTheDocument();
+    // AL-197: the agent action shows the human principal AND the agent ("alex via loop-agent")
+    expect(await screen.findByText("alex")).toBeInTheDocument();
+    expect(screen.getByText("loop-agent")).toBeInTheDocument();
+    expect(screen.getByText("via")).toBeInTheDocument();
     expect(screen.getByText("create_item")).toBeInTheDocument();
     expect(screen.getByText("AL-42")).toBeInTheDocument();
     expect(screen.getByText("revoke_api_key")).toBeInTheDocument();

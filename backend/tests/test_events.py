@@ -34,6 +34,29 @@ def test_mcp_write_is_audited_with_key_actor(client, auth):
     assert top["actor_label"] == "a"
     assert top["target_id"] == created["id"]
     assert top["surface"] == "mcp"
+    # AL-197: the agent action also names the human principal behind the key
+    assert top["agent"] == "a"                       # the key is the agent
+    assert top["principal"] and top["principal"] != "a"  # its owner (the human) is captured
+
+
+def test_principal_and_agent_normalization():
+    """The (human, agent) pair the audit UI renders, across the three event shapes."""
+    from app.models import Event
+    from app.services.events import _principal_and_agent
+
+    agent_ev = Event(actor_type="apikey", actor_id="k1", actor_label="loop",
+                     meta={"principal": {"id": "u1", "label": "alex"}})
+    assert _principal_and_agent(agent_ev) == ("alex", "loop")
+
+    assistant_ev = Event(actor_type="user", actor_id="u1", actor_label="alex",
+                         meta={"origin": "assistant:anthropic"})
+    assert _principal_and_agent(assistant_ev) == ("alex", "assistant:anthropic")
+
+    plain_ev = Event(actor_type="user", actor_id="u1", actor_label="alex", meta=None)
+    assert _principal_and_agent(plain_ev) == ("alex", "")
+
+    legacy_key = Event(actor_type="apikey", actor_id="k9", actor_label="old-key", meta=None)
+    assert _principal_and_agent(legacy_key) == ("", "old-key")  # no owner recorded → agent only
 
 
 def test_mcp_read_is_not_audited(client, auth):
