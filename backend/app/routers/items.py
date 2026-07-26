@@ -6,6 +6,7 @@ from app.models import User
 from app.schemas import ItemCreate, ItemOut, ItemUpdate, ReorderIn
 from app.security import authz
 from app.security.deps import get_current_user
+from app.services import collision as collision_svc
 from app.services import items as items_svc
 
 router = APIRouter(prefix="/items", tags=["items"])
@@ -61,6 +62,20 @@ def reorder(
     for pid in {r.project_id for r in rows if r is not None}:
         authz.require_writable(db, user.id, pid, "item")
     return items_svc.reorder_items(db, body.ordered_ids)
+
+
+@router.get("/collision-clusters")
+def collision_clusters(
+    project_id: str | None = None,
+    status: str | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Non-colliding clusters over a project's items (AL-192 / PRD-10 v2): items whose
+    (actual-or-predicted) code touch-areas overlap are grouped, so distinct groups are safe
+    to run concurrently. Defaults to the unstarted pool (backlog + next) when no status."""
+    authz.require_readable(db, user.id, project_id)
+    return {"clusters": collision_svc.clusters_for_project(db, project_id, status)}
 
 
 @router.get("/{item_id}", response_model=ItemOut)
