@@ -39,6 +39,10 @@ Record every widget change.
     "Success criteria", "Success Metrics", "Out of scope", "Background", "Context",
     "Overview", "Motivation", "Summary", "Open questions", "Appendix", "Glossary",
     "References", "Prior art",
+    # AL-198: planning/risk framing sections must not decompose into "Implement: …" tasks
+    "Risks", "Risks and Open Questions", "Risks & Open Questions",
+    "Risks and Mitigations", "Phasing", "Phases", "Rollout", "Rollout plan",
+    "Milestones", "Timeline", "FAQ",
 ])
 def test_prose_sections_are_not_implementable(title):
     assert is_implementable_section(title) is False

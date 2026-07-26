@@ -313,6 +313,10 @@ _PROSE_SECTIONS = {
     "goal", "goals", "nongoal", "nongoals", "outofscope",
     "successcriteria", "successmetrics", "openquestions",
     "appendix", "glossary", "references", "priorart",
+    # planning / risk framing — describe the work or its rollout, not buildable work (AL-198)
+    "risks", "risksandopenquestions", "risksopenquestions",
+    "risksandmitigations", "risksmitigations",
+    "phasing", "phases", "rollout", "rolloutplan", "milestones", "timeline", "faq", "faqs",
 }
 
 
