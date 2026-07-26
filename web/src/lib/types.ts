@@ -242,6 +242,7 @@ export interface AssistantProvider {
   label: string;
   kind: string;
   chat_model: string;
+  models: string[];
   configured: boolean;
   active: boolean;
 }

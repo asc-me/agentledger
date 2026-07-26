@@ -45,6 +45,7 @@ export function AssistantPanel({
   const [messages, setMessages] = React.useState<Msg[]>([]);
   const [providers, setProviders] = React.useState<AssistantProvider[]>([]);
   const [provider, setProvider] = React.useState<string>("");
+  const [model, setModel] = React.useState<string>("");
   const [draft, setDraft] = React.useState("");
   const [streaming, setStreaming] = React.useState(false);
   const scrollRef = React.useRef<HTMLDivElement>(null);
@@ -58,6 +59,7 @@ export function AssistantPanel({
       const t = threads[0];
       setThreadId(t.id);
       setProvider(t.provider);
+      setModel(t.model);
       const detail = await api.getAssistantThread(t.id);
       if (!alive) return;
       setMessages(detail.messages
@@ -114,11 +116,12 @@ export function AssistantPanel({
     }));
   }
 
-  async function pickProvider(id: string) {
+  async function pickModel(value: string) {
+    const [id, mdl] = value.split("::");
     setProvider(id);
+    setModel(mdl);
     const tid = threadId ?? (await ensureThread());
-    const p = providers.find((x) => x.id === id);
-    await api.setThreadModel(tid, id, p?.chat_model ?? "");
+    await api.setThreadModel(tid, id, mdl);
   }
 
   return (
@@ -127,16 +130,18 @@ export function AssistantPanel({
         <Sparkles size={13} className="text-[#a78bfa]" />
         <span className="text-[12px] font-medium text-fg-2">Assistant</span>
         <select
-          value={provider}
-          onChange={(e) => pickProvider(e.target.value)}
+          value={`${provider}::${model || providers.find((p) => p.id === provider)?.chat_model || ""}`}
+          onChange={(e) => pickModel(e.target.value)}
           className="ml-auto rounded-md border border-line-2 bg-surface-2 px-2 py-1 text-[11px] text-muted"
         >
-          {providers.length === 0 && <option value="">no provider configured</option>}
-          {providers.map((p) => (
-            <option key={p.id} value={p.id} disabled={!p.configured}>
-              {p.label}{p.configured ? "" : " (configure in Settings)"}
-            </option>
-          ))}
+          {providers.length === 0 && <option value="::">no provider configured</option>}
+          {providers.flatMap((p) =>
+            (p.models.length ? p.models : [p.chat_model]).map((mdl) => (
+              <option key={`${p.id}::${mdl}`} value={`${p.id}::${mdl}`} disabled={!p.configured}>
+                {p.label}{mdl ? ` — ${mdl}` : ""}{p.configured ? "" : " (configure in Settings)"}
+              </option>
+            )),
+          )}
         </select>
       </div>
 
