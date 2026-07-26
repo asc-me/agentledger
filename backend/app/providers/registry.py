@@ -11,6 +11,10 @@ resolves against. One entry per provider; `kind` picks the adapter:
 `embeds` marks providers that can also serve embeddings. NOTE: switching the embedding
 provider/model changes the vector dimension, so it stays a deploy-time choice (EMBED_PROVIDER
 + EMBED_DIM) — only the base_url/model are read from this config.
+
+Optional `models` lists the selectable chat models the picker offers for a provider (e.g.
+xAI's general `grok-4.5` and coding-tuned `grok-build-0.1`); when absent the picker offers
+just `chat_model`. `chat_model` remains the out-of-box default.
 """
 from __future__ import annotations
 
@@ -26,7 +30,8 @@ PROVIDERS: list[dict] = [
      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
      "chat_model": "gemini-2.0-flash", "embed_model": "text-embedding-004", "auth": True},
     {"id": "xai", "label": "xAI Grok", "kind": "openai", "embeds": False,
-     "base_url": "https://api.x.ai/v1", "chat_model": "grok-2-latest", "embed_model": "", "auth": True},
+     "base_url": "https://api.x.ai/v1", "chat_model": "grok-4.5",
+     "models": ["grok-4.5", "grok-build-0.1"], "embed_model": "", "auth": True},
     {"id": "groq", "label": "Groq", "kind": "openai", "embeds": False,
      "base_url": "https://api.groq.com/openai/v1", "chat_model": "llama-3.3-70b-versatile",
      "embed_model": "", "auth": True},

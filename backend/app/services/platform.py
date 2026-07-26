@@ -144,9 +144,15 @@ def selectable_providers(db: Session, project_id: str) -> list[dict]:
     for prov in provider_registry.PROVIDERS:
         if prov["kind"] == "stub":
             continue  # the offline stub is never an assistant model
+        chat_model = (cfg.providers or {}).get(prov["id"], {}).get("chat_model") or prov["chat_model"]
+        # the models the picker offers: the registry's list, else just the default; a
+        # user-configured custom model always stays selectable (prepended if not listed)
+        models = list(prov.get("models") or ([prov["chat_model"]] if prov["chat_model"] else []))
+        if chat_model and chat_model not in models:
+            models = [chat_model, *models]
         out.append({
             "id": prov["id"], "label": prov["label"], "kind": prov["kind"],
-            "chat_model": (cfg.providers or {}).get(prov["id"], {}).get("chat_model") or prov["chat_model"],
+            "chat_model": chat_model, "models": models,
             "configured": _is_configured(cfg, prov),
             "active": prov["id"] == cfg.active_chat_provider,
         })
