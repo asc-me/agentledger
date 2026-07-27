@@ -22,7 +22,7 @@ agent's writes are identical to a user's and appear instantly in the UI.
 - **Metering** — every `tools/call` increments a per-tool counter (the `mcp_tool_stats`
   table) surfaced on the **MCP Tools** view.
 - **Scope-gated manifest** — `tools/list` returns only the tools the key can call: a
-  read+write key sees all 30, a read-only key sees just the read tools. A read-only key
+  read+write key sees all 31, a read-only key sees just the read tools. A read-only key
   never pays for write-tool schemas it would only get `unauthorized` on (AL-78).
 - **Lean list rows** — `search_items` and `get_backlog` return a compact row
   (`id`/`title`/`status`, plus the ranking fields for the backlog) by default. Pass
@@ -75,12 +75,13 @@ mcp_servers:
 Every client authenticates the same way: the key in an `X-API-Key` header (or
 `Authorization: Bearer`), against a URL reachable **from where the agent runs**.
 
-## The 30 tools
+## The 31 tools
 
 | Tool | Params | Does |
 | --- | --- | --- |
 | `get_context` | — | Orient: the key's project, scopes, project/tool counts. Call this first. |
 | `list_projects` | — | All projects (`id`, `name`, `accent`, `description`) — ids for the `project_id` override |
+| `setup_project` | `project_id` | **First-run bootstrap** — an ordered, resumable checklist (confirm project → build graph → load memories → propose items). Read-only; call it when `get_context` reports an empty project |
 | `next_cluster` | `agent_id`, `max_items`, `project_id` | **Claim a code-neighborhood at once** — the best ready item plus its related ready items, all assigned to you. |
 | `related_work` | `id` | Items related to a task by shared touchpoints + typed links, best-first (read-only) |
 | `claim_next` | `agent_id`, `lease_seconds`, `project_id` | **Atomically** claim the best ready item, assign it to you, move it to in_progress. Returns `{claimed, item}`. |

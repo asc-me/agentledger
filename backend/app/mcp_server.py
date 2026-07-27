@@ -36,6 +36,7 @@ from app.services import links as links_svc
 from app.services import mcp_proxy
 from app.services import mcp_stats
 from app.services import memory as mem_svc
+from app.services import setup as setup_svc
 from app.services import quotas
 from app.services import prds as prd_svc
 from app.services import prioritization as prio_svc
@@ -69,6 +70,16 @@ TOOLS: list[dict[str, Any]] = [
         "name": "list_projects",
         "description": "List all projects (id, name, accent, description). Use an id as the `project_id` override.",
         "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "setup_project",
+        "description": (
+            "First-run bootstrap: returns an ordered, resumable checklist to take a fresh project "
+            "from empty to useful — confirm the project, build the code graph, load memories, "
+            "propose work items. Read-only guidance; each step reports done/pending from current "
+            "state, so re-run it any time. Call this when get_context flags an empty project."
+        ),
+        "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}}},
     },
     {
         "name": "create_item",
@@ -520,7 +531,7 @@ _LEAN_LIST = {"search_items", "get_backlog"}
 _ITEM_WRITE_TOOLS = {"create_item", "update_item", "claim_next", "heartbeat", "release_item"}
 # Read-only tools never mutate state.
 _READ_ONLY = {
-    "get_context", "list_projects", "search_items", "search_memory",
+    "get_context", "list_projects", "setup_project", "search_items", "search_memory",
     "get_backlog", "get_item_details", "suggest_next", "generate_digest", "related_work",
     "prd_coverage", "grill_prd", "get_code_map", "code_neighbors", "search_code",
 }
@@ -584,6 +595,7 @@ _OUTPUT_SCHEMAS: dict[str, dict] = {
             "scopes": {"type": "array", "items": _STR},
             "project_count": {"type": "integer"},
             "tool_count": {"type": "integer"},
+            "empty": {"type": "boolean"},
         },
     },
     "list_projects": {
@@ -592,6 +604,16 @@ _OUTPUT_SCHEMAS: dict[str, dict] = {
             "type": "object",
             "properties": {"id": _STR, "name": _STR, "accent": _STR, "description": _STR},
         }}},
+    },
+    "setup_project": {
+        "type": "object",
+        "properties": {
+            "project_id": _STR,
+            "empty": {"type": "boolean"},
+            "complete": {"type": "boolean"},
+            "steps": {"type": "array", "items": {"type": "object"}},
+            "note": _STR,
+        },
     },
     "create_item": _ITEM_SCHEMA,
     "update_item": _ITEM_SCHEMA,
@@ -966,7 +988,11 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
             # The count the agent can actually call with this key — matches the
             # scope-gated manifest it received, not the server-wide total (AL-78).
             "tool_count": len(_visible_tools(key)),
+            # First-run signal (AL-133): an empty project → call setup_project for a bootstrap.
+            "empty": setup_svc.is_empty(db, pid) if pid else False,
         }
+    if name == "setup_project":
+        return setup_svc.checklist(db, pid)
     if name == "list_projects":
         return {"results": [
             {"id": p.id, "name": p.name, "accent": p.accent, "description": p.description}
