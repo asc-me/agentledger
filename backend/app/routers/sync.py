@@ -22,10 +22,11 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import ApiKey
+from app.models import ApiKey, User
 from app.security import authz
-from app.security.deps import get_agent_key
+from app.security.deps import get_agent_key, get_current_user
 from app.services import code_graph
+from app.services import code_sync
 from app.services import events as events_svc
 
 router = APIRouter(prefix="/sync", tags=["sync"])
@@ -33,9 +34,11 @@ router = APIRouter(prefix="/sync", tags=["sync"])
 
 class CodeGraphIn(BaseModel):
     """Nodes/edges in `describe_code` shape — no `project_id` (resolved from the key) and no
-    embeddings (re-embedded cloud-side)."""
+    embeddings (re-embedded cloud-side). `remove` marks specific paths stale (incremental
+    delete); `prune` marks everything not in this batch stale (full push)."""
     nodes: list[dict] = []
     edges: list[dict] = []
+    remove: list[str] = []
     prune: bool = False
 
 
@@ -56,6 +59,10 @@ def ingest_code_graph(
     result = code_graph.describe_code(
         db, project_id=project_id, nodes=body.nodes, edges=body.edges, prune=body.prune
     )
+    marked = code_graph.mark_paths_stale(db, project_id, body.remove)
+    if marked:
+        db.commit()
+    result["marked_stale"] += marked
     events_svc.record_key(
         db, key, action="sync_code_graph", target_type="project", target_id=project_id,
         project_id=project_id,
@@ -63,3 +70,23 @@ def ingest_code_graph(
               "marked_stale": result["marked_stale"], "prune": body.prune},
     )
     return {"project_id": project_id, **result}
+
+
+class PushIn(BaseModel):
+    project_id: str = "core"
+
+
+@router.post("/push")
+def trigger_push(
+    body: PushIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Push THIS (local) instance's code graph for a project up to its linked cloud tenant
+    (AL-139) — the `agentledger sync` trigger. Only a member who can write the project may
+    sync it; a `409` means the instance isn't linked to a cloud."""
+    authz.require_writable(db, user.id, body.project_id, "item")
+    try:
+        return code_sync.push(db, project_id=body.project_id)
+    except code_sync.NotLinked as e:
+        raise HTTPException(409, str(e))

@@ -100,6 +100,20 @@ def upsert_node(
     return node
 
 
+def mark_paths_stale(db: Session, project_id: str, paths: list[str]) -> int:
+    """Mark specific nodes stale (`fresh=False`) — the incremental-sync counterpart of
+    describe_code's batch prune (AL-139). Used when a linked local instance reports paths it
+    removed. Never deletes; a later describe re-freshens whatever is still real."""
+    if not paths:
+        return 0
+    rows = db.scalars(
+        select(CodeNode).where(CodeNode.project_id == project_id, CodeNode.path.in_(list(paths)))
+    ).all()
+    for node in rows:
+        node.fresh = False
+    return len(rows)
+
+
 def upsert_edge(db: Session, *, project_id: str, src: str, dst: str, type_: str = "imports") -> CodeEdge | None:
     src, dst = src.strip(), dst.strip()
     if not src or not dst:
