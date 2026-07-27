@@ -120,6 +120,19 @@ def key_writable_ids(db: Session, key: ApiKey) -> list[str]:
     return writable
 
 
+def key_sync_ids(db: Session, key: ApiKey) -> list[str]:
+    """Projects this key may SYNC a code graph into (AL-137): requires the 'sync' scope
+    AND write access for the key's owner. This is the server-side resolution of the ingest
+    target — the push lands in the key's OWN project, never a client-supplied one, so a sync
+    can't cross into another tenant's workspace (the isolation invariant, AL-76/AL-95)."""
+    if "sync" not in (key.scopes or []):
+        return []
+    writable = writable_project_ids(db, key.user_id)
+    if key.project_id:
+        return [key.project_id] if key.project_id in writable else []
+    return writable
+
+
 def can_read(db: Session, user_id: str, project_id: str | None) -> bool:
     return project_id is not None and project_id in readable_project_ids(db, user_id)
 
