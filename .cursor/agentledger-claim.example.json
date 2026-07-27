@@ -1,0 +1,5 @@
+{
+  "item_id": "AL-123",
+  "agent_id": "al-implementer",
+  "touchpoints": ["backend/app/services/*", "backend/tests/test_items.py"]
+}

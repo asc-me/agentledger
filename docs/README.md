@@ -31,6 +31,7 @@ fully offline with `docker compose up`.
 | --- | --- |
 | [MCP tools](mcp.md) | The 30 MCP tools, JSON-RPC endpoint, API-key auth, error taxonomy, call metering |
 | [Grok Build](grok-build.md) | Connect Grok Build (xAI's coding CLI) to AgentLedger's MCP + prime it on the loop |
+| [Cursor](cursor.md) | Connect Cursor to AgentLedger's MCP (user + Cursor 3 Team scope) + the sub-agent fleet |
 | [AI providers](ai-providers.md) | The provider abstraction — stub / Ollama / Anthropic / OpenAI |
 | [API reference](api-reference.md) | Every REST + public endpoint |
 | [Data model](data-model.md) | Entities and relationships |

@@ -37,7 +37,7 @@ config lives:
 | Client | Config | Shape |
 | --- | --- | --- |
 | Claude Code | `claude mcp add` (CLI) | `--transport http … --header "X-API-Key: …"` |
-| Cursor | `~/.cursor/mcp.json` | `mcpServers.<name>.{url, headers}` |
+| Cursor | `~/.cursor/mcp.json` | `mcpServers.<name>.{url, headers}` — full guide: [cursor.md](cursor.md) |
 | Codex | `~/.codex/config.toml` | `[mcp_servers.<name>]` with `url` + `http_headers` |
 | opencode | `opencode.json` | `mcp.<name>.{type: "remote", url, headers}` |
 | Hermes | `~/.hermes/config.yaml` | `mcp_servers.<name>.{url, headers}` |
