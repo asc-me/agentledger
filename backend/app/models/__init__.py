@@ -19,6 +19,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     false,
+    true,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeDecorator
@@ -459,6 +460,11 @@ class PlatformConfig(Base):
     gdrive_connected: Mapped[bool] = mapped_column(Boolean, default=False)
     gdrive_account: Mapped[str] = mapped_column(String, default="")
     gdrive_folder: Mapped[str] = mapped_column(String, default="")
+
+    # Local↔cloud hybrid privacy (AL-137, D8): when False, a linked local instance never
+    # pushes THIS project's code graph — the summaries describe proprietary source and some
+    # teams won't send them off-network. Cloud-side triage/collision-clustering is then weaker.
+    sync_graph: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true(), nullable=False)
 
     # Spam protection for the public feedback endpoints.
     rate_limit_per_min: Mapped[int] = mapped_column(Integer, default=20)

@@ -142,3 +142,33 @@ def test_trigger_push_requires_write(client, monkeypatch):
     ops = _login(client, "ops@ascme-labs.com")  # read-only on core
     r = client.post("/api/sync/push", json={"project_id": "core"}, headers=ops)
     assert r.status_code == 403
+
+
+# ---- privacy (D8) + purge ----
+def test_push_skipped_when_graph_privacy_is_on(client, auth, db, monkeypatch):
+    _describe(db, "x.py")
+    client.patch("/api/platform", json={"sync_graph": False}, headers=auth)
+    db.expire_all()  # re-read the flag committed by the PATCH
+    calls = _capture(monkeypatch)
+    r = code_sync.push(db, project_id="core", cloud_url="https://c", api_key="k")
+    assert r.get("skipped") is True and calls == []  # nothing left the box
+
+
+class _PurgeResp:
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return {"project_id": "core", "deleted_nodes": 3, "deleted_edges": 1}
+
+
+def test_trigger_purge_endpoint(client, auth, monkeypatch):
+    monkeypatch.setattr(code_sync.httpx, "request", lambda *a, **k: _PurgeResp())
+    _link(monkeypatch)
+    r = client.post("/api/sync/purge", json={"project_id": "core"}, headers=auth)
+    assert r.status_code == 200 and r.json()["deleted_nodes"] == 3
+
+
+def test_trigger_purge_not_linked_is_409(client, auth, monkeypatch):
+    _link(monkeypatch, url="", key="")
+    assert client.post("/api/sync/purge", json={"project_id": "core"}, headers=auth).status_code == 409
