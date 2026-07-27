@@ -134,6 +134,12 @@ class Settings(BaseSettings):
     upstream_feedback_url: str = "https://feedback.asc-me.dev/api/public/requests"
     upstream_feedback_project: str = "agentledger"  # project_id on the upstream instance
 
+    # Local↔cloud hybrid (AL-137/139): where a LINKED local instance pushes its code graph,
+    # and the org-minted 'sync'-scoped key it authenticates with. Blank = not linked — a pure
+    # local-only tool that never reaches out to a cloud (the D2 default).
+    sync_cloud_url: str = ""  # e.g. https://cloud.example.com
+    sync_api_key: str = ""    # al_sk_… with the 'sync' scope, minted org-side
+
     # Drive sync: base directory the filesystem backend syncs into. Mount this at a
     # Google Drive Desktop folder to reach Drive with no OAuth.
     sync_dir: str = "/data/sync"

@@ -531,6 +531,18 @@ class SyncState(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class CodeSyncState(Base):
+    """Per-project manifest of the code graph last pushed to the linked cloud tenant (AL-139):
+    `manifest` is {path: content_hash} of what the cloud confirmed — the diff base for an
+    incremental, resumable push. Updated per confirmed batch so an interrupted push resumes."""
+
+    __tablename__ = "code_sync_state"
+
+    project_id: Mapped[str] = mapped_column(String, primary_key=True)
+    manifest: Mapped[dict] = mapped_column(JSON, default=dict)
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class IdempotencyKey(Base):
     """Maps an agent-supplied idempotency key to the resource a create tool produced,
     so a retried call returns the original resource instead of a duplicate."""
