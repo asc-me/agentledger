@@ -33,6 +33,7 @@ from app.services import idempotency as idem_svc
 from app.services import insights as insights_svc
 from app.services import items as items_svc
 from app.services import links as links_svc
+from app.services import mcp_proxy
 from app.services import mcp_stats
 from app.services import memory as mem_svc
 from app.services import quotas
@@ -1317,6 +1318,17 @@ async def mcp_endpoint(
             # bad call is an actionable error rather than a KeyError or a silently
             # accepted junk value (AL-47).
             _validate_args(name, args)
+            # Hybrid proxy (AL-138): when linked to a cloud tenant, non-graph tools run on the
+            # cloud (authoritative for items/claims/memory), graph tools stay local. The cloud
+            # applies its own authz + metering + audit, so we return its result verbatim and
+            # skip the local metering/audit below.
+            if mcp_proxy.should_proxy(name):
+                cloud = await run_in_threadpool(mcp_proxy.forward, name, args)
+                if "result" in cloud:
+                    return _rpc_result(id_, cloud["result"])
+                err = cloud.get("error") or {}
+                return _tool_error(id_, "internal", err.get("message", "cloud proxy error"),
+                                   hint="safe to retry once; if it persists, report it")
             # Run tool dispatch (sync DB + any outbound IO like report_agentledger_issue) off
             # the event loop, so a slow/hanging tool never blocks the async server — and a
             # same-host upstream loop-back can still be served concurrently.
