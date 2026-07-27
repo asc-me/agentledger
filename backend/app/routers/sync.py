@@ -120,3 +120,47 @@ def trigger_purge(
         return code_sync.purge(db, project_id=body.project_id)
     except code_sync.NotLinked as e:
         raise HTTPException(409, str(e))
+
+
+# ---- portable export/import (AL-140): a secondary transport with no cloud ----
+_BUNDLE_VERSION = 1
+
+
+@router.get("/export")
+def export_code_graph(
+    project_id: str = "core",
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Download a project's code graph as a portable, vector-free bundle (summaries + structure).
+    Air-gapped/offline alternative to the cloud sync — import it into any instance, which
+    re-embeds on arrival (D1)."""
+    authz.require_readable(db, user.id, project_id)
+    return {"bundle_version": _BUNDLE_VERSION, "project_id": project_id,
+            **code_graph.export_graph(db, project_id)}
+
+
+class ImportIn(BaseModel):
+    project_id: str = "core"
+    nodes: list[dict] = []
+    edges: list[dict] = []
+    prune: bool = False
+
+
+@router.post("/import")
+def import_code_graph(
+    body: ImportIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Import a code-graph bundle into a writable project (AL-140). Re-embeds each summary with
+    THIS instance's embedder, so the imported graph is searchable in its own vector space (D1);
+    the target is the caller-chosen project, gated by write access."""
+    authz.require_writable(db, user.id, body.project_id, "item")
+    result = code_graph.describe_code(
+        db, project_id=body.project_id, nodes=body.nodes, edges=body.edges, prune=body.prune)
+    events_svc.record_user(
+        db, user, action="import_code_graph", target_type="project",
+        target_id=body.project_id, project_id=body.project_id,
+        meta={"nodes_upserted": result["nodes_upserted"], "edges_upserted": result["edges_upserted"]})
+    return {"project_id": body.project_id, **result}
