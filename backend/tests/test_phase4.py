@@ -35,9 +35,10 @@ def test_links_graph_data(client, auth):
 
 
 def test_mcp_tools_page_lists_all_with_counts(client, auth):
+    from app.mcp_server import LIVE_TOOL_COUNT
     data = client.get("/api/mcp/tools", headers=auth).json()
-    assert data["live"] == 30
-    assert len(data["tools"]) == 30
+    assert data["live"] == LIVE_TOOL_COUNT
+    assert len(data["tools"]) == LIVE_TOOL_COUNT
     by_name = {t["name"]: t for t in data["tools"]}
     assert by_name["search_memory"]["calls"] == 5200  # seeded
     assert "query" in by_name["search_items"]["params"]
