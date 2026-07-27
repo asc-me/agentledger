@@ -79,3 +79,24 @@ def test_sync_is_audited_with_the_human_principal(client, auth):
     top = next(e for e in ev["results"] if e["action"] == "sync_code_graph")
     assert top["target_id"] == "core" and top["agent"] == "spoke"  # the sync key is the agent
     assert top["principal"]  # AL-197 — the human who minted it, not just the key
+
+
+def test_purge_deletes_the_project_graph(client, auth):
+    from app.db import SessionLocal
+    from app.services import code_graph
+
+    key = _key(client, auth, scopes=["sync"])
+    _ingest(client, key, nodes=_NODES, edges=_EDGES)
+    r = client.delete("/api/sync/code-graph", headers={"X-API-Key": key})
+    assert r.status_code == 200 and r.json()["project_id"] == "core"
+    assert r.json()["deleted_nodes"] >= 2
+    db = SessionLocal()
+    try:
+        assert code_graph.list_nodes(db, "core") == []  # graph really gone (D8 purge)
+    finally:
+        db.close()
+
+
+def test_purge_requires_the_sync_scope(client, auth):
+    key = _key(client, auth, scopes=["read", "write"])
+    assert client.delete("/api/sync/code-graph", headers={"X-API-Key": key}).status_code == 403

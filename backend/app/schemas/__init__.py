@@ -431,6 +431,7 @@ class PlatformUpdate(BaseModel):
     active_chat_provider: str | None = None
     providers: dict | None = None
     public_share_enabled: bool | None = None
+    sync_graph: bool | None = None  # AL-137 D8: opt out of pushing this project's code graph
 
 
 class GithubConnectIn(BaseModel):

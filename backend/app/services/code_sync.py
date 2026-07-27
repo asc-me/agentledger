@@ -14,7 +14,7 @@ import httpx
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models import CodeSyncState, utcnow
+from app.models import CodeSyncState, PlatformConfig, utcnow
 from app.services import code_graph
 
 _BATCH = 200      # nodes per request — bounds payload size and sets resumability granularity
@@ -44,13 +44,23 @@ def _post(url: str, api_key: str, body: dict) -> None:
     resp.raise_for_status()
 
 
-def push(db: Session, *, project_id: str, cloud_url: str = "", api_key: str = "",
-         batch_size: int = _BATCH) -> dict:
-    """Push the local code graph for `project_id` to the linked cloud tenant, incrementally."""
+def _target(cloud_url: str, api_key: str) -> tuple[str, str]:
     url = cloud_url or settings.sync_cloud_url
     key = api_key or settings.sync_api_key
     if not url or not key:
         raise NotLinked("no cloud sync target configured (set SYNC_CLOUD_URL / SYNC_API_KEY)")
+    return url, key
+
+
+def push(db: Session, *, project_id: str, cloud_url: str = "", api_key: str = "",
+         batch_size: int = _BATCH) -> dict:
+    """Push the local code graph for `project_id` to the linked cloud tenant, incrementally."""
+    url, key = _target(cloud_url, api_key)
+
+    # Privacy (D8): a project can opt out of ever pushing its graph off-network.
+    cfg = db.get(PlatformConfig, project_id)
+    if cfg is not None and not cfg.sync_graph:
+        return {"project_id": project_id, "skipped": True, "reason": "graph kept local (sync_graph off)"}
 
     nodes = {n.path: n for n in code_graph.list_nodes(db, project_id)}
     local = {p: (n.content_hash or "") for p, n in nodes.items()}
@@ -91,3 +101,18 @@ def push(db: Session, *, project_id: str, cloud_url: str = "", api_key: str = ""
 
     return {"project_id": project_id, "pushed": sent, "removed": len(removed),
             "unchanged": len(local) - len(changed)}
+
+
+def purge(db: Session, *, project_id: str, cloud_url: str = "", api_key: str = "") -> dict:
+    """Delete this project's code graph FROM the cloud (AL-137 D8) and reset the local sync
+    manifest, so a later re-enable does a clean full re-push."""
+    url, key = _target(cloud_url, api_key)
+    resp = httpx.request("DELETE", f"{url.rstrip('/')}/api/sync/code-graph",
+                         headers={"X-API-Key": key}, timeout=_TIMEOUT)
+    resp.raise_for_status()
+    state = db.get(CodeSyncState, project_id)
+    if state is not None:
+        state.manifest = {}
+        state.last_synced_at = utcnow()
+        db.commit()
+    return resp.json()

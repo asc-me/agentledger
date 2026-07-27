@@ -100,6 +100,18 @@ def upsert_node(
     return node
 
 
+def delete_project_graph(db: Session, project_id: str) -> dict:
+    """Purge a project's code graph — actually DELETE every node and edge (AL-137 D8: remove
+    the synced graph from the cloud). Unlike prune/mark_paths_stale, this doesn't just flag
+    stale; it removes. Returns the counts deleted."""
+    nodes = db.scalars(select(CodeNode).where(CodeNode.project_id == project_id)).all()
+    edges = db.scalars(select(CodeEdge).where(CodeEdge.project_id == project_id)).all()
+    counts = {"deleted_nodes": len(nodes), "deleted_edges": len(edges)}
+    for row in (*nodes, *edges):
+        db.delete(row)
+    return counts
+
+
 def mark_paths_stale(db: Session, project_id: str, paths: list[str]) -> int:
     """Mark specific nodes stale (`fresh=False`) — the incremental-sync counterpart of
     describe_code's batch prune (AL-139). Used when a linked local instance reports paths it

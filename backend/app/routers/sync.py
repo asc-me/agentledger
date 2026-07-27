@@ -72,6 +72,21 @@ def ingest_code_graph(
     return {"project_id": project_id, **result}
 
 
+@router.delete("/code-graph")
+def purge_code_graph(db: Session = Depends(get_db), key: ApiKey = Depends(get_agent_key)):
+    """Purge the synced code graph for the credential's project (AL-137 D8) — deletes every
+    node + edge. Target resolved server-side from the sync credential, same as ingest."""
+    targets = authz.key_sync_ids(db, key)
+    if not targets:
+        raise HTTPException(403, "this key can't purge a code graph — needs the 'sync' scope")
+    project_id = targets[0]
+    result = code_graph.delete_project_graph(db, project_id)
+    db.commit()
+    events_svc.record_key(db, key, action="purge_code_graph", target_type="project",
+                          target_id=project_id, project_id=project_id, meta=result)
+    return {"project_id": project_id, **result}
+
+
 class PushIn(BaseModel):
     project_id: str = "core"
 
@@ -88,5 +103,20 @@ def trigger_push(
     authz.require_writable(db, user.id, body.project_id, "item")
     try:
         return code_sync.push(db, project_id=body.project_id)
+    except code_sync.NotLinked as e:
+        raise HTTPException(409, str(e))
+
+
+@router.post("/purge")
+def trigger_purge(
+    body: PushIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Delete THIS project's code graph from its linked cloud tenant (AL-137 D8) and reset the
+    local sync manifest. Write-gated; `409` when not linked."""
+    authz.require_writable(db, user.id, body.project_id, "item")
+    try:
+        return code_sync.purge(db, project_id=body.project_id)
     except code_sync.NotLinked as e:
         raise HTTPException(409, str(e))
