@@ -9,7 +9,8 @@ agent's writes are identical to a user's and appear instantly in the UI.
 - **`POST /api/mcp`** — JSON-RPC 2.0 over HTTP. Handles `initialize`, `tools/list`,
   `tools/call`, and the `notifications/initialized` notification. Single JSON responses (no
   SSE) keep it `curl`-friendly while remaining MCP Streamable-HTTP compatible for simple
-  calls.
+  calls. The server advertises MCP protocol **2025-11-25** and negotiates down to a
+  client's requested version when it's one it supports.
 - **Auth** — a scoped **API key** via `X-API-Key: al_sk_…` or `Authorization: Bearer
   al_sk_…`. Create one in [Settings → API Keys](settings.md#api-keys-tab). Unauthenticated
   calls return `401`.

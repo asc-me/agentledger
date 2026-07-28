@@ -47,7 +47,10 @@ import httpx
 
 router = APIRouter(tags=["mcp"])
 
-PROTOCOL_VERSION = "2025-06-18"
+PROTOCOL_VERSION = "2025-11-25"  # latest finalized MCP spec our tools surface conforms to
+# Versions this server is compatible with. Per the spec's negotiation rule we echo the
+# client's requested version when it's one of these, else advertise PROTOCOL_VERSION.
+SUPPORTED_PROTOCOL_VERSIONS = frozenset({"2025-03-26", "2025-06-18", "2025-11-25"})
 
 logger = logging.getLogger("agentledger.mcp")
 
@@ -1353,10 +1356,12 @@ async def mcp_endpoint(
         return Response(status_code=202)
 
     if method == "initialize":
+        requested = body.get("params", {}).get("protocolVersion")
+        version = requested if requested in SUPPORTED_PROTOCOL_VERSIONS else PROTOCOL_VERSION
         return _rpc_result(
             id_,
             {
-                "protocolVersion": PROTOCOL_VERSION,
+                "protocolVersion": version,
                 "capabilities": {"tools": {}},
                 "serverInfo": {"name": "agentledger", "version": "0.1.0"},
             },
