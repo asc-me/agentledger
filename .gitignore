@@ -25,3 +25,9 @@ sync/
 
 # Tooling
 .serena/
+
+# Cursor MCP config — holds a real API key; copy .cursor/mcp.json.example instead
+.cursor/mcp.json
+
+# Cursor claim manifest — per-session runtime state (see .cursor/hooks/README.md)
+.cursor/agentledger-claim.json

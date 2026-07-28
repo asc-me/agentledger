@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      { "type": "command", "command": "python3 .cursor/hooks/al_session_start.py" }
+    ],
+    "afterFileEdit": [
+      { "type": "command", "command": "python3 .cursor/hooks/al_after_file_edit.py" }
+    ],
+    "stop": [
+      { "type": "command", "command": "python3 .cursor/hooks/al_stop.py", "loop_limit": 1 }
+    ]
+  }
+}
