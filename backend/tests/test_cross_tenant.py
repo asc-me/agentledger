@@ -270,3 +270,59 @@ def test_hosted_e2e_loop(client, monkeypatch):
     assert billing["plan"] == "team"
     assert billing["usage"]["projects"] == 1
     assert billing["usage"]["seats"] == 2  # alex + bob
+
+
+# ---- Sync surface: a code-graph credential can't push/pull across orgs (AL-220) --
+# test_sync.py covers the single-tenant ingest; these extend the AL-76/AL-95 sweep to
+# the /sync surface, the fleet-facing path a hosted Team endpoint (AL-219) will expose.
+_SYNC_NODE = {"path": "svc.py", "kind": "file", "name": "svc",
+              "summary": "a service", "content_hash": "h1"}
+
+
+def test_sync_credential_ingests_only_into_its_own_project(client, tenants):
+    """Positive control: alex's sync credential for her own project lands there."""
+    a, pa = tenants["alex"], tenants["p_a"]
+    key = client.post("/api/api-keys", json={"name": "spoke-a", "scopes": ["sync"],
+                                             "project_id": pa}, headers=a).json()["plaintext"]
+    r = client.post("/api/sync/code-graph", json={"nodes": [_SYNC_NODE]}, headers={"X-API-Key": key})
+    assert r.status_code == 200 and r.json()["project_id"] == pa
+    exported = client.get(f"/api/sync/export?project_id={pa}", headers=a).json()
+    assert any(n["path"] == "svc.py" for n in exported["nodes"])
+
+
+def test_sync_credential_cannot_ingest_into_another_org(client, tenants):
+    """Alex holds a LEAKED write Membership on org B's project; the org gate must still
+    keep her sync credential from pushing a graph into org B."""
+    a, dana, pb = tenants["alex"], tenants["dana"], tenants["p_b"]
+    before = client.get(f"/api/sync/export?project_id={pb}", headers=dana).json()["nodes"]
+
+    created = client.post("/api/api-keys", json={"name": "spoke-b", "scopes": ["sync"],
+                                                 "project_id": pb}, headers=a)
+    if created.status_code == 201:
+        # If the key can be minted at all, the ingest itself must refuse (empty sync target).
+        key = created.json()["plaintext"]
+        r = client.post("/api/sync/code-graph", json={"nodes": [_SYNC_NODE]},
+                        headers={"X-API-Key": key})
+        assert r.status_code == 403, f"sync ingest leaked into org B: {r.status_code} {r.text[:200]}"
+    else:
+        assert _blocked(created.status_code)  # minting a key for a foreign project refused outright
+
+    after = client.get(f"/api/sync/export?project_id={pb}", headers=dana).json()["nodes"]
+    assert len(after) == len(before), "a cross-org sync attempt added nodes to org B"
+
+
+def test_cross_org_sync_rest_ops_blocked(client, tenants):
+    """The JWT-authed sync triggers (push/purge/export/import) are project-gated too —
+    naming another org's project_id can't push, purge, read, or import its graph."""
+    a, dana, pb = tenants["alex"], tenants["dana"], tenants["p_b"]
+    ops = [
+        ("POST", "/api/sync/push", {"project_id": pb}),
+        ("POST", "/api/sync/purge", {"project_id": pb}),
+        ("GET", f"/api/sync/export?project_id={pb}", None),
+        ("POST", "/api/sync/import", {"project_id": pb, "nodes": [_SYNC_NODE]}),
+    ]
+    for method, path, body in ops:
+        r = client.request(method, path, json=body, headers=a)
+        assert _blocked(r.status_code), f"{method} {path} leaked: {r.status_code} {r.text[:200]}"
+    # And org B never received the import.
+    assert client.get(f"/api/sync/export?project_id={pb}", headers=dana).json()["nodes"] == []
