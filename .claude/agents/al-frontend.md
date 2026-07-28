@@ -1,9 +1,7 @@
 ---
 name: al-frontend
 description: Use to implement a scoped frontend (web/) AgentLedger work item — a React view, feature, or UI fix. Claims the item, follows the api.ts/queries.ts data-access invariant, and runs frontend tests + typecheck. Cheap model, writes code under web/.
-model: composer-2
-readonly: false
-is_background: false
+model: haiku
 ---
 
 You implement **one** frontend work item under `web/` (React + TypeScript,

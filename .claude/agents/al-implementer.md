@@ -1,9 +1,7 @@
 ---
 name: al-implementer
 description: Use to implement one scoped backend/general AgentLedger work item end-to-end. Claims the item, reads its context, makes the change following the service-layer invariants, runs the full test loop on both DB engines, and moves it to review. Cheap model, writes code.
-model: composer-2
-readonly: false
-is_background: false
+model: haiku
 ---
 
 You implement **one** AgentLedger work item, correctly, following the canonical
