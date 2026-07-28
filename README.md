@@ -29,7 +29,7 @@ opt-in. A hosted multi-tenant service is a later, additive layer.
 | **Links** | Interactive force-directed graph of typed relationships (dependency / code / semantic / tag) |
 | **Dashboard** | KPI tiles, status distribution, request breakdown, recent activity |
 | **Roadmap** | MVP → Post-MVP → Later with progress; shareable read-only public link |
-| **MCP Tools** | **30 live tools** with per-tool call metering, params, and descriptions |
+| **MCP Tools** | **32 live tools** with per-tool call metering, params, and descriptions |
 | **Feedback Kit** | Themeable embeddable widget generator (accent / radius / types) with live preview + copy-paste snippet |
 | **Settings / Profile** | AI provider switch, GitHub/Drive connection config, project config, members, API keys; profile + project access |
 | **MCP** | Orientation `get_context` · `list_projects` — Work queue `claim_next` · `next_cluster` · `heartbeat` · `release_item` · `get_backlog` · `suggest_next` — Items `create_item` · `update_item` · `search_items` · `get_item_details` · `related_work` · `link_items` — Memory `add_memory` · `search_memory` · `extract_lessons` · `generate_digest` — PRDs `create_prd` · `update_prd` · `grill_prd` · `decompose_prd` · `prd_coverage` — Code graph `describe_code` · `get_code_map` · `code_neighbors` · `search_code` · `link_code` · `unlink_code` — Upstream `report_agentledger_issue` |
@@ -88,7 +88,7 @@ curl -s http://localhost:8000/api/mcp \
        "params":{"name":"create_item","arguments":{"title":"From an agent","effort":2}}}'
 ```
 
-`tools/list` returns the tools this key can call — all 30 for a read+write key, or just the
+`tools/list` returns the tools this key can call — all 32 for a read+write key, or just the
 read tools for a read-only key (the manifest is scope-gated to keep it lean). Every call is metered and shows up on the **MCP Tools**
 page. The created item appears immediately in the web Tracker — agents and the UI share
 one service layer.

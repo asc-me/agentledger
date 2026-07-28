@@ -22,7 +22,7 @@ agent's writes are identical to a user's and appear instantly in the UI.
 - **Metering** — every `tools/call` increments a per-tool counter (the `mcp_tool_stats`
   table) surfaced on the **MCP Tools** view.
 - **Scope-gated manifest** — `tools/list` returns only the tools the key can call: a
-  read+write key sees all 31, a read-only key sees just the read tools. A read-only key
+  read+write key sees all 32, a read-only key sees just the read tools. A read-only key
   never pays for write-tool schemas it would only get `unauthorized` on (AL-78).
 - **Lean list rows** — `search_items` and `get_backlog` return a compact row
   (`id`/`title`/`status`, plus the ranking fields for the backlog) by default. Pass
@@ -75,7 +75,7 @@ mcp_servers:
 Every client authenticates the same way: the key in an `X-API-Key` header (or
 `Authorization: Bearer`), against a URL reachable **from where the agent runs**.
 
-## The 31 tools
+## The 32 tools
 
 | Tool | Params | Does |
 | --- | --- | --- |
@@ -96,6 +96,7 @@ Every client authenticates the same way: the key in an `X-API-Key` header (or
 | `get_item_details` | `id` | Item + linked shards + linked requests |
 | `suggest_next` | `project_id` | Best next item from state + memory |
 | `link_items` | `a`, `b`, `type`, `reason` | Create a typed relationship |
+| `unlink_items` | `a`, `b`, `type` | Remove a typed relationship (inverse of `link_items`); omit `type` to remove all types for the pair. Idempotent — returns `removed` |
 | `extract_lessons` | `id` | Distill lessons from an item into memory |
 | `generate_digest` | `project_id` | Compose a progress digest across the project |
 | `prd_coverage` | `prd_id` | Spec-to-task rollup: per-section counts, coverage %, gaps (read-only) |

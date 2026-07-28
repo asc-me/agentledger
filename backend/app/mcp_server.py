@@ -232,6 +232,23 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "unlink_items",
+        "description": (
+            "Remove a typed relationship between two items — the inverse of link_items. Omit "
+            "`type` to remove every link type for the (a, b) pair. Idempotent: returns "
+            "`removed` (0 if the link didn't exist)."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "a": {"type": "string"},
+                "b": {"type": "string"},
+                "type": {"type": "string", "enum": _LINK_TYPE_ENUM},
+            },
+            "required": ["a", "b"],
+        },
+    },
+    {
         "name": "extract_lessons",
         "description": "Auto-distill decisions/learnings from an item into memory.",
         "inputSchema": {
@@ -514,7 +531,7 @@ TOOLS: list[dict[str, Any]] = [
 # Project-scoped tools accept an optional `project_id` that overrides the key's project.
 _PROJECT_SCOPED = {
     "create_item", "search_items", "add_memory", "search_memory",
-    "get_backlog", "suggest_next", "generate_digest", "link_items", "claim_next", "next_cluster",
+    "get_backlog", "suggest_next", "generate_digest", "link_items", "unlink_items", "claim_next", "next_cluster",
     "describe_code", "get_code_map", "code_neighbors", "search_code",
     "link_code", "unlink_code", "create_prd",
 }
@@ -651,6 +668,10 @@ _OUTPUT_SCHEMAS: dict[str, dict] = {
     "link_items": {
         "type": "object",
         "properties": {"id": {"type": "integer"}, "a": _STR, "b": _STR, "type": _STR},
+    },
+    "unlink_items": {
+        "type": "object",
+        "properties": {"removed": {"type": "integer"}},
     },
     "extract_lessons": {
         "type": "object",
@@ -1131,6 +1152,15 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
         )
         _idempotent_remember(db, args, "link_items", link.id)
         return {"id": link.id, "a": link.a, "b": link.b, "type": link.type}
+    if name == "unlink_items":
+        # Both endpoints must be in scope — same guard as link_items, so a key can't
+        # probe or mutate links that touch items outside its project scope.
+        _scoped_item(db, args["a"], allowed)
+        _scoped_item(db, args["b"], allowed)
+        removed = links_svc.delete_link(
+            db, a=args["a"], b=args["b"], type_=args.get("type"), project_id=pid,
+        )
+        return {"removed": removed}
     if name == "claim_next":
         agent = args.get("agent_id") or key.name or key.id
         item = items_svc.claim_next(
