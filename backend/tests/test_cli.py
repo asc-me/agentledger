@@ -1,0 +1,108 @@
+"""AL-218: the `agentledger` sync CLI — thin wrapper over the code-graph sync services.
+
+The service calls are monkeypatched (they're covered by test_code_push / test_export_import);
+these tests pin the CLI's own behaviour: config persistence, link resolution, guards.
+"""
+import json
+
+import pytest
+
+from app import cli
+
+
+class _DummyDB:
+    def get(self, *a, **k):
+        return None
+
+    def close(self):
+        pass
+
+
+@pytest.fixture
+def cfg_path(tmp_path, monkeypatch):
+    p = tmp_path / "config.json"
+    monkeypatch.setenv("AGENTLEDGER_CONFIG", str(p))
+    monkeypatch.setattr(cli, "_session", lambda: _DummyDB())
+    return p
+
+
+def test_link_persists_target_chmod_600(cfg_path):
+    assert cli.main(["link", "--cloud-url", "https://c.example/", "--api-key", "al_sk_x", "--project", "core"]) == 0
+    saved = json.loads(cfg_path.read_text())
+    assert saved == {"cloud_url": "https://c.example", "api_key": "al_sk_x", "project": "core"}  # slash trimmed
+    assert oct(cfg_path.stat().st_mode)[-3:] == "600"  # credential file is not world-readable
+
+
+def test_link_requires_both_url_and_key(cfg_path):
+    with pytest.raises(SystemExit):
+        cli.main(["link", "--cloud-url", "https://c.example/"])  # missing --api-key
+
+
+def test_status_reports_not_linked(cfg_path, capsys):
+    assert cli.main(["status"]) == 0
+    assert "Not linked" in capsys.readouterr().out
+
+
+def test_status_linked_shows_never_synced(cfg_path, capsys):
+    cli.main(["link", "--cloud-url", "https://c.example", "--api-key", "al_sk_x"])
+    capsys.readouterr()
+    assert cli.main(["status"]) == 0
+    out = capsys.readouterr().out
+    assert "https://c.example" in out and "Last sync : never" in out
+
+
+def test_sync_passes_the_stored_link_to_push(cfg_path, monkeypatch):
+    cli.main(["link", "--cloud-url", "https://c.example", "--api-key", "al_sk_x"])
+    seen = {}
+
+    def fake_push(db, *, project_id, cloud_url, api_key, **kw):
+        seen.update(project_id=project_id, cloud_url=cloud_url, api_key=api_key)
+        return {"pushed": 3, "removed": 0, "unchanged": 10}
+
+    from app.services import code_sync
+    monkeypatch.setattr(code_sync, "push", fake_push)
+    assert cli.main(["sync"]) == 0
+    assert seen == {"project_id": "core", "cloud_url": "https://c.example", "api_key": "al_sk_x"}
+
+
+def test_sync_reports_not_linked_cleanly(cfg_path, monkeypatch):
+    from app.services import code_sync
+
+    def boom(*a, **k):
+        raise code_sync.NotLinked("no cloud sync target configured")
+
+    monkeypatch.setattr(code_sync, "push", boom)
+    with pytest.raises(SystemExit):
+        cli.main(["sync"])  # not linked -> clean exit, not a traceback
+
+
+def test_purge_requires_confirmation(cfg_path):
+    cli.main(["link", "--cloud-url", "https://c.example", "--api-key", "al_sk_x"])
+    with pytest.raises(SystemExit):
+        cli.main(["purge"])  # no --yes
+
+
+def test_export_writes_a_bundle(cfg_path, tmp_path, monkeypatch):
+    from app.services import code_graph
+    monkeypatch.setattr(code_graph, "export_graph",
+                        lambda db, pid: {"nodes": [{"path": "a.py"}], "edges": []})
+    out = tmp_path / "graph.json"
+    assert cli.main(["export", "--project", "core", "--out", str(out)]) == 0
+    bundle = json.loads(out.read_text())
+    assert bundle["bundle_version"] == 1 and bundle["project_id"] == "core"
+    assert bundle["nodes"] == [{"path": "a.py"}]
+
+
+def test_import_reads_a_bundle_into_describe_code(cfg_path, tmp_path, monkeypatch):
+    src = tmp_path / "graph.json"
+    src.write_text(json.dumps({"project_id": "core", "nodes": [{"path": "a.py"}], "edges": []}))
+    seen = {}
+
+    def fake_describe(db, *, project_id, nodes, edges, prune):
+        seen.update(project_id=project_id, nodes=nodes, prune=prune)
+        return {"nodes_upserted": len(nodes), "edges_upserted": 0}
+
+    from app.services import code_graph
+    monkeypatch.setattr(code_graph, "describe_code", fake_describe)
+    assert cli.main(["import", "--in", str(src), "--prune"]) == 0
+    assert seen["project_id"] == "core" and seen["prune"] is True and len(seen["nodes"]) == 1

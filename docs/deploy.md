@@ -157,3 +157,34 @@ account-touching step (the remaining `railway` items). What the code already han
 Drive/filesystem sync is a self-host convenience. On Railway either leave it
 unconfigured (it stays dormant with no Drive folder set) or attach a volume at
 `/data/sync` if you want it — it is not required for the hosted app to run.
+
+## Code-graph sync (local → cloud) — the `agentledger` CLI
+
+A linked local instance builds its code graph on-box and pushes the *result* to a
+cloud tenant (the AL-134 hybrid). The `agentledger` console script drives that sync
+directly against the instance database, so run it where `DATABASE_URL` points at your
+instance — inside the backend container is simplest:
+
+```bash
+# Link once — stores the cloud URL + org-issued sync credential in
+# ~/.agentledger/config.json (chmod 600; override path via AGENTLEDGER_CONFIG).
+docker compose exec backend agentledger link \
+  --cloud-url https://cloud.example/ --api-key al_sk_… --project core
+
+docker compose exec backend agentledger status   # link + last-synced state
+docker compose exec backend agentledger sync      # incremental push (only changed paths ship)
+docker compose exec backend agentledger purge --yes   # delete this project's graph from the cloud
+```
+
+Air-gapped / no direct connection? Move the graph as a portable, vector-free bundle
+(the receiver re-embeds on import):
+
+```bash
+docker compose exec backend agentledger export --project core --out graph.json
+docker compose exec backend agentledger import --in graph.json --prune
+```
+
+`sync` is incremental and resumable (content-hash manifest per path); a project with
+its privacy toggle off (`sync_graph=false`) is skipped. The push respects the same
+server-side tenant boundary as the API — the cloud stamps `org_id` from the credential,
+never the payload.
