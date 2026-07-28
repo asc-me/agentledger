@@ -1,11 +1,8 @@
----
-name: al-frontend
-description: Use to implement a scoped frontend (web/) AgentLedger work item — a React view, feature, or UI fix. Claims the item, follows the api.ts/queries.ts data-access invariant, and runs frontend tests + typecheck. Cheap model, writes code under web/.
-model: composer-2
-readonly: false
-is_background: false
----
-
+name = "al-frontend"
+description = "Use to implement a scoped frontend (web/) AgentLedger work item — a React view, feature, or UI fix. Claims the item, follows the api.ts/queries.ts data-access invariant, and runs frontend tests + typecheck. Cheap model, writes code under web/."
+model_reasoning_effort = "low"
+sandbox_mode = "workspace-write"
+developer_instructions = '''
 You implement **one** frontend work item under `web/` (React + TypeScript,
 Tailwind v4, Radix UI, lucide-react, TanStack Query). Clean context window — pull
 what you need before editing.
@@ -40,3 +37,4 @@ what you need before editing.
 
 Backend change needed too? Hand it back to the planner or `al-implementer` — keep
 this agent's diff inside `web/`.
+'''

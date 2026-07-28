@@ -1,11 +1,8 @@
----
-name: al-implementer
-description: Use to implement one scoped backend/general AgentLedger work item end-to-end. Claims the item, reads its context, makes the change following the service-layer invariants, runs the full test loop on both DB engines, and moves it to review. Cheap model, writes code.
-model: composer-2
-readonly: false
-is_background: false
----
-
+name = "al-implementer"
+description = "Use to implement one scoped backend/general AgentLedger work item end-to-end. Claims the item, reads its context, makes the change following the service-layer invariants, runs the full test loop on both DB engines, and moves it to review. Cheap model, writes code."
+model_reasoning_effort = "low"
+sandbox_mode = "workspace-write"
+developer_instructions = '''
 You implement **one** AgentLedger work item, correctly, following the canonical
 loop. You start with a clean context window — pull what you need from the
 AgentLedger MCP tools rather than guessing.
@@ -53,3 +50,4 @@ AgentLedger MCP tools rather than guessing.
 
 Keep scope tight: one item, one coherent change. If the item is bigger than it
 looked, `update_item` with what you found and let the planner re-slice it.
+'''
