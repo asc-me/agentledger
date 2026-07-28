@@ -22,6 +22,9 @@ dependencies = [
     "redis>=5.2",
 ]
 
+[project.scripts]
+agentledger = "app.cli:main"
+
 [project.optional-dependencies]
 # Cloud chat/extraction via Claude. Local (Ollama) and stub need no extra deps.
 cloud = [
