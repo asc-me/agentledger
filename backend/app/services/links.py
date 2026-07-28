@@ -1,7 +1,7 @@
 """Typed-link service (minimal — the Links graph UI lands in Phase 4)."""
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.models import Link
@@ -20,6 +20,22 @@ def create_link(
     db.commit()
     db.refresh(link)
     return link
+
+
+def delete_link(
+    db: Session, *, a: str, b: str, type_: str | None = None, project_id: str | None = None,
+) -> int:
+    """Remove the directed (a, b) link(s) — the inverse of create_link. Omit `type_` to
+    remove every link type for that pair; scope by `project_id` when given. Idempotent:
+    returns the number of links removed (0 if the link never existed)."""
+    stmt = delete(Link).where(Link.a == a, Link.b == b)
+    if type_ is not None:
+        stmt = stmt.where(Link.type == type_)
+    if project_id is not None:
+        stmt = stmt.where(Link.project_id == project_id)
+    removed = db.execute(stmt).rowcount or 0
+    db.commit()
+    return removed
 
 
 def list_links(db: Session, project_id: str | None = None) -> list[Link]:
