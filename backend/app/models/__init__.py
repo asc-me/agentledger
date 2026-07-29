@@ -549,6 +549,27 @@ class CodeSyncState(Base):
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class SyncLink(Base):
+    """Instance-wide link to a cloud tenant (AL-141) — the web-managed counterpart of the
+    `agentledger link` CLI. A self-hosted box pushes its code graph to `cloud_url`,
+    authenticating with a `sync`-scoped org key held encrypted at rest (`api_key_enc`, the
+    same Fernet-at-rest as provider BYOK keys). Singleton (`id="instance"`); a blank
+    `cloud_url` means not linked — a pure local-only tool that never reaches out (the D2
+    default). When present it OVERRIDES the env `SYNC_CLOUD_URL`/`SYNC_API_KEY`, so linking
+    from the UI wins over a baked-in env link."""
+
+    __tablename__ = "sync_link"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default="instance")
+    cloud_url: Mapped[str] = mapped_column(String, default="")
+    api_key_enc: Mapped[str] = mapped_column(String, default="")  # Fernet token; never returned raw
+    org: Mapped[str] = mapped_column(String, default="")  # optional label shown in the UI
+    linked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
 class IdempotencyKey(Base):
     """Maps an agent-supplied idempotency key to the resource a create tool produced,
     so a retried call returns the original resource instead of a duplicate."""

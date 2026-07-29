@@ -1,0 +1,96 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { SyncLinkPanel } from "@/features/settings/SyncLinkPanel";
+import type { SyncStatus } from "@/lib/types";
+
+const unlinked: SyncStatus = {
+  linked: false, source: "", cloud_url: "", org: "", credential_set: false, linked_at: null,
+  projects: [
+    { project_id: "core", name: "Core", writable: true, sync_graph: true, total_nodes: 1240, synced_nodes: 1200, pending: 40, last_synced_at: null, status: "stale" },
+  ],
+};
+
+const linked: SyncStatus = {
+  linked: true, source: "web", cloud_url: "https://cloud.agentledger.dev", org: "acme",
+  credential_set: true, linked_at: new Date().toISOString(),
+  projects: [
+    { project_id: "core", name: "Core", writable: true, sync_graph: true, total_nodes: 1240, synced_nodes: 1240, pending: 0, last_synced_at: new Date().toISOString(), status: "live" },
+  ],
+};
+
+const api = vi.hoisted(() => ({
+  syncStatus: vi.fn(),
+  syncLink: vi.fn(),
+  syncUnlink: vi.fn(),
+  syncSetGraph: vi.fn(),
+  syncPush: vi.fn(),
+  syncPurge: vi.fn(),
+  syncExport: vi.fn(),
+  syncImport: vi.fn(),
+}));
+
+vi.mock("@/lib/api", () => ({ api }));
+
+function renderPanel() {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={qc}>
+      <SyncLinkPanel />
+    </QueryClientProvider>,
+  );
+}
+
+describe("SyncLinkPanel", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    api.syncStatus.mockResolvedValue(unlinked);
+    api.syncLink.mockResolvedValue(linked);
+    api.syncUnlink.mockResolvedValue(unlinked);
+    api.syncSetGraph.mockResolvedValue({});
+    api.syncPush.mockResolvedValue({ project_id: "core", pushed: 40, removed: 0 });
+  });
+
+  it("shows the link form when the instance is not linked", async () => {
+    renderPanel();
+    expect(await screen.findByText("not linked")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("cloud.agentledger.dev")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("paste key…")).toBeInTheDocument();
+  });
+
+  it("submits the link form with URL, key, and org", async () => {
+    const user = userEvent.setup();
+    renderPanel();
+    await screen.findByText("not linked");
+
+    await user.type(screen.getByPlaceholderText("cloud.agentledger.dev"), "cloud.agentledger.dev");
+    await user.type(screen.getByPlaceholderText("paste key…"), "al_sk_secret");
+    await user.type(screen.getByPlaceholderText("acme"), "acme");
+    await user.click(screen.getByRole("button", { name: "Link instance" }));
+
+    await waitFor(() =>
+      expect(api.syncLink).toHaveBeenCalledWith("cloud.agentledger.dev", "al_sk_secret", "acme"),
+    );
+  });
+
+  it("renders link details and gates the scoped controls until a project is picked", async () => {
+    const user = userEvent.setup();
+    api.syncStatus.mockResolvedValue(linked);
+    renderPanel();
+
+    expect(await screen.findByText("linked")).toBeInTheDocument();
+    expect(screen.getByText("https://cloud.agentledger.dev")).toBeInTheDocument();
+
+    // Scope is empty → the graph-sync checkbox does nothing yet.
+    expect(screen.getByText("No project selected")).toBeInTheDocument();
+
+    // Selecting the project scopes the lower cards and enables the toggle.
+    await user.click(screen.getByRole("button", { name: /Core/ }));
+    expect(await screen.findByText("Controls below apply to this project only")).toBeInTheDocument();
+
+    await user.click(screen.getByText(/Sync this project.s code graph to the cloud/));
+    await waitFor(() => expect(api.syncSetGraph).toHaveBeenCalledWith("core", false));
+  });
+});

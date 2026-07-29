@@ -19,10 +19,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import ApiKey, User
+from app.models import ApiKey, Project, User
+from app.schemas import SyncLinkIn, SyncStatusOut
 from app.security import authz
 from app.security.deps import get_agent_key, get_current_user
 from app.services import code_graph
@@ -30,6 +32,59 @@ from app.services import code_sync
 from app.services import events as events_svc
 
 router = APIRouter(prefix="/sync", tags=["sync"])
+
+
+# ---- instance link + status (AL-141): the web-managed cloud link -------------------------
+
+def _status(db: Session, user: User) -> dict:
+    """Assemble the Sync/Link page payload: instance link state + per-project sync state for
+    the projects this user can read, flagged with whether they can also push/purge them."""
+    link = code_sync.link_status(db)
+    readable = set(authz.readable_project_ids(db, user.id))
+    writable = set(authz.writable_project_ids(db, user.id))
+    names = {p.id: p.name for p in db.scalars(select(Project)).all() if p.id in readable}
+    order = sorted(readable, key=lambda pid: names.get(pid, pid).lower())
+    states = {s["project_id"]: s for s in code_sync.project_states(db, order)}
+    projects = [
+        {**states[pid], "name": names.get(pid, pid), "writable": pid in writable}
+        for pid in order
+    ]
+    return {**link, "projects": projects}
+
+
+@router.get("/status", response_model=SyncStatusOut)
+def sync_status(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Link state (never the credential itself) plus per-project sync state for the page."""
+    return _status(db, user)
+
+
+@router.post("/link", response_model=SyncStatusOut)
+def link_instance(
+    body: SyncLinkIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+):
+    """Link this instance to a cloud tenant (AL-141). The sync key is encrypted at rest and
+    overrides any env-baked link; a blank key on a re-link keeps the stored one."""
+    url = body.cloud_url.strip()
+    if not url:
+        raise HTTPException(422, "cloud_url is required")
+    if not (url.startswith("http://") or url.startswith("https://")):
+        url = "https://" + url
+    existing = code_sync.get_link(db)
+    if not body.api_key and (existing is None or not existing.api_key_enc):
+        raise HTTPException(422, "a sync API key is required to link")
+    code_sync.set_link(db, cloud_url=url, api_key=body.api_key, org=body.org)
+    events_svc.record_user(db, user, action="link_cloud_sync", target_type="instance",
+                           target_id="sync_link", meta={"cloud_url": url, "org": body.org.strip()})
+    return _status(db, user)
+
+
+@router.delete("/link", response_model=SyncStatusOut)
+def unlink_instance(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Unlink — stops all sync. Local data is untouched; cloud items remain (AL-141)."""
+    code_sync.clear_link(db)
+    events_svc.record_user(db, user, action="unlink_cloud_sync", target_type="instance",
+                           target_id="sync_link")
+    return _status(db, user)
 
 
 class CodeGraphIn(BaseModel):
