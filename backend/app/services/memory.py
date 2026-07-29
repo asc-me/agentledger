@@ -1,6 +1,9 @@
 """Memory shard service — semantic search over pgvector with a SQLite fallback."""
 from __future__ import annotations
 
+import json
+import logging
+import re
 import uuid
 
 from sqlalchemy import select, text
@@ -10,6 +13,8 @@ from app.config import settings
 from app.embeddings import cosine_similarity, get_embedder, safe_embed
 from app.models import MemoryShard, Project
 from app.services import events as events_svc
+
+logger = logging.getLogger("agentledger.memory")
 
 
 def _includes_global(db: Session, project_id: str) -> bool:
@@ -211,16 +216,79 @@ def score_candidates(db: Session, *, project_id: str | None = None) -> list[dict
     return out
 
 
-def _triage_prefs(db: Session, project_id: str | None) -> tuple[bool, bool]:
-    """(auto_reject, auto_accept) for a project (AL-227). Project-less ("global")
-    shards, or an unknown project, fall back to the platform defaults: reject on,
-    accept off."""
+def _triage_prefs(db: Session, project_id: str | None) -> tuple[bool, bool, bool]:
+    """(auto_reject, auto_accept, llm_judge) for a project (AL-227). Project-less
+    ("global") shards, or an unknown project, fall back to the platform defaults:
+    reject on, accept off, judge off."""
     if project_id is None:
-        return True, False
+        return True, False, False
     project = db.get(Project, project_id)
     if project is None:
-        return True, False
-    return bool(project.memory_auto_reject), bool(project.memory_auto_accept)
+        return True, False, False
+    return bool(project.memory_auto_reject), bool(project.memory_auto_accept), bool(project.memory_llm_judge)
+
+
+# --- LLM judge (AL-227) ---------------------------------------------------------
+# When `memory_llm_judge` is on, the project's chat model rates a candidate's quality
+# / actionability, enriching the offline similarity signal. Structural vetoes (near-
+# duplicate, resembles-rejected) still win — the judge refines the accept/quality view,
+# it can't rescue a duplicate. Falls back to similarity when no real model is configured.
+_JUDGE_SYSTEM = (
+    "You are a strict reviewer of an AI coding agent's memory notes. A GOOD memory is a "
+    "durable, specific, actionable fact, decision, or convention that will help a future "
+    "agent working on this project. REJECT notes that are vague, transient, obvious, "
+    "redundant, or low-signal. Respond with ONLY a compact JSON object and nothing else: "
+    '{"keep": <true|false>, "quality": <number 0..1>, "reason": "<one short sentence>"}'
+)
+_JUDGE_QUESTION = "Rate this candidate memory. Return only the JSON object."
+_JSON_OBJ_RE = re.compile(r"\{.*\}", re.DOTALL)
+
+
+def _parse_judge(raw: str) -> dict | None:
+    """Parse the judge's reply into {keep, quality, reason}, defensively. Returns None
+    if no well-formed verdict is present — the caller then falls back to similarity."""
+    if not raw:
+        return None
+    match = _JSON_OBJ_RE.search(raw)
+    if match is None:
+        return None
+    try:
+        data = json.loads(match.group(0))
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(data, dict) or "keep" not in data:
+        return None
+    try:
+        quality = float(data.get("quality", 0.0))
+    except (ValueError, TypeError):
+        quality = 0.0
+    return {
+        "keep": bool(data["keep"]),
+        "quality": max(0.0, min(1.0, quality)),
+        "reason": str(data.get("reason", "")).strip(),
+    }
+
+
+def _llm_judge(db: Session, shard: MemoryShard) -> dict | None:
+    """Ask the project's chat model to assess a candidate memory (AL-227). Returns
+    {keep, quality, reason}, or None when no real model is configured (the offline
+    stub) or the call/parse fails — so the judge degrades to the similarity signal
+    rather than erroring."""
+    from app.services import platform as platform_svc  # lazy: avoid import cycle
+
+    try:
+        provider, model = platform_svc.resolve_chat(db, shard.project_id or "core")
+    except Exception:  # noqa: BLE001 — never let provider resolution break a write
+        logger.exception("llm judge: provider resolution failed")
+        return None
+    if provider == "stub":
+        return None  # the offline stub can't judge — fall back to similarity
+    try:
+        raw = model.chat(system=_JUDGE_SYSTEM, context=shard.text, question=_JUDGE_QUESTION)
+    except Exception:  # noqa: BLE001 — a model outage must not fail the memory write
+        logger.exception("llm judge: chat call failed")
+        return None
+    return _parse_judge(raw)
 
 
 def triage_candidate(db: Session, shard: MemoryShard) -> MemoryShard:
@@ -230,12 +298,17 @@ def triage_candidate(db: Session, shard: MemoryShard) -> MemoryShard:
     the shard plus a system audit event, so every auto-action shows in the "recent
     auto-actions" lane and can be undone.
 
+    When `memory_llm_judge` is on and a real chat model is configured, the model's
+    quality assessment refines the accept-side decision (and can auto-reject a
+    low-quality note) — but never overrides a structural veto. It degrades to the
+    similarity signal when only the offline stub is available.
+
     A no-op returning the shard unchanged when it isn't a candidate, has no embedding,
     or the relevant toggle is off — so the AL-49 human boundary holds by default for
     anything novel."""
     if shard.status != "candidate" or shard.embedding is None:
         return shard
-    auto_reject, auto_accept = _triage_prefs(db, shard.project_id)
+    auto_reject, auto_accept, llm_judge = _triage_prefs(db, shard.project_id)
     if not (auto_reject or auto_accept):
         return shard
 
@@ -251,6 +324,23 @@ def triage_candidate(db: Session, shard: MemoryShard) -> MemoryShard:
     suggestion, confidence, reasons, duplicate_of = _score_shard(
         list(shard.embedding), published, rejected, support, human_derived
     )
+    source = "similarity"
+
+    # LLM enrichment: refine the accept/quality view unless similarity already vetoed
+    # it as a structural duplicate / rejected-alike (those stay hard rejects).
+    if llm_judge and suggestion != "reject":
+        verdict = _llm_judge(db, shard)
+        if verdict is not None:
+            source = "llm"
+            reason = verdict["reason"]
+            if verdict["keep"]:
+                suggestion = "accept" if verdict["quality"] >= _SIM_STRONG else "review"
+                confidence = verdict["quality"]
+                reasons = [f"LLM judge: {reason}"] if reason else ["LLM judge rated it publish-worthy"]
+            else:
+                suggestion = "reject"
+                confidence = round(1.0 - verdict["quality"], 3)
+                reasons = [f"LLM judge: {reason}"] if reason else ["LLM judge rated it low-quality"]
 
     if suggestion == "reject" and auto_reject:
         action, new_status = "auto_reject_shard", "rejected"
@@ -260,14 +350,14 @@ def triage_candidate(db: Session, shard: MemoryShard) -> MemoryShard:
         return shard  # left as a candidate for human review
 
     shard.status = new_status
-    shard.scoring_source = "similarity"
+    shard.scoring_source = source
     shard.auto_confidence = confidence
     db.commit()
     db.refresh(shard)
     events_svc.record(
         db, actor_type="system", actor_label="memory-auto-triage", surface="system",
         action=action, target_type="shard", target_id=shard.id, project_id=shard.project_id,
-        meta={"confidence": confidence, "source": "similarity", "reasons": reasons,
+        meta={"confidence": confidence, "source": source, "reasons": reasons,
               "duplicate_of": duplicate_of},
     )
     return shard
