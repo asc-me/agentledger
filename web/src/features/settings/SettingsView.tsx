@@ -321,7 +321,7 @@ function ProjectPanel() {
   const [form, setForm] = React.useState<Partial<Project>>({});
   const [saved, setSaved] = React.useState(false);
   React.useEffect(() => {
-    if (active) setForm({ name: active.name, description: active.description, share_global_memory: active.share_global_memory, auto_extract: active.auto_extract, mcp_enabled: active.mcp_enabled, memory_auto_reject: active.memory_auto_reject, memory_auto_accept: active.memory_auto_accept });
+    if (active) setForm({ name: active.name, description: active.description, share_global_memory: active.share_global_memory, auto_extract: active.auto_extract, mcp_enabled: active.mcp_enabled, memory_auto_reject: active.memory_auto_reject, memory_auto_accept: active.memory_auto_accept, memory_llm_judge: active.memory_llm_judge });
   }, [active?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!active) return null;
@@ -343,7 +343,7 @@ function ProjectPanel() {
   const triageFlags: { key: keyof Project; label: string; hint?: string; disabled?: boolean }[] = [
     { key: "memory_auto_reject", label: "Auto-reject duplicate & rejected-alike memories", hint: "On: near-duplicates and shards resembling ones you've rejected drop straight to rejected (kept, never surfaced — undoable)." },
     { key: "memory_auto_accept", label: "Auto-publish high-confidence memories", hint: "Off by default: strongly-corroborated lessons publish without review. Punches through the candidate boundary — every auto-publish is audited and undoable." },
-    { key: "memory_llm_judge", label: "Use the LLM judge to assess memories", hint: "Coming soon — an LLM rates each memory's quality instead of similarity alone.", disabled: true },
+    { key: "memory_llm_judge", label: "Use the LLM judge to assess memories", hint: "Needs a chat provider configured. The model rates each candidate's quality to refine the decisions above; falls back to similarity when no model is set." },
   ];
 
   return (
