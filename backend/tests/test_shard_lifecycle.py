@@ -182,6 +182,9 @@ def test_scored_recurring_candidate_suggests_accept(client, auth):
 
 def test_scored_duplicate_of_published_suggests_reject(client, auth):
     pid = _proj(client, auth, "ScoreDup")
+    # Disable auto-reject (AL-227) so the identical candidate survives to be *scored*
+    # here — this test is about the advisory suggestion, not the auto-action.
+    client.patch(f"/api/projects/{pid}", json={"memory_auto_reject": False}, headers=auth)
     key = _key(client, auth, project_id=pid)
     dup = _mcp(client, key, "add_memory", {"text": "prefer idempotency keys on writes"})
     client.post(f"/api/memory/shards/{dup['id']}/publish", headers=auth)  # now trusted
@@ -194,6 +197,9 @@ def test_scored_duplicate_of_published_suggests_reject(client, auth):
 
 def test_scored_resembles_rejected_suggests_reject(client, auth):
     pid = _proj(client, auth, "ScoreRej")
+    # Disable auto-reject (AL-227) so the resembling candidate stays in the queue to
+    # be scored — this asserts the advisory suggestion, not the auto-action.
+    client.patch(f"/api/projects/{pid}", json={"memory_auto_reject": False}, headers=auth)
     key = _key(client, auth, project_id=pid)
     bad = _mcp(client, key, "add_memory", {"text": "disable auth in dev to move faster"})
     client.post(f"/api/memory/shards/{bad['id']}/reject", headers=auth)

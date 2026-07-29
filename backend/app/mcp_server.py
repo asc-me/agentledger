@@ -159,7 +159,9 @@ TOOLS: list[dict[str, Any]] = [
         "description": (
             "Record a memory shard (decision, lesson, or note) on an item or the global scope. "
             "Agent-written shards enter as `candidate` and surface in search only after a human "
-            "publishes them. Returns the shard incl. `status`."
+            "publishes them — though the project may auto-triage on write (near-duplicates auto-"
+            "rejected, strongly-corroborated lessons auto-published). Returns the shard incl. its "
+            "resolved `status` and, if auto-triaged, `scoring_source` + `auto_confidence`."
         ),
         "inputSchema": {
             "type": "object",
@@ -900,6 +902,10 @@ def _shard_dict(shard) -> dict:
         "id": shard.id, "text": shard.text, "scope": shard.scope,
         "item_id": shard.item_id, "project_id": shard.project_id,
         "status": shard.status,
+        # Auto-triage outcome (AL-227): if the scorer acted on write, the agent sees
+        # the final status here plus how it was decided.
+        "scoring_source": shard.scoring_source,
+        "auto_confidence": shard.auto_confidence,
     }
 
 

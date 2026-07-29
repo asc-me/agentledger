@@ -262,6 +262,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ publish_id, reject_ids }),
     }),
+  // AL-227: the "recent auto-actions" lane + undo.
+  autoActions: (projectId?: string) =>
+    request<Shard[]>(`/memory/auto-actions${projectId ? `?project_id=${projectId}` : ""}`),
+  undoAutoShard: (id: string) =>
+    request<Shard>(`/memory/shards/${id}/undo-auto`, { method: "POST" }),
 
   requests: (projectId?: string) =>
     request<RequestItem[]>(`/requests${projectId ? `?project_id=${projectId}` : ""}`),

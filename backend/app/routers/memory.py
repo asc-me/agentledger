@@ -159,6 +159,37 @@ def reject_shard(shard_id: str, db: Session = Depends(get_db), user: User = Depe
     return _review_shard(shard_id, "rejected", "reject_shard", db, user)
 
 
+@router.get("/auto-actions", response_model=list[ShardOut])
+def auto_actions(
+    project_id: str | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """The "recent auto-actions" lane (AL-227): shards the scorer published or rejected
+    without a human, newest first — so nothing auto-triaged is silent, and each can be undone."""
+    authz.require_readable(db, user.id, project_id)
+    return mem_svc.auto_triaged_shards(db, project_id=project_id)
+
+
+@router.post("/shards/{shard_id}/undo-auto", response_model=ShardOut)
+def undo_auto(shard_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Undo an auto-action (AL-227): return the shard to the candidate review queue and
+    clear its auto-triage markers. Authz-checked and audited like a manual review."""
+    existing = db.get(MemoryShard, shard_id)
+    if existing is None:
+        raise HTTPException(404, "shard not found")
+    if existing.project_id is not None:
+        authz.require_writable(db, user.id, existing.project_id, "shard")
+    elif not authz.writable_project_ids(db, user.id):
+        raise HTTPException(403, "no write access to any project")
+    prior = existing.status
+    shard = mem_svc.undo_triage(db, shard_id)
+    events_svc.record_user(db, user, action="undo_auto_shard", target_type="shard",
+                           target_id=shard_id, project_id=existing.project_id,
+                           meta={"undid": prior})
+    return shard
+
+
 @router.patch("/shards/{shard_id}", response_model=ShardOut)
 def edit_shard(shard_id: str, body: ShardEdit, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     existing = db.get(MemoryShard, shard_id)

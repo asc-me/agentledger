@@ -12,6 +12,7 @@ from sqlalchemy import (
     JSON,
     Boolean,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     LargeBinary,
@@ -93,6 +94,21 @@ class Project(Base):
     share_global_memory: Mapped[bool] = mapped_column(Boolean, default=True)
     auto_extract: Mapped[bool] = mapped_column(Boolean, default=True)
     mcp_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Memory auto-triage (AL-227): let the AL-151 scorer ACT on agent candidates
+    # instead of only advising, so the review queue stays small. `auto_reject`
+    # (on) drops near-dups / resembles-rejected on write; `auto_accept` (off)
+    # publishes high-confidence corroborated lessons; `llm_judge` (off) swaps the
+    # offline similarity scorer for an LLM assessment. Every auto-action is audited
+    # and undoable — the AL-49 human boundary holds for anything left as candidate.
+    memory_auto_reject: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=true(), nullable=False
+    )
+    memory_auto_accept: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
+    memory_llm_judge: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
     embed_model: Mapped[str] = mapped_column(String, default="stub-384")
     # Hosted SaaS only (AL-74): the owning organization. NULL on self-host, where
     # the org layer is inert. In hosted mode authz additionally requires the caller
@@ -265,6 +281,12 @@ class MemoryShard(Base):
     origin: Mapped[str] = mapped_column(String, default="")  # user:<handle> | agent:<key> | agent:auto-extract
     embedding = mapped_column(EmbeddingType(settings.embed_dim), nullable=True)
     fresh: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Auto-triage provenance (AL-227): set when the scorer published/rejected this
+    # shard without a human. `scoring_source` ("" = human-only) marks an auto-action
+    # and names the signal ("similarity" | "llm"); `auto_confidence` is the score it
+    # acted on. Powers the "recent auto-actions" lane and keeps every auto-action undoable.
+    scoring_source: Mapped[str] = mapped_column(String, default="", server_default="", nullable=False)
+    auto_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

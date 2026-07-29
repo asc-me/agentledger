@@ -321,7 +321,7 @@ function ProjectPanel() {
   const [form, setForm] = React.useState<Partial<Project>>({});
   const [saved, setSaved] = React.useState(false);
   React.useEffect(() => {
-    if (active) setForm({ name: active.name, description: active.description, share_global_memory: active.share_global_memory, auto_extract: active.auto_extract, mcp_enabled: active.mcp_enabled });
+    if (active) setForm({ name: active.name, description: active.description, share_global_memory: active.share_global_memory, auto_extract: active.auto_extract, mcp_enabled: active.mcp_enabled, memory_auto_reject: active.memory_auto_reject, memory_auto_accept: active.memory_auto_accept });
   }, [active?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!active) return null;
@@ -333,10 +333,17 @@ function ProjectPanel() {
     setTimeout(() => setSaved(false), 1500);
   }
 
-  const flags: { key: keyof Project; label: string }[] = [
+  const flags: { key: keyof Project; label: string; hint?: string; disabled?: boolean }[] = [
     { key: "share_global_memory", label: "Share global memory across projects" },
     { key: "auto_extract", label: "Auto-extract lessons on item completion" },
     { key: "mcp_enabled", label: "Expose MCP tools for this project" },
+  ];
+
+  // AL-227: memory auto-triage — the scorer acts on agent candidates on write.
+  const triageFlags: { key: keyof Project; label: string; hint?: string; disabled?: boolean }[] = [
+    { key: "memory_auto_reject", label: "Auto-reject duplicate & rejected-alike memories", hint: "On: near-duplicates and shards resembling ones you've rejected drop straight to rejected (kept, never surfaced — undoable)." },
+    { key: "memory_auto_accept", label: "Auto-publish high-confidence memories", hint: "Off by default: strongly-corroborated lessons publish without review. Punches through the candidate boundary — every auto-publish is audited and undoable." },
+    { key: "memory_llm_judge", label: "Use the LLM judge to assess memories", hint: "Coming soon — an LLM rates each memory's quality instead of similarity alone.", disabled: true },
   ];
 
   return (
@@ -350,6 +357,20 @@ function ProjectPanel() {
             {fl.label}
           </label>
         ))}
+      </div>
+      <div className="mb-4">
+        <Label>Memory auto-triage</Label>
+        <div className="mt-1 space-y-2.5">
+          {triageFlags.map((fl) => (
+            <label key={fl.key} className={cn("flex cursor-pointer gap-2.5 text-[12.5px] text-fg-2", fl.disabled && "cursor-not-allowed opacity-55")}>
+              <input type="checkbox" className="accent-accent mt-0.5" disabled={fl.disabled} checked={!!form[fl.key]} onChange={(e) => setForm((f) => ({ ...f, [fl.key]: e.target.checked }))} />
+              <span>
+                {fl.label}
+                {fl.hint && <span className="mt-0.5 block text-[11px] leading-snug text-faint">{fl.hint}</span>}
+              </span>
+            </label>
+          ))}
+        </div>
       </div>
       <Button size="sm" onClick={save}>{saved ? "Saved" : "Save project"}</Button>
     </Section>

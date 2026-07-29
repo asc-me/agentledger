@@ -295,10 +295,20 @@ export function useScoredCandidates(projectId?: string) {
   });
 }
 
+// AL-227: shards the scorer published/rejected without a human — the review lane.
+export function useAutoActions(projectId?: string) {
+  return useQuery({
+    queryKey: ["shard-auto-actions", projectId],
+    queryFn: () => api.autoActions(projectId),
+    enabled: !!projectId,
+  });
+}
+
 function invalidateReview(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: ["shard-candidates"] });
   qc.invalidateQueries({ queryKey: ["shard-clusters"] });
   qc.invalidateQueries({ queryKey: ["shard-scored"] });
+  qc.invalidateQueries({ queryKey: ["shard-auto-actions"] });
   qc.invalidateQueries({ queryKey: keys.shards });
 }
 
@@ -309,6 +319,15 @@ export function useReviewShard() {
     publish: useMutation({ mutationFn: (id: string) => api.publishShard(id), onSuccess: invalidate }),
     reject: useMutation({ mutationFn: (id: string) => api.rejectShard(id), onSuccess: invalidate }),
   };
+}
+
+// AL-227: undo an auto-action — return the shard to the candidate queue.
+export function useUndoAutoShard() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.undoAutoShard(id),
+    onSuccess: () => invalidateReview(qc),
+  });
 }
 
 export function usePromoteCluster() {

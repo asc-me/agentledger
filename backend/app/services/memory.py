@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.embeddings import cosine_similarity, get_embedder, safe_embed
 from app.models import MemoryShard, Project
+from app.services import events as events_svc
 
 
 def _includes_global(db: Session, project_id: str) -> bool:
@@ -51,6 +52,7 @@ def add_memory(
     fresh: bool = True,
     status: str = "published",
     origin: str = "",
+    auto_triage: bool = True,
 ) -> MemoryShard:
     shard = MemoryShard(
         id="m_" + uuid.uuid4().hex[:10],
@@ -68,6 +70,11 @@ def add_memory(
     db.add(shard)
     db.commit()
     db.refresh(shard)
+    # Agent candidates are triaged on write (AL-227): the scorer may auto-reject or
+    # auto-publish per the project's toggles, giving the agent instant feedback in
+    # the same call. Human/published writes skip it (only candidates are triaged).
+    if auto_triage and shard.status == "candidate":
+        shard = triage_candidate(db, shard)
     return shard
 
 
@@ -108,6 +115,9 @@ def cluster_candidates(
 _SIM_STRONG = 0.88     # corroborated by / clusters with trusted memory (matches cluster threshold)
 _SIM_DUP = 0.95        # near-identical → duplicate of an existing published shard
 _SIM_REJECTED = 0.85   # resembles something a human already rejected
+# Auto-triage (AL-227): auto-publish is reserved for the strongest corroboration —
+# a higher bar than the advisory "accept" so novel recurrence alone won't publish.
+_AUTO_ACCEPT_MIN = 0.9
 
 
 def _best_match(vec: list[float], pool: list[tuple[MemoryShard, list[float]]]) -> tuple[MemoryShard | None, float]:
@@ -118,6 +128,47 @@ def _best_match(vec: list[float], pool: list[tuple[MemoryShard, list[float]]]) -
         if sim > score:
             best, score = shard, sim
     return best, score
+
+
+def _score_shard(
+    cv: list[float],
+    published: list[tuple[MemoryShard, list[float]]],
+    rejected: list[tuple[MemoryShard, list[float]]],
+    support: int,
+    human_derived: bool,
+) -> tuple[str, float, list[str], str | None]:
+    """Score one candidate embedding into (suggestion, confidence, reasons, duplicate_of).
+
+    The single source of truth for the accept/reject/review heuristic — shared by the
+    advisory review queue (`score_candidates`) and synchronous auto-triage
+    (`triage_candidate`) so both judge a shard identically. Vetoes (rejection
+    resemblance, duplication) win over accept signals."""
+    best_pub, corr = _best_match(cv, published)
+    _, rej = _best_match(cv, rejected)
+    reasons: list[str] = []
+    duplicate_of: str | None = None
+
+    if rej >= _SIM_REJECTED:
+        suggestion, confidence = "reject", rej
+        reasons.append(f"resembles a previously rejected shard ({rej:.0%})")
+    elif corr >= _SIM_DUP and best_pub is not None:
+        suggestion, confidence = "reject", corr
+        duplicate_of = best_pub.id
+        reasons.append(f"near-duplicate of published {best_pub.id} ({corr:.0%}) — merge candidate")
+    elif support >= 2 or corr >= _SIM_STRONG:
+        suggestion = "accept"
+        confidence = min(1.0, max(corr, 0.6 + 0.1 * support) + (0.1 if human_derived else 0.0))
+        if support >= 2:
+            reasons.append(f"recurs across {support} candidates")
+        if corr >= _SIM_STRONG and best_pub is not None:
+            reasons.append(f"corroborated by trusted {best_pub.id} ({corr:.0%})")
+        if human_derived:
+            reasons.append("from a human-reviewed decision")
+    else:
+        suggestion, confidence = "review", 0.3
+        reasons.append("novel — no strong signal either way")
+
+    return suggestion, round(confidence, 3), reasons, duplicate_of
 
 
 def score_candidates(db: Session, *, project_id: str | None = None) -> list[dict]:
@@ -143,45 +194,109 @@ def score_candidates(db: Session, *, project_id: str | None = None) -> list[dict
 
     out: list[dict] = []
     for c in cands:
-        cv = list(c.embedding)
-        best_pub, corr = _best_match(cv, published)
-        _, rej = _best_match(cv, rejected)
         support = cluster_size.get(c.id, 1)
         human_derived = c.origin.startswith("user:") or "grill" in c.origin
-        reasons: list[str] = []
-        duplicate_of: str | None = None
-
-        # Vetoes (rejection resemblance, duplication) win over accept signals.
-        if rej >= _SIM_REJECTED:
-            suggestion, confidence = "reject", rej
-            reasons.append(f"resembles a previously rejected shard ({rej:.0%})")
-        elif corr >= _SIM_DUP and best_pub is not None:
-            suggestion, confidence = "reject", corr
-            duplicate_of = best_pub.id
-            reasons.append(f"near-duplicate of published {best_pub.id} ({corr:.0%}) — merge candidate")
-        elif support >= 2 or corr >= _SIM_STRONG:
-            suggestion = "accept"
-            confidence = min(1.0, max(corr, 0.6 + 0.1 * support) + (0.1 if human_derived else 0.0))
-            if support >= 2:
-                reasons.append(f"recurs across {support} candidates")
-            if corr >= _SIM_STRONG and best_pub is not None:
-                reasons.append(f"corroborated by trusted {best_pub.id} ({corr:.0%})")
-            if human_derived:
-                reasons.append("from a human-reviewed decision")
-        else:
-            suggestion, confidence = "review", 0.3
-            reasons.append("novel — no strong signal either way")
-
+        suggestion, confidence, reasons, duplicate_of = _score_shard(
+            list(c.embedding), published, rejected, support, human_derived
+        )
         out.append({
             "shard": c,
             "suggestion": suggestion,
-            "confidence": round(confidence, 3),
+            "confidence": confidence,
             "reasons": reasons,
             "duplicate_of": duplicate_of,
         })
 
     out.sort(key=lambda r: r["confidence"], reverse=True)
     return out
+
+
+def _triage_prefs(db: Session, project_id: str | None) -> tuple[bool, bool]:
+    """(auto_reject, auto_accept) for a project (AL-227). Project-less ("global")
+    shards, or an unknown project, fall back to the platform defaults: reject on,
+    accept off."""
+    if project_id is None:
+        return True, False
+    project = db.get(Project, project_id)
+    if project is None:
+        return True, False
+    return bool(project.memory_auto_reject), bool(project.memory_auto_accept)
+
+
+def triage_candidate(db: Session, shard: MemoryShard) -> MemoryShard:
+    """Synchronously score a freshly-written candidate and act on it if the project
+    opts in (AL-227): auto-reject near-dups / resembles-rejected, or auto-publish a
+    high-confidence corroborated lesson (>= `_AUTO_ACCEPT_MIN`). Records the score on
+    the shard plus a system audit event, so every auto-action shows in the "recent
+    auto-actions" lane and can be undone.
+
+    A no-op returning the shard unchanged when it isn't a candidate, has no embedding,
+    or the relevant toggle is off — so the AL-49 human boundary holds by default for
+    anything novel."""
+    if shard.status != "candidate" or shard.embedding is None:
+        return shard
+    auto_reject, auto_accept = _triage_prefs(db, shard.project_id)
+    if not (auto_reject or auto_accept):
+        return shard
+
+    published = [(s, list(s.embedding)) for s in list_shards(db, project_id=shard.project_id, status="published") if s.embedding is not None]
+    rejected = [(s, list(s.embedding)) for s in list_shards(db, project_id=shard.project_id, status="rejected") if s.embedding is not None]
+    # Recurrence: the size of the candidate cluster this shard belongs to (AL-50).
+    support = 1
+    for group in cluster_candidates(db, project_id=shard.project_id):
+        if any(s.id == shard.id for s in group):
+            support = len(group)
+            break
+    human_derived = shard.origin.startswith("user:") or "grill" in shard.origin
+    suggestion, confidence, reasons, duplicate_of = _score_shard(
+        list(shard.embedding), published, rejected, support, human_derived
+    )
+
+    if suggestion == "reject" and auto_reject:
+        action, new_status = "auto_reject_shard", "rejected"
+    elif suggestion == "accept" and auto_accept and confidence >= _AUTO_ACCEPT_MIN:
+        action, new_status = "auto_publish_shard", "published"
+    else:
+        return shard  # left as a candidate for human review
+
+    shard.status = new_status
+    shard.scoring_source = "similarity"
+    shard.auto_confidence = confidence
+    db.commit()
+    db.refresh(shard)
+    events_svc.record(
+        db, actor_type="system", actor_label="memory-auto-triage", surface="system",
+        action=action, target_type="shard", target_id=shard.id, project_id=shard.project_id,
+        meta={"confidence": confidence, "source": "similarity", "reasons": reasons,
+              "duplicate_of": duplicate_of},
+    )
+    return shard
+
+
+def auto_triaged_shards(
+    db: Session, *, project_id: str | None = None, limit: int = 20
+) -> list[MemoryShard]:
+    """The "recent auto-actions" lane (AL-227): shards the scorer published or rejected
+    without a human, newest first. `scoring_source != ""` marks an auto-action."""
+    stmt = select(MemoryShard).where(MemoryShard.scoring_source != "")
+    if project_id:
+        stmt = stmt.where(MemoryShard.project_id == project_id)
+    stmt = stmt.order_by(MemoryShard.created_at.desc()).limit(limit)
+    return list(db.scalars(stmt).all())
+
+
+def undo_triage(db: Session, shard_id: str) -> MemoryShard | None:
+    """Undo an auto-action (AL-227): return the shard to the `candidate` queue for
+    human review and clear the auto-triage markers so it leaves the auto-actions lane."""
+    shard = db.get(MemoryShard, shard_id)
+    if shard is None:
+        return None
+    shard.status = "candidate"
+    shard.scoring_source = ""
+    shard.auto_confidence = None
+    db.commit()
+    db.refresh(shard)
+    return shard
 
 
 def set_status(db: Session, shard_id: str, status: str) -> MemoryShard | None:
