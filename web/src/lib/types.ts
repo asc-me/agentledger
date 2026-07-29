@@ -21,6 +21,10 @@ export interface Project {
   auto_extract: boolean;
   mcp_enabled: boolean;
   embed_model: string;
+  // Memory auto-triage toggles (AL-227).
+  memory_auto_reject: boolean;
+  memory_auto_accept: boolean;
+  memory_llm_judge: boolean;
 }
 
 // ── Deploy config + Organizations (hosted-only, AL-74b) ────────────────────
@@ -186,6 +190,9 @@ export interface Shard {
   item_id: string | null;
   project_id: string | null;
   fresh: boolean;
+  /** AL-227: "" = human-only; else the signal that auto-acted ("similarity" | "llm"). */
+  scoring_source: string;
+  auto_confidence: number | null;
   created_at: string;
 }
 

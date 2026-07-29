@@ -195,6 +195,10 @@ class ProjectOut(ORMModel):
     auto_extract: bool
     mcp_enabled: bool
     embed_model: str
+    # Memory auto-triage toggles (AL-227).
+    memory_auto_reject: bool = True
+    memory_auto_accept: bool = False
+    memory_llm_judge: bool = False
 
 
 class ProjectCreate(BaseModel):
@@ -287,6 +291,10 @@ class ShardOut(ORMModel):
     item_id: str | None
     project_id: str | None
     fresh: bool
+    # Auto-triage provenance (AL-227): "" = human-only; else the signal that acted
+    # ("similarity" | "llm") plus the confidence it acted on.
+    scoring_source: str = ""
+    auto_confidence: float | None = None
     created_at: datetime
 
 
@@ -492,6 +500,9 @@ class ProjectUpdate(BaseModel):
     auto_extract: bool | None = None
     mcp_enabled: bool | None = None
     embed_model: str | None = None
+    memory_auto_reject: bool | None = None
+    memory_auto_accept: bool | None = None
+    memory_llm_judge: bool | None = None
 
 
 class MemberOut(BaseModel):
