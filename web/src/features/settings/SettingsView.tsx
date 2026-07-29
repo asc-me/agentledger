@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
 import { AiProvidersPanel } from "@/features/settings/AiProvidersPanel";
 import { McpInstall } from "@/features/settings/McpInstall";
+import { SyncLinkPanel } from "@/features/settings/SyncLinkPanel";
 import { useProjectCtx } from "@/features/ProjectContext";
 import { copyText } from "@/lib/clipboard";
 import { api } from "@/lib/api";
@@ -14,7 +15,7 @@ import { cn } from "@/lib/cn";
 import { keys, useApiKeys, useMembers, usePlatform } from "@/lib/queries";
 import type { PlatformConfig, Project } from "@/lib/types";
 
-const TABS = ["AI Providers", "Integrations", "Project", "Members", "API Keys"] as const;
+const TABS = ["AI Providers", "Integrations", "Sync / Link", "Project", "Members", "API Keys"] as const;
 type Tab = (typeof TABS)[number];
 
 export function SettingsView() {
@@ -43,6 +44,7 @@ export function SettingsView() {
         <div className="min-h-0 overflow-y-auto p-6">
           {tab === "AI Providers" && <AiProvidersPanel />}
           {tab === "Integrations" && <IntegrationsPanel />}
+          {tab === "Sync / Link" && <SyncLinkPanel />}
           {tab === "Project" && <ProjectPanel />}
           {tab === "Members" && <MembersPanel />}
           {tab === "API Keys" && <ApiKeysPanel />}

@@ -402,6 +402,7 @@ class PlatformConfigOut(ORMModel):
     provider_config: dict = {}  # redacted per-provider config (api keys → key_set bool)
     public_share_enabled: bool = False
     share_token: str | None = None  # the share-link token (shown to authed members only)
+    sync_graph: bool = True  # AL-137 D8: whether this project's code graph pushes to the cloud
 
     @computed_field
     @property
@@ -432,6 +433,38 @@ class PlatformUpdate(BaseModel):
     providers: dict | None = None
     public_share_enabled: bool | None = None
     sync_graph: bool | None = None  # AL-137 D8: opt out of pushing this project's code graph
+
+
+class SyncLinkIn(BaseModel):
+    """Link this instance to a cloud tenant (AL-141). `api_key` is the `sync`-scoped org key;
+    blank on a re-link keeps the stored one (write-only round-trip, like BYOK provider keys)."""
+    cloud_url: str
+    api_key: str = ""
+    org: str = ""
+
+
+class SyncProjectState(BaseModel):
+    project_id: str
+    name: str
+    writable: bool
+    sync_graph: bool
+    total_nodes: int
+    synced_nodes: int
+    pending: int
+    last_synced_at: datetime | None = None
+    status: str  # live | stale | paused | unsynced | empty
+
+
+class SyncStatusOut(BaseModel):
+    """Everything the Sync/Link settings page renders — link state (never the key itself) plus
+    per-project sync state derived from local truth."""
+    linked: bool
+    source: str  # "web" (DB link) | "env" (baked-in) | "" (unlinked)
+    cloud_url: str
+    org: str
+    credential_set: bool
+    linked_at: datetime | None = None
+    projects: list[SyncProjectState] = []
 
 
 class GithubConnectIn(BaseModel):

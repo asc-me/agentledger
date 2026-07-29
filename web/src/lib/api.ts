@@ -49,6 +49,8 @@ import type {
   Shard,
   ShardHit,
   Status,
+  SyncBundle,
+  SyncStatus,
   User,
 } from "./types";
 
@@ -449,6 +451,32 @@ export const api = {
       conflicts: string[];
       in_sync: number;
     }>(`/platform/gdrive/sync${projectQuery()}`, { method: "POST" }),
+
+  // Local↔cloud sync link (AL-141). Status/link/unlink are instance-wide; push/purge/
+  // export/import are per-project (the credential is resolved server-side).
+  syncStatus: () => request<SyncStatus>("/sync/status"),
+  // Toggle a specific project's graph-push opt-out — parameterized by project_id because the
+  // Sync page scopes to any readable project, not only the globally-active one.
+  syncSetGraph: (project_id: string, sync_graph: boolean) =>
+    request<PlatformConfig>(`/platform?project_id=${encodeURIComponent(project_id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ sync_graph }),
+    }),
+  syncLink: (cloud_url: string, api_key: string, org: string) =>
+    request<SyncStatus>("/sync/link", { method: "POST", body: JSON.stringify({ cloud_url, api_key, org }) }),
+  syncUnlink: () => request<SyncStatus>("/sync/link", { method: "DELETE" }),
+  syncPush: (project_id: string) =>
+    request<{ project_id: string; pushed?: number; removed?: number; unchanged?: number; skipped?: boolean; reason?: string }>(
+      "/sync/push", { method: "POST", body: JSON.stringify({ project_id }) }),
+  syncPurge: (project_id: string) =>
+    request<{ project_id: string; deleted_nodes?: number; deleted_edges?: number }>(
+      "/sync/purge", { method: "POST", body: JSON.stringify({ project_id }) }),
+  syncExport: (project_id: string) =>
+    request<SyncBundle>(`/sync/export?project_id=${encodeURIComponent(project_id)}`),
+  syncImport: (project_id: string, bundle: { nodes?: unknown[]; edges?: unknown[] }, prune: boolean) =>
+    request<{ project_id: string; nodes_upserted: number; edges_upserted: number }>(
+      "/sync/import", { method: "POST", body: JSON.stringify({ project_id, nodes: bundle.nodes ?? [], edges: bundle.edges ?? [], prune }) }),
+
   updateProject: (id: string, body: Partial<Project>) =>
     request<Project>(`/projects/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   members: (id: string) => request<Member[]>(`/projects/${id}/members`),

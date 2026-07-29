@@ -193,6 +193,12 @@ export function usePlatform() {
   return useQuery({ queryKey: ["platform"], queryFn: () => api.platform() });
 }
 
+// Instance-wide cloud link + per-project sync state (AL-141). Not project-keyed — the link
+// is one per instance and the payload already carries every readable project's state.
+export function useSyncStatus() {
+  return useQuery({ queryKey: ["sync-status"], queryFn: () => api.syncStatus() });
+}
+
 export function useMembers(projectId: string) {
   return useQuery({ queryKey: ["members", projectId], queryFn: () => api.members(projectId), enabled: !!projectId });
 }

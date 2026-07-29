@@ -320,6 +320,43 @@ export interface PlatformConfig {
   provider_config: Record<string, ProviderConfigView>;
   public_share_enabled: boolean;
   share_token: string | null;
+  /** AL-137 D8: whether this project's code graph pushes to the linked cloud. */
+  sync_graph: boolean;
+}
+
+export type SyncProjectStatus = "live" | "stale" | "paused" | "unsynced" | "empty";
+
+export interface SyncProjectState {
+  project_id: string;
+  name: string;
+  /** Whether the current user may push/purge this project (drives control enablement). */
+  writable: boolean;
+  sync_graph: boolean;
+  total_nodes: number;
+  synced_nodes: number;
+  pending: number;
+  last_synced_at: string | null;
+  status: SyncProjectStatus;
+}
+
+export interface SyncBundle {
+  bundle_version: number;
+  project_id: string;
+  nodes: unknown[];
+  edges: unknown[];
+  node_count: number;
+  edge_count: number;
+}
+
+export interface SyncStatus {
+  linked: boolean;
+  /** "web" = DB link set from this page · "env" = baked-in SYNC_CLOUD_URL · "" = unlinked. */
+  source: "web" | "env" | "";
+  cloud_url: string;
+  org: string;
+  credential_set: boolean;
+  linked_at: string | null;
+  projects: SyncProjectState[];
 }
 
 export type ProviderKind = "stub" | "anthropic" | "openai" | "ollama";
