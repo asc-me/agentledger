@@ -363,6 +363,14 @@ class RequestOut(ORMModel):
 
 
 # ---- API keys ----
+# The full scope vocabulary. `write` gates mutating MCP tools (mcp_server), `sync` gates
+# code-graph ingest (authz.key_sync_ids); `read` is implicit but accepted so a key can be
+# minted read-only. Validated rather than free-text because an unrecognised scope silently
+# produces a DEAD key — "Sync" or "syncs" would never match the `"sync" in key.scopes` check
+# and the failure only surfaces later as a 403 at push time.
+API_KEY_SCOPES = ("read", "write", "sync")
+
+
 class ApiKeyCreate(BaseModel):
     name: str = "agent key"
     scopes: list[str] = ["read", "write"]
@@ -370,6 +378,16 @@ class ApiKeyCreate(BaseModel):
     project_id: str | None = None
     # Optional lifetime; None = non-expiring (AL-72).
     expires_in_days: int | None = Field(default=None, ge=1, le=3650)
+
+    @field_validator("scopes")
+    @classmethod
+    def _known_scopes(cls, v: list[str]) -> list[str]:
+        unknown = [s for s in v if s not in API_KEY_SCOPES]
+        if unknown:
+            raise ValueError(
+                f"unknown scope(s) {unknown}; allowed: {list(API_KEY_SCOPES)}"
+            )
+        return v
 
 
 class ApiKeyOut(ORMModel):

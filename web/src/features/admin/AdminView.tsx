@@ -14,23 +14,10 @@ import {
   useIsPlatformAdmin,
   useSetOrgPlan,
 } from "@/lib/queries";
+import { errorDetail } from "@/lib/errors";
 import type { AdminOrg, Invite, OrgRequest } from "@/lib/types";
 
 const PLANS = ["free", "pro", "team", "enterprise"];
-
-/** Server message out of an ApiError (body is a JSON `{detail}` envelope). */
-function errorDetail(err: unknown, fallback: string): string {
-  if (err && typeof err === "object" && "message" in err && typeof err.message === "string") {
-    try {
-      const parsed = JSON.parse(err.message);
-      if (parsed && typeof parsed.detail === "string") return parsed.detail;
-    } catch {
-      /* not JSON */
-    }
-    if (err.message) return err.message;
-  }
-  return fallback;
-}
 
 /**
  * Operator console (AL-94) — run the beta without curl or DB access.

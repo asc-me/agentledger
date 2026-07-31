@@ -12,21 +12,8 @@ import {
   useOrgs,
   useRevokeInvite,
 } from "@/lib/queries";
+import { errorDetail } from "@/lib/errors";
 import type { Invite, Org, OrgRole, PlanLimits, Usage } from "@/lib/types";
-
-/** Pull the human message out of an ApiError (body is a JSON `{detail}` envelope). */
-function errorDetail(err: unknown, fallback: string): string {
-  if (err && typeof err === "object" && "message" in err && typeof err.message === "string") {
-    try {
-      const parsed = JSON.parse(err.message);
-      if (parsed && typeof parsed.detail === "string") return parsed.detail;
-    } catch {
-      /* not JSON — fall through */
-    }
-    if (err.message) return err.message;
-  }
-  return fallback;
-}
 
 /**
  * Org management (AL-74b): members and pending invites for the caller's org(s).

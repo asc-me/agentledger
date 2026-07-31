@@ -282,10 +282,22 @@ export const api = {
     }),
 
   apiKeys: () => request<ApiKey[]>("/api-keys"),
-  createApiKey: (name: string, projectId: string | null, expiresInDays?: number | null) =>
+  createApiKey: (
+    name: string,
+    projectId: string | null,
+    expiresInDays?: number | null,
+    scopes?: string[],
+  ) =>
     request<ApiKeyCreated>("/api-keys", {
       method: "POST",
-      body: JSON.stringify({ name, project_id: projectId, expires_in_days: expiresInDays ?? null }),
+      body: JSON.stringify({
+        name,
+        project_id: projectId,
+        expires_in_days: expiresInDays ?? null,
+        // Omitted → the backend default (["read","write"]). A sync credential passes
+        // ["sync"] and must pin to a project; the backend rejects a global one.
+        ...(scopes ? { scopes } : {}),
+      }),
     }),
   revokeApiKey: (id: string) => request<void>(`/api-keys/${id}`, { method: "DELETE" }),
 

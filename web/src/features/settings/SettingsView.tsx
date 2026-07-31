@@ -7,11 +7,13 @@ import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
 import { AiProvidersPanel } from "@/features/settings/AiProvidersPanel";
 import { McpInstall } from "@/features/settings/McpInstall";
+import { SyncCredentialInstall } from "@/features/settings/SyncCredentialInstall";
 import { SyncLinkPanel } from "@/features/settings/SyncLinkPanel";
 import { useProjectCtx } from "@/features/ProjectContext";
 import { copyText } from "@/lib/clipboard";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
+import { errorDetail } from "@/lib/errors";
 import { keys, useApiKeys, useMembers, usePlatform } from "@/lib/queries";
 import type { PlatformConfig, Project } from "@/lib/types";
 
@@ -399,26 +401,49 @@ function MembersPanel() {
   );
 }
 
+/** Agent keys talk to the MCP endpoint; sync credentials only push a code graph (AL-219 D4). */
+type KeyKind = "agent" | "sync";
+
 function ApiKeysPanel() {
   const { data: apiKeys = [] } = useApiKeys();
   const { active, projects } = useProjectCtx();
   const qc = useQueryClient();
+  const [kind, setKind] = React.useState<KeyKind>("agent");
   const [name, setName] = React.useState("");
   const [global, setGlobal] = React.useState(false);
   const [expiryDays, setExpiryDays] = React.useState<number | null>(null);
-  const [created, setCreated] = React.useState<string | null>(null);
+  // A sync credential pins to one cloud project, so it gets its own explicit target rather
+  // than riding the active project — a fleet mints one per project (D6).
+  const [syncProject, setSyncProject] = React.useState<string>("");
+  const [created, setCreated] = React.useState<{ plaintext: string; kind: KeyKind; projectId: string } | null>(null);
   const [copied, setCopied] = React.useState(false);
   const [connectId, setConnectId] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+
+  // Write access isn't in the Project shape; the backend rejects a sync key on a read-only
+  // project with an honest 403, which surfaces in `error` below.
+  const syncTarget = syncProject || active?.id || projects[0]?.id || "";
 
   const projectName = (id: string | null) =>
     id ? (projects.find((p) => p.id === id)?.name ?? id) : "All projects";
 
   async function create() {
     if (!name.trim()) return;
-    const res = await api.createApiKey(name.trim(), global ? null : active?.id ?? null, expiryDays);
-    setCreated(res.plaintext);
-    setName("");
-    qc.invalidateQueries({ queryKey: keys.apiKeys });
+    setError(null);
+    const isSync = kind === "sync";
+    const projectId = isSync ? syncTarget : global ? null : active?.id ?? null;
+    if (isSync && !projectId) {
+      setError("Pick a project — a sync credential must target exactly one.");
+      return;
+    }
+    try {
+      const res = await api.createApiKey(name.trim(), projectId, expiryDays, isSync ? ["sync"] : undefined);
+      setCreated({ plaintext: res.plaintext, kind, projectId: projectId ?? "" });
+      setName("");
+      qc.invalidateQueries({ queryKey: keys.apiKeys });
+    } catch (e) {
+      setError(errorDetail(e, "Could not create the key."));
+    }
   }
   async function revoke(id: string) {
     await api.revokeApiKey(id);
@@ -431,17 +456,61 @@ function ApiKeysPanel() {
         <div className="mb-4 rounded-[11px] border border-accent/40 bg-[rgba(198,242,78,0.06)] p-3">
           <div className="mb-1.5 font-mono text-[10px] uppercase tracking-wide text-accent">Copy now — shown once</div>
           <div className="flex items-center gap-2">
-            <code className="flex-1 overflow-x-auto font-mono text-[12px] text-fg-2">{created}</code>
+            <code className="flex-1 overflow-x-auto font-mono text-[12px] text-fg-2">{created.plaintext}</code>
             <button className="rounded-md border border-line-2 bg-surface-3 p-1.5 text-muted hover:text-fg"
-              onClick={() => copyText(created).then((ok) => ok && (setCopied(true), setTimeout(() => setCopied(false), 1500)))}>
+              onClick={() => copyText(created.plaintext).then((ok) => ok && (setCopied(true), setTimeout(() => setCopied(false), 1500)))}>
               {copied ? <Check size={13} className="text-accent" /> : <Copy size={13} />}
             </button>
           </div>
-          <McpInstall apiKey={created} />
+          {created.kind === "sync" ? (
+            <SyncCredentialInstall apiKey={created.plaintext} projectId={created.projectId} />
+          ) : (
+            <McpInstall apiKey={created.plaintext} />
+          )}
         </div>
       )}
+      <div className="mb-2 flex flex-wrap gap-1.5">
+        {(
+          [
+            ["agent", "Agent key", "Talks to the MCP endpoint — read/write on items, memory, code."],
+            ["sync", "Sync credential", "Pushes a code graph from a local instance into one project. Nothing else."],
+          ] as const
+        ).map(([id, label, desc]) => (
+          <button
+            key={id}
+            onClick={() => {
+              setKind(id);
+              setError(null);
+            }}
+            title={desc}
+            className={cn(
+              "rounded-md border px-2.5 py-1 text-[11.5px] transition-colors",
+              kind === id ? "border-accent/50 bg-surface-3 text-fg" : "border-line-2 text-muted hover:text-fg-2",
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
       <div className="mb-2 flex items-center gap-2">
-        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Key name (e.g. ci-agent)" className="max-w-xs" />
+        <Input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder={kind === "sync" ? "Key name (e.g. laptop — acme-core)" : "Key name (e.g. ci-agent)"}
+          className="max-w-xs"
+        />
+        {kind === "sync" && (
+          <select
+            value={syncTarget}
+            onChange={(e) => setSyncProject(e.target.value)}
+            className="rounded-md border border-line-2 bg-surface-3 px-2 py-1.5 text-[12px] text-muted"
+            aria-label="Sync target project"
+          >
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        )}
         <select
           value={expiryDays ?? ""}
           onChange={(e) => setExpiryDays(e.target.value ? Number(e.target.value) : null)}
@@ -453,16 +522,26 @@ function ApiKeysPanel() {
           <option value="90">Expires in 90 days</option>
           <option value="365">Expires in 365 days</option>
         </select>
-        <Button size="sm" onClick={create} disabled={!name.trim()}><Plus size={14} />Create key</Button>
+        <Button size="sm" onClick={create} disabled={!name.trim()}>
+          <Plus size={14} />{kind === "sync" ? "Mint credential" : "Create key"}
+        </Button>
       </div>
-      <label className="mb-4 flex items-center gap-2 text-[12px] text-muted">
-        <input type="checkbox" checked={global} onChange={(e) => setGlobal(e.target.checked)} className="accent-accent" />
-        {global ? (
-          <span>Global key — the agent passes <code className="font-mono text-[11px]">project_id</code> per call.</span>
-        ) : (
-          <span>Scoped to <span className="text-fg-2">{active?.name ?? "the active project"}</span> — check to make it global.</span>
-        )}
-      </label>
+      {error && <p className="mb-2 text-[12px] text-st-blocked">{error}</p>}
+      {kind === "sync" ? (
+        <p className="mb-4 text-[12px] text-muted">
+          Pinned to <span className="text-fg-2">{projectName(syncTarget)}</span> — a sync credential targets exactly one
+          project, so a key distributed to a fleet can only ever push there.
+        </p>
+      ) : (
+        <label className="mb-4 flex items-center gap-2 text-[12px] text-muted">
+          <input type="checkbox" checked={global} onChange={(e) => setGlobal(e.target.checked)} className="accent-accent" />
+          {global ? (
+            <span>Global key — the agent passes <code className="font-mono text-[11px]">project_id</code> per call.</span>
+          ) : (
+            <span>Scoped to <span className="text-fg-2">{active?.name ?? "the active project"}</span> — check to make it global.</span>
+          )}
+        </label>
+      )}
       <div className="space-y-2">
         {apiKeys.map((k) => (
           <div key={k.id} className="rounded-[11px] border border-line-2 bg-surface-2">
@@ -470,6 +549,11 @@ function ApiKeysPanel() {
               <KeyRound size={14} className="text-muted" />
               <span className="text-[13px] text-fg-2">{k.name}</span>
               <code className="font-mono text-[11px] text-faint">{k.prefix}…</code>
+              {k.scopes?.includes("sync") && (
+                <span className="rounded border border-accent/40 px-1.5 py-px font-mono text-[9.5px] uppercase tracking-wide text-accent">
+                  sync
+                </span>
+              )}
               <span
                 className={cn(
                   "rounded border px-1.5 py-px font-mono text-[9.5px] uppercase tracking-wide",
@@ -492,13 +576,17 @@ function ApiKeysPanel() {
                 </span>
               )}
               <span className="ml-auto font-mono text-[10px] text-faint-2">{k.last_used ? "used" : "never used"}</span>
-              <button
-                className={cn("hover:text-fg", connectId === k.id ? "text-accent" : "text-faint")}
-                onClick={() => setConnectId(connectId === k.id ? null : k.id)}
-                title="Connect an agent (MCP setup)"
-              >
-                <Plug size={14} />
-              </button>
+              {/* Sync credentials never touch the MCP endpoint, so the MCP install snippet
+                  would be misleading for them — the link hand-off is shown at mint time. */}
+              {!k.scopes?.includes("sync") && (
+                <button
+                  className={cn("hover:text-fg", connectId === k.id ? "text-accent" : "text-faint")}
+                  onClick={() => setConnectId(connectId === k.id ? null : k.id)}
+                  title="Connect an agent (MCP setup)"
+                >
+                  <Plug size={14} />
+                </button>
+              )}
               <button className="text-faint hover:text-st-blocked" onClick={() => revoke(k.id)} title="Revoke">
                 <Trash2 size={14} />
               </button>

@@ -1,0 +1,106 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { SettingsView } from "@/features/settings/SettingsView";
+import { SyncCredentialInstall } from "@/features/settings/SyncCredentialInstall";
+
+const api = vi.hoisted(() => ({
+  createApiKey: vi.fn(),
+  revokeApiKey: vi.fn(),
+}));
+vi.mock("@/lib/api", () => ({ api }));
+
+vi.mock("@/features/ProjectContext", () => ({
+  useProjectCtx: () => ({
+    active: { id: "core", name: "Core" },
+    projects: [
+      { id: "core", name: "Core" },
+      { id: "infra", name: "Infra" },
+    ],
+  }),
+}));
+
+vi.mock("@/lib/queries", () => ({
+  keys: { apiKeys: ["api-keys"] },
+  useApiKeys: () => ({ data: [] }),
+  useMembers: () => ({ data: [] }),
+  usePlatform: () => ({ data: null }),
+}));
+
+function renderSettings() {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={qc}>
+      <SettingsView />
+    </QueryClientProvider>,
+  );
+}
+
+describe("SyncCredentialInstall", () => {
+  it("builds the agentledger link command with the pinned project", () => {
+    const { container } = render(<SyncCredentialInstall apiKey="al_sk_secret" projectId="core" />);
+    // The <pre> is the copy target; prose elsewhere also mentions the command.
+    const pre = container.querySelector("pre");
+    // The exact flags matter — this is copy-pasted verbatim into a terminal.
+    expect(pre?.textContent).toContain("agentledger link");
+    expect(pre?.textContent).toContain("--api-key al_sk_secret");
+    expect(pre?.textContent).toContain("--project core");
+    expect(pre?.textContent).toContain("--cloud-url");
+  });
+
+  it("offers the local Settings → Sync/Link values as the other hand-off", async () => {
+    const user = userEvent.setup();
+    render(<SyncCredentialInstall apiKey="al_sk_secret" projectId="core" />);
+    await user.click(screen.getByRole("button", { name: /Local Settings/ }));
+    expect(screen.getByText(/Sync API key\s+al_sk_secret/)).toBeInTheDocument();
+  });
+});
+
+describe("minting a sync credential", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    api.createApiKey.mockResolvedValue({ plaintext: "al_sk_minted", project_id: "core" });
+  });
+
+  it("mints with the sync scope pinned to a project, not the default read/write", async () => {
+    const user = userEvent.setup();
+    renderSettings();
+    await user.click(screen.getByRole("button", { name: "API Keys" }));
+    await user.click(screen.getByRole("button", { name: "Sync credential" }));
+    await user.type(screen.getByPlaceholderText(/laptop/), "laptop — core");
+    await user.click(screen.getByRole("button", { name: /Mint credential/ }));
+
+    await waitFor(() =>
+      expect(api.createApiKey).toHaveBeenCalledWith("laptop — core", "core", null, ["sync"]),
+    );
+  });
+
+  it("shows the link hand-off after minting, not the MCP snippet", async () => {
+    const user = userEvent.setup();
+    renderSettings();
+    await user.click(screen.getByRole("button", { name: "API Keys" }));
+    await user.click(screen.getByRole("button", { name: "Sync credential" }));
+    await user.type(screen.getByPlaceholderText(/laptop/), "laptop");
+    await user.click(screen.getByRole("button", { name: /Mint credential/ }));
+
+    await waitFor(() =>
+      expect(document.querySelector("pre")?.textContent).toContain("agentledger link"),
+    );
+    expect(screen.queryByText(/Connect an agent · MCP/)).not.toBeInTheDocument();
+  });
+
+  it("leaves agent keys on the default scopes", async () => {
+    const user = userEvent.setup();
+    renderSettings();
+    await user.click(screen.getByRole("button", { name: "API Keys" }));
+    await user.type(screen.getByPlaceholderText(/ci-agent/), "ci-agent");
+    await user.click(screen.getByRole("button", { name: /Create key/ }));
+
+    await waitFor(() =>
+      // undefined scopes → the backend default ["read","write"]
+      expect(api.createApiKey).toHaveBeenCalledWith("ci-agent", "core", null, undefined),
+    );
+  });
+});
