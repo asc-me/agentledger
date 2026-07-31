@@ -155,7 +155,7 @@ class Settings(BaseSettings):
     smtp_port: int = 587
     smtp_user: str = ""
     smtp_password: str = ""
-    smtp_from: str = "AgentLedger <no-reply@agentledger.dev>"
+    smtp_from: str = "AgentLedger <no-reply@agentldgr.dev>"
     smtp_starttls: bool = True
     app_base_url: str = "http://localhost:5173"
     invite_expiry_days: int = 14

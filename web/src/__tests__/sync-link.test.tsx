@@ -14,7 +14,7 @@ const unlinked: SyncStatus = {
 };
 
 const linked: SyncStatus = {
-  linked: true, source: "web", cloud_url: "https://cloud.agentledger.dev", org: "acme",
+  linked: true, source: "web", cloud_url: "https://cloud.agentldgr.dev", org: "acme",
   credential_set: true, linked_at: new Date().toISOString(),
   projects: [
     { project_id: "core", name: "Core", writable: true, sync_graph: true, total_nodes: 1240, synced_nodes: 1240, pending: 0, last_synced_at: new Date().toISOString(), status: "live" },
@@ -56,7 +56,7 @@ describe("SyncLinkPanel", () => {
   it("shows the link form when the instance is not linked", async () => {
     renderPanel();
     expect(await screen.findByText("not linked")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("cloud.agentledger.dev")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("cloud.agentldgr.dev")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("paste key…")).toBeInTheDocument();
   });
 
@@ -65,13 +65,13 @@ describe("SyncLinkPanel", () => {
     renderPanel();
     await screen.findByText("not linked");
 
-    await user.type(screen.getByPlaceholderText("cloud.agentledger.dev"), "cloud.agentledger.dev");
+    await user.type(screen.getByPlaceholderText("cloud.agentldgr.dev"), "cloud.agentldgr.dev");
     await user.type(screen.getByPlaceholderText("paste key…"), "al_sk_secret");
     await user.type(screen.getByPlaceholderText("acme"), "acme");
     await user.click(screen.getByRole("button", { name: "Link instance" }));
 
     await waitFor(() =>
-      expect(api.syncLink).toHaveBeenCalledWith("cloud.agentledger.dev", "al_sk_secret", "acme"),
+      expect(api.syncLink).toHaveBeenCalledWith("cloud.agentldgr.dev", "al_sk_secret", "acme"),
     );
   });
 
@@ -81,7 +81,7 @@ describe("SyncLinkPanel", () => {
     renderPanel();
 
     expect(await screen.findByText("linked")).toBeInTheDocument();
-    expect(screen.getByText("https://cloud.agentledger.dev")).toBeInTheDocument();
+    expect(screen.getByText("https://cloud.agentldgr.dev")).toBeInTheDocument();
 
     // Scope is empty → the graph-sync checkbox does nothing yet.
     expect(screen.getByText("No project selected")).toBeInTheDocument();
