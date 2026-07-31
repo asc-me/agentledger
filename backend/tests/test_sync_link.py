@@ -23,12 +23,12 @@ def test_status_starts_unlinked_and_lists_readable_projects(client, auth):
 
 def test_link_then_status_reflects_it_without_leaking_the_key(client, auth):
     r = client.post("/api/sync/link",
-                    json={"cloud_url": "cloud.agentledger.dev", "api_key": "al_sk_secret", "org": "acme"},
+                    json={"cloud_url": "cloud.agentldgr.dev", "api_key": "al_sk_secret", "org": "acme"},
                     headers=auth)
     assert r.status_code == 200
     s = r.json()
     assert s["linked"] is True and s["source"] == "web"
-    assert s["cloud_url"] == "https://cloud.agentledger.dev"  # scheme + trailing-slash normalized
+    assert s["cloud_url"] == "https://cloud.agentldgr.dev"  # scheme + trailing-slash normalized
     assert s["org"] == "acme" and s["credential_set"] is True
     assert s["linked_at"]
     # the raw key must never appear in any status field
