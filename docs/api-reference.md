@@ -30,6 +30,7 @@ Interactive OpenAPI docs are at **`/docs`**.
 | POST | `/api/projects` | JWT | Create a project. `tag` is optional — derived from `name` when omitted, refused with 422 when taken or malformed |
 | GET | `/api/projects/tag-suggestion?name=` | JWT | A free tag derived from a project name (prefills the creation form) |
 | GET | `/api/projects/tag-check?tag=` | JWT | `{tag, available, reason}` for live form feedback |
+| POST | `/api/projects/{id}/retag` | JWT (write) | Move the project's tag. One UPDATE + one tag-history row + one audit event; **no other row in the database changes**. Retired tags are never reusable |
 | PATCH | `/api/projects/{id}` | JWT | Update project config. **Not** the tag — changing that has to record tag history |
 | GET | `/api/projects/{id}/members` | JWT | List members (role/access) |
 

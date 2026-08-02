@@ -317,6 +317,89 @@ function IntegrationsPanel() {
   );
 }
 
+/**
+ * Change a project's tag (PRD-13 / AL-258).
+ *
+ * Separate from the Save button on purpose: renaming a project is a PATCH, but moving a
+ * tag has to record tag history so every key rendered under the old one keeps resolving.
+ * Folding it into the form would make that a silent side effect of an unrelated edit.
+ *
+ * Nothing is rewritten — no id moves, no link breaks, no agent claim drops. Old keys
+ * keep working, which is what the confirmation says rather than warning about a
+ * migration that does not happen.
+ */
+function RetagRow() {
+  const { active } = useProjectCtx();
+  const qc = useQueryClient();
+  const [open, setOpen] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState("");
+  const [tag, setTag] = React.useState("");
+  const [check, setCheck] = React.useState<{ available: boolean; reason: string } | null>(null);
+
+  React.useEffect(() => {
+    if (!tag) { setCheck(null); return; }
+    let cancelled = false;
+    const t = setTimeout(() => {
+      api.tagCheck(tag).then((r) => { if (!cancelled) setCheck(r); }).catch(() => {});
+    }, 250);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [tag]);
+
+  if (!active) return null;
+
+  async function apply() {
+    setBusy(true);
+    setError("");
+    try {
+      await api.retagProject(active!.id, tag);
+      await qc.invalidateQueries({ queryKey: keys.projects });
+      setOpen(false);
+      setTag("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not change the tag.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mb-3">
+      <Label>Tag</Label>
+      <div className="flex items-center gap-2">
+        <Input value={active.tag} readOnly className="max-w-[7rem] font-mono" />
+        {!open && (
+          <Button type="button" variant="ghost" onClick={() => setOpen(true)}>Change</Button>
+        )}
+        {open && (
+          <>
+            <Input
+              value={tag}
+              onChange={(e) => setTag(e.target.value.toUpperCase().slice(0, 4))}
+              placeholder="new tag"
+              maxLength={4}
+              aria-label="New tag"
+              className="max-w-[7rem] font-mono"
+            />
+            <Button type="button" onClick={apply} disabled={busy || !tag || check?.available === false}>
+              {busy ? "Changing…" : "Apply"}
+            </Button>
+            <Button type="button" variant="ghost" onClick={() => { setOpen(false); setTag(""); setError(""); }}>
+              Cancel
+            </Button>
+          </>
+        )}
+      </div>
+      <p className="mt-1.5 font-mono text-[10px] text-faint" role="status">
+        {error ? <span className="text-danger">{error}</span>
+          : check && !check.available ? <span className="text-danger">{check.reason}</span>
+          : open && tag ? <>Keys will display as <span className="text-fg-2">{tag}-12</span>. Existing keys keep working — nothing is renumbered.</>
+          : "The prefix this project's item, request, and PRD keys display with."}
+      </p>
+    </div>
+  );
+}
+
 function ProjectPanel() {
   const { active } = useProjectCtx();
   const qc = useQueryClient();
@@ -351,6 +434,7 @@ function ProjectPanel() {
   return (
     <Section title="Project" desc="Configuration for the active project.">
       <div className="mb-3"><Label>Name</Label><Input value={form.name ?? ""} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} className="max-w-sm" /></div>
+      <RetagRow />
       <div className="mb-4"><Label>Description</Label><Textarea rows={2} value={form.description ?? ""} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} /></div>
       <div className="mb-4 space-y-2">
         {flags.map((fl) => (

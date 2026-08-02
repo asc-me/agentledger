@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import tagging
-from app.models import LegacyEntityKey, Project, ProjectTagHistory
+from app.models import LegacyEntityKey, Project, ProjectTagHistory, utcnow
 
 
 def tag_available(db: Session, tag: str) -> tuple[bool, str]:
@@ -85,3 +85,50 @@ def resolve_project_id(
     if project_id and db.get(Project, project_id) is not None:
         return project_id
     return default_project_id(db, allowed_ids)
+
+
+def retag_project(db: Session, project_id: str, new_tag: str) -> Project:
+    """Move a project's tag. One UPDATE on one row, plus one history row (PRD-13).
+
+    This is the operation the whole design exists to make cheap. Because keys are
+    *rendered* rather than stored, nothing else in the database moves: not the twelve
+    columns that hold an entity id, not the audit trail, not code-graph state already
+    pushed to a cloud tenant, and not any in-flight agent claim. A test asserts exactly
+    that — zero rows changed across all ten other tables.
+
+    The history row and the tag move commit together. A tag that moved without its
+    history row would silently break every key ever rendered under the old one, with no
+    way to recover the mapping afterwards.
+    """
+    project = db.get(Project, project_id)
+    if project is None:
+        raise ValueError(f"unknown project: {project_id!r}")
+
+    tag = tagging.validate(new_tag)
+    if tag == project.tag:
+        return project  # a no-op must not write a history row and retire its own tag
+
+    available, reason = tag_available(db, tag)
+    if not available:
+        raise ValueError(f"tag {tag!r} is not available: {reason}")
+
+    # Chain the interval to the previous entry so history reads as a timeline rather
+    # than a bag of retired tags.
+    previous = db.scalars(
+        select(ProjectTagHistory)
+        .where(ProjectTagHistory.project_id == project_id)
+        .order_by(ProjectTagHistory.held_until.desc())
+    ).first()
+
+    db.add(
+        ProjectTagHistory(
+            tag=project.tag,
+            project_id=project_id,
+            held_from=previous.held_until if previous is not None else None,
+            held_until=utcnow(),
+        )
+    )
+    project.tag = tag
+    db.commit()
+    db.refresh(project)
+    return project
