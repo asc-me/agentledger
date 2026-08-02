@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 
 from collections import Counter
 
-from app import tagging
 from app.models import Prd, PrdVersion
 from app.services import items as items_svc
 from app.services import keys
@@ -28,12 +27,6 @@ TEMPLATES: dict[str, str] = {
         "## Risks & Open Questions\n- \n"
     ),
 }
-
-
-def next_prd_id(db: Session) -> str:
-    ids = db.scalars(select(Prd.id)).all()
-    nums = [int(m.group(1)) for i in ids if (m := re.match(r"PRD-(\d+)", i))]
-    return f"PRD-{(max(nums) + 1) if nums else 1}"
 
 
 def _bump(version: str) -> str:
@@ -71,10 +64,7 @@ def create_prd(
         content = TEMPLATES.get(template, TEMPLATES["blank"]).format(title=title)
         note = "Initial draft."
     # See items.create_item: the id is frozen identity, `number` renders the key.
-    prd_id = next_prd_id(db)
-    number = tagging.legacy_number(prd_id)
-    if number is None:
-        raise ValueError(f"minted an unparseable PRD id: {prd_id!r}")
+    prd_id, number = keys.mint(db, project_id, "prd")
     prd = Prd(id=prd_id, number=number, project_id=project_id, title=title, status="draft",
               version="v0.1", body=content, linked=[], updated="just now")
     db.add(prd)

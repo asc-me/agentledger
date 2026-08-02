@@ -1,5 +1,7 @@
 """Phase 3: PRD tracker + markdown editor + versions + AI commands."""
 
+from app import tagging
+
 
 def test_seeded_prds(client, auth):
     prds = client.get("/api/prds?project_id=core", headers=auth).json()
@@ -24,7 +26,8 @@ def test_create_from_template(client, auth):
     r = client.post("/api/prds", json={"title": "New Spec", "template": "standard"}, headers=auth)
     assert r.status_code == 201
     prd = r.json()
-    assert prd["id"] == "PRD-4"
+    # `PRD-` was a global prefix; a PRD key is now <TAG>-P<number> (PRD-13).
+    assert prd["id"] == "CP-P4"
     assert "## Success Metrics" in prd["body"]
     assert prd["status"] == "draft" and prd["version"] == "v0.1"
     # An initial version snapshot exists.

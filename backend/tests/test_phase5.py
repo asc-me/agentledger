@@ -1,5 +1,7 @@
 """Phase 5: platform/AI-provider settings, integrations config, GitHub webhook, project/member settings."""
 
+from app import tagging
+
 
 def test_platform_config_seeded(client, auth):
     cfg = client.get("/api/platform", headers=auth).json()
@@ -36,7 +38,7 @@ def test_github_create_issue_creates_item(client, auth):
         json={"title": "Support dark mode toggle", "body": "add a toggle", "type": "feature"},
         headers=auth,
     ).json()
-    assert r["item"]["id"].startswith("AL-")
+    assert tagging.parse(r["item"]["id"])[1] == "item"  # <TAG>-<n>, not the old AL- (PRD-13)
     assert r["pushed_to_github"] is False
     assert "ascme-labs/agentledger" in r["detail"]  # connected repo named
 

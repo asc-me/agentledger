@@ -1,4 +1,5 @@
 import json
+from app import tagging
 
 
 def test_health(client):
@@ -45,7 +46,10 @@ def test_create_and_update_item(client, auth):
     r = client.post("/api/items", json={"title": "New thing", "tags": ["x"], "effort": 3}, headers=auth)
     assert r.status_code == 201
     iid = r.json()["id"]
-    assert iid == "AL-23"
+    # Keys render from the project tag now, not a global prefix (PRD-13): the seeded
+    # `core` project is tagged CP, and 23 is its own next number.
+    assert iid == "CP-23"
+    assert tagging.parse(iid) == ("CP", "item", 23)
     up = client.patch(f"/api/items/{iid}", json={"status": "in_progress"}, headers=auth)
     assert up.json()["status"] == "in_progress"
 

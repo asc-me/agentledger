@@ -153,26 +153,60 @@ def test_two_projects_cannot_hold_the_same_tag(client, auth):
 
 
 @pytest.mark.parametrize(
-    "path,payload,key",
-    [
-        ("/api/items", {"title": "numbered item"}, "id"),
-        ("/api/prds", {"title": "numbered prd"}, "id"),
-    ],
+    "path,kind", [("/api/items", "item"), ("/api/prds", "prd")]
 )
-def test_created_entities_carry_a_number_matching_their_id(client, auth, path, payload, key):
-    """Interim invariant (AL-259 replaces minting): `number` is the digits of the id,
-    which is the same rule the backfill applied to every pre-existing row."""
+def test_a_new_entity_is_issued_the_key_it_renders_as(client, auth, path, kind):
+    """At issue time the stored id IS the rendered key, so the two agree until the
+    project is retagged (AL-259 replaced AL-255's interim `number == digits(id)` rule,
+    which could never describe a request or PRD: `CP-P1` has no bare trailing number)."""
     project_id = client.get("/api/projects", headers=auth).json()[0]["id"]
-    r = client.post(path, json={**payload, "project_id": project_id}, headers=auth)
+    r = client.post(path, json={"title": f"minted {kind}", "project_id": project_id}, headers=auth)
     assert r.status_code in (200, 201), r.text
-    eid = r.json()[key]
+    eid = r.json()["id"]
 
-    table = "items" if path.endswith("items") else "prds"
+    table = {"item": "items", "prd": "prds"}[kind]
     with engine.connect() as conn:
         number = conn.execute(
             text(f"SELECT number FROM {table} WHERE id = :i"), {"i": eid}  # noqa: S608
         ).scalar()
-    assert number == tagging.legacy_number(eid)
+    tag = _project_tag(project_id)
+    assert eid == tagging.render(tag, kind, number)
+    assert tagging.parse(eid) == (tag, kind, number)
+
+
+def test_numbering_continues_from_the_projects_own_maximum(client, auth):
+    """Not from 1, and not from the old global counter — from this project's high-water
+    mark, so a backfilled project keeps counting where its history left off."""
+    project_id = client.get("/api/projects", headers=auth).json()[0]["id"]
+    with engine.connect() as conn:
+        before = conn.execute(
+            text("SELECT max(number) FROM items WHERE project_id = :p"), {"p": project_id}
+        ).scalar()
+
+    r = client.post("/api/items", json={"title": "next in line", "project_id": project_id},
+                    headers=auth)
+    assert r.status_code == 201, r.text
+    with engine.connect() as conn:
+        got = conn.execute(
+            text("SELECT number FROM items WHERE id = :i"), {"i": r.json()["id"]}
+        ).scalar()
+    assert got == before + 1
+
+
+def test_two_projects_can_hold_the_same_number(client, auth):
+    """The whole point of per-project numbering — impossible under the old global counter."""
+    a = client.post("/api/projects", json={"name": "Alpha Bravo"}, headers=auth).json()["id"]
+    b = client.post("/api/projects", json={"name": "Charlie Delta"}, headers=auth).json()["id"]
+    ia = client.post("/api/items", json={"title": "a1", "project_id": a}, headers=auth).json()["id"]
+    ib = client.post("/api/items", json={"title": "b1", "project_id": b}, headers=auth).json()["id"]
+
+    with engine.connect() as conn:
+        na, nb = (
+            conn.execute(text("SELECT number FROM items WHERE id = :i"), {"i": i}).scalar()
+            for i in (ia, ib)
+        )
+    assert na == nb == 1, "each new project starts its own sequence"
+    assert ia != ib, "…while the stored ids stay globally unique"
 
 
 def test_every_seeded_entity_has_a_number(client, auth):
