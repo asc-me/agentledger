@@ -48,6 +48,21 @@ def check_security() -> None:
             )
         print(f"\n{_BANNER}\n  CONFIGURATION WARNING: {message}\n{_BANNER}\n", flush=True)
 
+    # Chat had no guard at all until AL-248, so a hosted instance could serve tenants
+    # with the grill, PRD AI commands, memory auto-extraction and every judge surface
+    # silently degraded to deterministic stubs. Less severe than stub embeddings — stub
+    # chat output is visibly labelled a placeholder rather than confidently wrong — so
+    # it warns on the same opt-in-to-refuse policy.
+    if settings.hosted_mode and settings.chat_provider == "stub":
+        message = (
+            "HOSTED_MODE is on but CHAT_PROVIDER is 'stub'. The PRD grill, AI commands, "
+            "memory auto-extraction and any LLM judge will return canned placeholder "
+            "text instead of real output. Configure a real chat provider."
+        )
+        if settings.require_real_chat:
+            raise RuntimeError(f"refusing to start: {message} (REQUIRE_REAL_CHAT is on)")
+        print(f"\n{_BANNER}\n  CONFIGURATION WARNING: {message}\n{_BANNER}\n", flush=True)
+
     if not settings.jwt_secret_is_weak:
         return
 

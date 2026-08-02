@@ -200,7 +200,70 @@ def test_real_embed_provider_passes_the_guard(monkeypatch):
     monkeypatch.setattr(settings, "database_url", "postgresql+psycopg://x/y")
     monkeypatch.setattr(settings, "hosted_mode", True)
     monkeypatch.setattr(settings, "embed_provider", "openai")
+    monkeypatch.setattr(settings, "chat_provider", "anthropic")
     monkeypatch.setattr(settings, "secret_encryption_key", "k")
     monkeypatch.setattr(settings, "require_real_embeddings", True)
     monkeypatch.setattr(settings, "jwt_secret", "x" * 40)  # avoid the weak-secret path
     check_security()  # no raise
+
+
+def _hosted(monkeypatch, **over):
+    """Hosted-mode settings with every guard except the one under test satisfied."""
+    from app.config import settings
+
+    base = {
+        "database_url": "postgresql+psycopg://x/y",  # skip the sqlite short-circuit
+        "hosted_mode": True,
+        "secret_encryption_key": "k",
+        "embed_provider": "openai",
+        "chat_provider": "anthropic",
+        "require_real_embeddings": False,
+        "require_real_chat": False,
+        "jwt_secret": "x" * 40,
+    }
+    for k, v in {**base, **over}.items():
+        monkeypatch.setattr(settings, k, v)
+    return settings
+
+
+def test_hosted_stub_chat_warns_not_fatal(monkeypatch, capsys):
+    """AL-248: chat had NO guard, so a hosted instance served tenants with the grill and
+    every judge surface silently returning canned placeholder text."""
+    from app.security.startup import check_security
+
+    _hosted(monkeypatch, chat_provider="stub")
+    check_security()
+    assert "CHAT_PROVIDER is 'stub'" in capsys.readouterr().out
+
+
+def test_hosted_stub_chat_refuses_when_required(monkeypatch):
+    from app.security.startup import check_security
+
+    _hosted(monkeypatch, chat_provider="stub", require_real_chat=True)
+    with pytest.raises(RuntimeError, match="CHAT_PROVIDER"):
+        check_security()
+
+
+def test_stub_chat_is_ignored_outside_hosted_mode(monkeypatch, capsys):
+    """Self-host is all-stub by design (fully offline) — it must not be nagged."""
+    from app.security.startup import check_security
+
+    _hosted(monkeypatch, hosted_mode=False, chat_provider="stub", embed_provider="stub")
+    check_security()
+    assert "CHAT_PROVIDER" not in capsys.readouterr().out
+
+
+def test_health_reports_provider_readiness(client, monkeypatch):
+    """The startup warning only ever reached stdout, which nobody tails — the live
+    instance ran on stub embeddings for days with it scrolling past. /health is the
+    surface an operator actually curls (AL-248)."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "embed_provider", "stub")
+    monkeypatch.setattr(settings, "chat_provider", "stub")
+    body = client.get("/health").json()
+    assert body["providers"] == {"embed_ok": False, "chat_ok": False}
+
+    monkeypatch.setattr(settings, "embed_provider", "openai")
+    monkeypatch.setattr(settings, "chat_provider", "anthropic")
+    assert client.get("/health").json()["providers"] == {"embed_ok": True, "chat_ok": True}
