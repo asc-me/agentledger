@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app import tagging
 from app.config import settings
 from app.db import get_db
 from app.models import Membership, Project, User
@@ -24,6 +25,21 @@ def _unique_slug(db: Session, name: str) -> str:
         slug = f"{base}-{n}"
         n += 1
     return slug
+
+
+def _unique_tag(db: Session, name: str) -> str:
+    """A free tag derived from the project name (PRD-13), mirroring ``_unique_slug``.
+
+    Every project needs one, so derivation must always succeed rather than reject —
+    an agent bootstrapping a project shouldn't fail over a missing four-character
+    string, and the result is visible and changeable immediately. AL-258 widens the
+    availability test to also exclude retired tags; today "not currently held" is the
+    whole rule, which is correct while nothing has ever been retagged.
+    """
+    for candidate in tagging.variants(tagging.derive(name)):
+        if db.scalar(select(Project).where(Project.tag == candidate)) is None:
+            return candidate
+    raise HTTPException(422, f"could not derive a free tag for {name!r}")
 
 
 def _resolve_org_id(db: Session, user: User, requested: str | None) -> str | None:
@@ -66,6 +82,7 @@ def create_project(
     quotas.enforce_project_quota(db, org_id)  # hosted plan cap (no-op self-host)
     project = Project(
         id=_unique_slug(db, name),
+        tag=_unique_tag(db, name),
         name=name,
         accent=body.accent or "#c6f24e",
         description=body.description or "",

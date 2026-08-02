@@ -7,6 +7,7 @@ from datetime import timedelta, timezone
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session
 
+from app import tagging
 from app.models import Item, Project, utcnow
 
 STATUSES = ["backlog", "next", "in_progress", "review", "done", "blocked"]
@@ -63,8 +64,16 @@ def create_item(
     if db.get(Project, project_id) is None:
         raise ValueError(f"unknown project: {project_id!r}")
     max_order = db.scalar(select(func.max(Item.sort_order))) or 0
+    # The id is frozen identity; `number` is what the key renders from (PRD-13). Interim:
+    # take the number from the id the global counter mints, which is what the backfill
+    # did for every existing row. AL-259 replaces both with per-project minting.
+    item_id = next_item_id(db)
+    number = tagging.legacy_number(item_id)
+    if number is None:  # next_item_id always mints <PREFIX>-<n>; guard the invariant
+        raise ValueError(f"minted an unparseable item id: {item_id!r}")
     item = Item(
-        id=next_item_id(db),
+        id=item_id,
+        number=number,
         project_id=project_id,
         title=title,
         description=description or "",

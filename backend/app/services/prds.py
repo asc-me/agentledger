@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from collections import Counter
 
+from app import tagging
 from app.models import Prd, PrdVersion
 from app.services import items as items_svc
 from app.services import platform as platform_svc
@@ -68,7 +69,12 @@ def create_prd(
     else:
         content = TEMPLATES.get(template, TEMPLATES["blank"]).format(title=title)
         note = "Initial draft."
-    prd = Prd(id=next_prd_id(db), project_id=project_id, title=title, status="draft",
+    # See items.create_item: the id is frozen identity, `number` renders the key.
+    prd_id = next_prd_id(db)
+    number = tagging.legacy_number(prd_id)
+    if number is None:
+        raise ValueError(f"minted an unparseable PRD id: {prd_id!r}")
+    prd = Prd(id=prd_id, number=number, project_id=project_id, title=title, status="draft",
               version="v0.1", body=content, linked=[], updated="just now")
     db.add(prd)
     db.flush()

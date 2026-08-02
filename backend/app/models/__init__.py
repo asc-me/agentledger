@@ -88,6 +88,11 @@ class Project(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
     name: Mapped[str] = mapped_column(String)
+    # Short prefix its item/request/PRD keys render with, e.g. AL -> AL-12 (PRD-13).
+    # Stored uppercase, which is what makes this plain UNIQUE express case-insensitive
+    # uniqueness on both engines. Changing it is one UPDATE: keys are rendered, never
+    # stored, so no other row in the database moves. See app/tagging.py.
+    tag: Mapped[str] = mapped_column(String, unique=True)
     accent: Mapped[str] = mapped_column(String, default="#c6f24e")
     visibility: Mapped[str] = mapped_column(String, default="private")
     description: Mapped[str] = mapped_column(Text, default="")
@@ -232,8 +237,14 @@ class Membership(Base):
 class Item(Base):
     __tablename__ = "items"
 
-    id: Mapped[str] = mapped_column(String, primary_key=True)  # human key e.g. AL-12
+    # FROZEN at issue time and never rewritten — identity, not display (PRD-13). The key
+    # a human sees is rendered from the project's current tag + `number`; retagging a
+    # project must not move this or any of the eleven other columns that reference it.
+    id: Mapped[str] = mapped_column(String, primary_key=True)
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"))
+    # Per-project, per-kind sequence. Unique within the project, so two projects can both
+    # have a number 235 — which is exactly what the old global counter prevented.
+    number: Mapped[int] = mapped_column(Integer)
     title: Mapped[str] = mapped_column(String)
     description: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String, default="backlog")
@@ -264,6 +275,10 @@ class Item(Base):
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
 
+    # The backstop for the mint path (services/items.py): even if minting is bypassed
+    # or two agents race, the database refuses a duplicate number within a project.
+    __table_args__ = (UniqueConstraint("project_id", "number", name="uq_item_number"),)
+
 
 class MemoryShard(Base):
     __tablename__ = "memory_shards"
@@ -293,8 +308,9 @@ class MemoryShard(Base):
 class Request(Base):
     __tablename__ = "requests"
 
-    id: Mapped[str] = mapped_column(String, primary_key=True)  # e.g. R-31
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # frozen; see Item.id
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"))
+    number: Mapped[int] = mapped_column(Integer)  # renders as <TAG>-R<number>
     type: Mapped[str] = mapped_column(String)  # bug/feature/enhancement/feedback
     title: Mapped[str] = mapped_column(String)
     detail: Mapped[str] = mapped_column(Text, default="")  # submitter's full description
@@ -308,12 +324,15 @@ class Request(Base):
     attachment_ids: Mapped[list] = mapped_column(JSON, default=list)  # screenshot ids
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
+    __table_args__ = (UniqueConstraint("project_id", "number", name="uq_request_number"),)
+
 
 class Prd(Base):
     __tablename__ = "prds"
 
-    id: Mapped[str] = mapped_column(String, primary_key=True)  # e.g. PRD-1
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # frozen; see Item.id
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"))
+    number: Mapped[int] = mapped_column(Integer)  # renders as <TAG>-P<number>
     title: Mapped[str] = mapped_column(String)
     status: Mapped[str] = mapped_column(String, default="draft")  # draft/review/approved
     version: Mapped[str] = mapped_column(String, default="v0.1")
@@ -329,6 +348,8 @@ class Prd(Base):
         back_populates="prd", cascade="all, delete-orphan", order_by="desc(PrdVersion.id)"
     )
 
+    __table_args__ = (UniqueConstraint("project_id", "number", name="uq_prd_number"),)
+
 
 class PrdVersion(Base):
     __tablename__ = "prd_versions"
@@ -342,6 +363,27 @@ class PrdVersion(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     prd: Mapped[Prd] = relationship(back_populates="versions")
+
+
+class LegacyEntityKey(Base):
+    """An id issued before project tags existed, kept resolvable forever (PRD-13).
+
+    Seeded once by the tag backfill migration and never appended to again. It exists
+    because the old ids used `R-` and `PRD-` as *entity-kind* markers rather than
+    project tags, so tag history cannot express them — `PRD-12` was never a project
+    tagged `PRD`. Everything issued after the backfill resolves by grammar or by tag
+    history instead, so this table's size is fixed at whatever the deployment had.
+
+    `entity_id` points at a FROZEN id, so no chain can ever form here: a second retag
+    doesn't invalidate these rows, because the thing they point at cannot move.
+    """
+
+    __tablename__ = "legacy_entity_keys"
+
+    old_key: Mapped[str] = mapped_column(String, primary_key=True)  # e.g. AL-12, PRD-4
+    entity_type: Mapped[str] = mapped_column(String)  # item | request | prd
+    entity_id: Mapped[str] = mapped_column(String, index=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
 
 
 class Link(Base):
