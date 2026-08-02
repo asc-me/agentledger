@@ -101,6 +101,11 @@ class Settings(BaseSettings):
     # deterministic noise, so search silently returns nonsense while looking healthy.
     # Startup warns loudly; set this to refuse to boot instead.
     require_real_embeddings: bool = False
+    # Same switch for chat. A stub chat provider is LESS dangerous than stub embeddings
+    # — its output is visibly marked as a placeholder rather than confidently wrong —
+    # but on a hosted instance it still means the grill, PRD AI commands, memory
+    # auto-extraction and the judge surfaces are all inert for paying tenants.
+    require_real_chat: bool = False
 
     # ---- AI providers (F1). Defaults are all-stub → fully offline. ----
     # embed_provider: stub | ollama | openai. EMBED_DIM MUST match the model's output

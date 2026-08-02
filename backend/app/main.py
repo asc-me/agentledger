@@ -152,4 +152,14 @@ def health():
         "version": __version__,
         "git_sha": settings.git_sha,
         "db": "ok" if db_ok else "down",
+        # Provider readiness (AL-248). The startup check already warns on a stub provider
+        # in hosted mode — but stdout is not a surface anyone watches, and the hosted
+        # instance ran for days on stub embeddings with that warning scrolling past in the
+        # logs unread. `db` is here for exactly this reason; providers belong beside it.
+        # Booleans only: enough to notice and go look, without advertising the stack on an
+        # unauthenticated endpoint.
+        "providers": {
+            "embed_ok": settings.embed_provider != "stub",
+            "chat_ok": settings.chat_provider != "stub",
+        },
     }
