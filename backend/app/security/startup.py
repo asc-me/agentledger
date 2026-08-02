@@ -48,20 +48,15 @@ def check_security() -> None:
             )
         print(f"\n{_BANNER}\n  CONFIGURATION WARNING: {message}\n{_BANNER}\n", flush=True)
 
-    # Chat had no guard at all until AL-248, so a hosted instance could serve tenants
-    # with the grill, PRD AI commands, memory auto-extraction and every judge surface
-    # silently degraded to deterministic stubs. Less severe than stub embeddings — stub
-    # chat output is visibly labelled a placeholder rather than confidently wrong — so
-    # it warns on the same opt-in-to-refuse policy.
-    if settings.hosted_mode and settings.chat_provider == "stub":
-        message = (
-            "HOSTED_MODE is on but CHAT_PROVIDER is 'stub'. The PRD grill, AI commands, "
-            "memory auto-extraction and any LLM judge will return canned placeholder "
-            "text instead of real output. Configure a real chat provider."
-        )
-        if settings.require_real_chat:
-            raise RuntimeError(f"refusing to start: {message} (REQUIRE_REAL_CHAT is on)")
-        print(f"\n{_BANNER}\n  CONFIGURATION WARNING: {message}\n{_BANNER}\n", flush=True)
+    # NO CHAT GUARD HERE, deliberately. `settings.chat_provider` looks like the chat
+    # equivalent of the check above, but it is a legacy MIRROR that `platform.apply_llm`
+    # writes at runtime — the resolver (`platform._chat_params`) reads
+    # `PlatformConfig.active_chat_provider` from the DB, per project. So at boot this
+    # field is always the env default regardless of what any project has configured:
+    # a guard on it warns forever on a correctly-configured instance, and refusing on it
+    # would strand a healthy one. Chat is per-project BYOK, not an instance property.
+    # The correct surface already exists: `PlatformConfigOut.effective_chat_provider`
+    # resolves it per project and drives the UI's no-model banner (AL-248).
 
     if not settings.jwt_secret_is_weak:
         return
