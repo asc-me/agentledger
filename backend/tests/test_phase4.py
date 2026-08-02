@@ -30,7 +30,7 @@ def test_links_graph_data(client, auth):
     links = client.get("/api/links?project_id=core", headers=auth).json()
     assert len(links) == 8
     dep = [l for l in links if l["type"] == "dependency"]
-    assert any(l["a"] == "AL-12" and l["b"] == "AL-08" for l in dep)
+    assert any(l["a"] == "CP-12" and l["b"] == "CP-8" for l in dep)  # rendered (PRD-13)
     assert all(0 <= l["confidence"] <= 1 for l in links)
 
 

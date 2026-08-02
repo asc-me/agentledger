@@ -869,8 +869,12 @@ def _validate_args(name: str, args: dict[str, Any]) -> None:
 
 
 def _item_dict(item) -> dict:
+    # `key`/`prd_key` render from the project's CURRENT tag; the stored id is frozen and
+    # internal, and an agent that quotes a rendered key back is resolved by services/keys
+    # (PRD-13). Emitting the stored id here would leak a retired tag straight into agent
+    # memory, where it would outlive the rename by months.
     return {
-        "id": item.id,
+        "id": item.key,
         "project_id": item.project_id,
         "title": item.title,
         "status": item.status,
@@ -879,11 +883,21 @@ def _item_dict(item) -> dict:
         "effort": item.effort,
         "assignee": item.assignee,
         "claimed_by": item.claimed_by,
-        "prd_id": item.prd_id,
+        "prd_id": item.prd_key,
         "prd_section": item.prd_section,
         "fidelity": item.fidelity,
         "evidence": item.evidence or [],
     }
+
+
+def _ref_key(db, stored_id: str) -> str:
+    """Render a link endpoint, which may be an item OR a request (`links.a`/`b` are
+    untyped strings). Falls back to the stored id so a dangling edge still serializes."""
+    for kind in ("item", "request"):
+        row = db.get(keys.MODELS[kind], stored_id)
+        if row is not None:
+            return row.key
+    return stored_id
 
 
 def _lean_item(item) -> dict:
@@ -892,7 +906,7 @@ def _lean_item(item) -> dict:
     fat fields (touchpoints, assignee, claimed_by, prd_*, fidelity, effort) only on
     `fields="full"` — an agent picking work calls get_item_details once it chooses,
     so paying for 12 fields × N rows on every scan is waste (AL-78)."""
-    return {"id": item.id, "title": item.title, "status": item.status}
+    return {"id": item.key, "title": item.title, "status": item.status}
 
 
 def _full(args: dict) -> bool:
@@ -902,7 +916,7 @@ def _full(args: dict) -> bool:
 def _shard_dict(shard) -> dict:
     return {
         "id": shard.id, "text": shard.text, "scope": shard.scope,
-        "item_id": shard.item_id, "project_id": shard.project_id,
+        "item_id": shard.item_key, "project_id": shard.project_id,
         "status": shard.status,
         # Auto-triage outcome (AL-227): if the scorer acted on write, the agent sees
         # the final status here plus how it was decided.
@@ -913,13 +927,13 @@ def _shard_dict(shard) -> dict:
 
 def _prd_dict(prd) -> dict:
     return {
-        "id": prd.id,
+        "id": prd.key,
         "project_id": prd.project_id,
         "title": prd.title,
         "status": prd.status,
         "version": prd.version,
         "sections": prd_svc.parse_sections(prd.body),  # the `## ` headings, in order
-        "linked": list(prd.linked or []),
+        "linked": prd.linked_keys,
         "body": prd.body,
     }
 
@@ -1108,7 +1122,7 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
         results = [
             {
                 "id": s.id, "text": s.text, "scope": s.scope, "score": round(score, 4),
-                "item_id": s.item_id, "source": s.source, "project_id": s.project_id,
+                "item_id": s.item_key, "source": s.source, "project_id": s.project_id,
                 "status": s.status,
             }
             for s, score in hits
@@ -1120,7 +1134,8 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
         # call get_backlog, so it stays; only the fat item fields are opt-in (AL-78).
         shape = _item_dict if _full(args) else _lean_item
         rows = [
-            {**shape(r["item"]), "ready": r["ready"], "blocked_by": r["blocked_by"],
+            {**shape(r["item"]), "ready": r["ready"],
+             "blocked_by": [_ref_key(db, d) for d in r["blocked_by"]],
              "unblocks": r["unblocks"], "votes": r["votes"], "score": r["score"]}
             for r in ranked
         ]
@@ -1163,7 +1178,8 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
             reason=args.get("reason", ""), project_id=pid,
         )
         _idempotent_remember(db, args, "link_items", link.id)
-        return {"id": link.id, "a": link.a, "b": link.b, "type": link.type}
+        return {"id": link.id, "a": _ref_key(db, link.a), "b": _ref_key(db, link.b),
+                "type": link.type}
     if name == "unlink_items":
         # Both endpoints must be in scope — same guard as link_items, so a key can't
         # probe or mutate links that touch items outside its project scope.
@@ -1246,7 +1262,7 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
             raise errors.NotFound(f"prd not found: {args['prd_id']}")
         if prd.project_id not in readable:
             raise authz.Forbidden(f"prd {args['prd_id']!r} is outside this key's project scope")
-        return {"prd_id": prd.id, "questions": prd_svc.ai_command(db, prd.id, "grill")}
+        return {"prd_id": prd.key, "questions": prd_svc.ai_command(db, prd.id, "grill")}
     if name == "describe_code":
         return code_svc.describe_code(
             db, project_id=pid,

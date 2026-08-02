@@ -94,7 +94,8 @@ def test_mcp_all_new_tools(client, auth):
     assert nxt["item"]["status"] in ("next", "backlog")
 
     link = _call(client, key, "link_items", {"a": "AL-12", "b": "AL-08", "type": "dependency"})
-    assert link["a"] == "AL-12" and link["type"] == "dependency"
+    # Link endpoints render like every other reference (PRD-13); AL-12 is the frozen id.
+    assert link["a"] == "CP-12" and link["type"] == "dependency"
 
     lessons = _call(client, key, "extract_lessons", {"id": "AL-11"})
     assert isinstance(lessons["results"], list) and len(lessons["results"]) >= 1

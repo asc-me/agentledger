@@ -22,10 +22,11 @@ from sqlalchemy import (
     false,
     true,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, object_session, relationship
 from sqlalchemy.types import TypeDecorator
 
 from app.config import settings
+from app import tagging
 from app.db import Base
 
 
@@ -81,6 +82,24 @@ class User(Base):
 
     memberships: Mapped[list[Membership]] = relationship(back_populates="user")
     api_keys: Mapped[list[ApiKey]] = relationship(back_populates="user")
+
+
+def _key_of(owner, stored_id: str | None, kind: str) -> str | None:
+    """Render a cross-referenced entity's key, falling back to the stored id.
+
+    Fields like `Item.prd_id` hold another entity's frozen id, so they have to be
+    rendered too — otherwise a retag leaks the old tag through a reference field even
+    though the entity's own key looks right. The fallback matters: a detached object or
+    a dangling reference must degrade to the stored id rather than raise inside
+    serialization.
+    """
+    if not stored_id:
+        return stored_id
+    session = object_session(owner)
+    if session is None:
+        return stored_id
+    row = session.get({"item": Item, "request": Request, "prd": Prd}[kind], stored_id)
+    return row.key if row is not None else stored_id
 
 
 class Project(Base):
@@ -279,6 +298,17 @@ class Item(Base):
     # or two agents race, the database refuses a duplicate number within a project.
     __table_args__ = (UniqueConstraint("project_id", "number", name="uq_item_number"),)
 
+    project: Mapped[Project] = relationship()
+
+    @property
+    def key(self) -> str:
+        """The user-visible key, rendered from the project's CURRENT tag (PRD-13)."""
+        return tagging.render(self.project.tag, "item", self.number)
+
+    @property
+    def prd_key(self) -> str | None:
+        return _key_of(self, self.prd_id, "prd")
+
 
 class MemoryShard(Base):
     __tablename__ = "memory_shards"
@@ -304,6 +334,10 @@ class MemoryShard(Base):
     auto_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
+    @property
+    def item_key(self) -> str | None:
+        return _key_of(self, self.item_id, "item")
+
 
 class Request(Base):
     __tablename__ = "requests"
@@ -325,6 +359,16 @@ class Request(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     __table_args__ = (UniqueConstraint("project_id", "number", name="uq_request_number"),)
+
+    project: Mapped[Project] = relationship()
+
+    @property
+    def key(self) -> str:
+        return tagging.render(self.project.tag, "request", self.number)
+
+    @property
+    def linked_to_key(self) -> str | None:
+        return _key_of(self, self.linked_to, "item")
 
 
 class Prd(Base):
@@ -349,6 +393,16 @@ class Prd(Base):
     )
 
     __table_args__ = (UniqueConstraint("project_id", "number", name="uq_prd_number"),)
+
+    project: Mapped[Project] = relationship()
+
+    @property
+    def key(self) -> str:
+        return tagging.render(self.project.tag, "prd", self.number)
+
+    @property
+    def linked_keys(self) -> list[str]:
+        return [_key_of(self, i, "item") for i in (self.linked or [])]
 
 
 class PrdVersion(Base):

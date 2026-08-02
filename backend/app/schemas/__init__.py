@@ -6,7 +6,17 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field, fie
 
 
 class ORMModel(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    # populate_by_name so the `id` fields aliased to a rendered `key` (PRD-13) can still
+    # be constructed by field name in tests and hand-built payloads.
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+
+# A user-visible key is RENDERED from the project's current tag + the entity's number;
+# the stored id is frozen and internal. These aliases are what keep a stored id out of
+# every response — including reference fields like `prd_id`, which would otherwise leak
+# an old tag through the back door after a retag.
+def _key(alias: str, **kw):
+    return Field(validation_alias=alias, **kw)
 
 
 # ---- Auth ----
@@ -248,7 +258,7 @@ class ReorderIn(BaseModel):
 
 
 class ItemOut(ORMModel):
-    id: str
+    id: str = _key("key")
     project_id: str
     title: str
     description: str
@@ -265,7 +275,7 @@ class ItemOut(ORMModel):
     evidence: list[dict] = []
     assignee: str = ""
     claimed_by: str | None = None
-    prd_id: str | None = None
+    prd_id: str | None = _key("prd_key", default=None)
     prd_section: str = ""
     fidelity: str = "low"
     created_at: datetime
@@ -292,7 +302,7 @@ class ShardOut(ORMModel):
     source: str
     status: str
     origin: str
-    item_id: str | None
+    item_id: str | None = _key("item_key", default=None)
     project_id: str | None
     fresh: bool
     # Auto-triage provenance (AL-227): "" = human-only; else the signal that acted
@@ -339,7 +349,7 @@ class RequestVoteIn(BaseModel):
 
 
 class RequestOut(ORMModel):
-    id: str
+    id: str = _key("key")
     project_id: str
     type: str
     title: str
@@ -347,7 +357,7 @@ class RequestOut(ORMModel):
     by: str
     votes: int
     status: str
-    linked_to: str | None
+    linked_to: str | None = _key("linked_to_key", default=None)
     ago: str
     source_url: str = ""
     meta: dict = {}
@@ -544,24 +554,24 @@ class PrdVersionOut(ORMModel):
 
 
 class PrdOut(ORMModel):
-    id: str
+    id: str = _key("key")
     project_id: str
     title: str
     status: str
     version: str
     body: str
-    linked: list[str]
+    linked: list[str] = _key("linked_keys", default_factory=list)
     updated: str
     created_at: datetime
     updated_at: datetime
 
 
 class PrdSummary(ORMModel):
-    id: str
+    id: str = _key("key")
     title: str
     status: str
     version: str
-    linked: list[str]
+    linked: list[str] = _key("linked_keys", default_factory=list)
     updated: str
 
 

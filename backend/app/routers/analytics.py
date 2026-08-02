@@ -13,6 +13,18 @@ from app.services import links as links_svc
 from app.services import mcp_stats
 from app.services import roadmap as roadmap_svc
 
+
+def _ref_key(db, stored_id: str) -> str:
+    """A link endpoint is an item OR a request (`links.a`/`b` are untyped), so try both.
+    Falls back to the stored id so a dangling edge still serializes (PRD-13)."""
+    from app.services import keys
+
+    for kind in ("item", "request"):
+        row = db.get(keys.MODELS[kind], stored_id)
+        if row is not None:
+            return row.key
+    return stored_id
+
 router = APIRouter(tags=["analytics"])
 
 
@@ -51,7 +63,8 @@ def links(project_id: str | None = None, db: Session = Depends(get_db), user: Us
     authz.require_readable(db, user.id, project_id)
     rows = links_svc.list_links(db, project_id=project_id)
     return [
-        {"id": l.id, "a": l.a, "b": l.b, "type": l.type, "confidence": l.confidence, "reason": l.reason}
+        {"id": l.id, "a": _ref_key(db, l.a), "b": _ref_key(db, l.b), "type": l.type,
+         "confidence": l.confidence, "reason": l.reason}
         for l in rows
     ]
 
