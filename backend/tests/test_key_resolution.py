@@ -52,12 +52,14 @@ def retagged(client, auth):
     Yields (project_id, old_key, new_key, stored_id) — the three strings that must all
     resolve to the same entity, and the stored id that must never change.
     """
-    item = client.get("/api/items?project_id=core", headers=auth).json()[0]
-    stored_id = item["id"]
+    # Responses render the key now (AL-256), so the API no longer hands back a stored
+    # id — resolve to get one.
+    rendered = client.get("/api/items?project_id=core", headers=auth).json()[0]["id"]
 
     with SessionLocal() as db:
         from app.models import Item
 
+        stored_id = keys.resolve_item(db, rendered)
         row = db.get(Item, stored_id)
         project_id, number = row.project_id, row.number
 
@@ -67,11 +69,11 @@ def retagged(client, auth):
 
 # ---- the resolver itself ----------------------------------------------------------
 def test_resolves_a_current_form_key(client, auth):
-    item = client.get("/api/items?project_id=core", headers=auth).json()[0]
+    rendered = client.get("/api/items?project_id=core", headers=auth).json()[0]["id"]
     with SessionLocal() as db:
         from app.models import Item
 
-        row = db.get(Item, item["id"])
+        row = db.get(Item, keys.resolve_item(db, rendered))
         assert keys.resolve_item(db, f"{_tag(row.project_id)}-{row.number}") == row.id
 
 
@@ -83,29 +85,38 @@ def test_resolves_a_key_rendered_under_a_retired_tag(retagged):
 
 
 def test_resolves_a_stored_id_directly(client, auth):
-    """The identity rung. Internal callers and anything the grammar can't express."""
-    item = client.get("/api/items?project_id=core", headers=auth).json()[0]
+    """The identity rung. Internal callers and anything the grammar can't express.
+
+    The stored id has to come from the database, not the API — output renders now, so a
+    response never contains one."""
     with SessionLocal() as db:
-        assert keys.resolve_item(db, item["id"]) == item["id"]
+        from app.models import Item
+
+        stored_id = db.query(Item).first().id
+        assert keys.resolve_item(db, stored_id) == stored_id
 
 
 def test_resolves_legacy_request_and_prd_ids(client, auth):
     """`R-` and `PRD-` were entity-kind markers, not project tags, so tag history can
     never express them — this is precisely why the legacy table has to exist."""
     with SessionLocal() as db:
-        req_id = client.get("/api/requests?project_id=core", headers=auth).json()[0]["id"]
-        prd_id = client.get("/api/prds?project_id=core", headers=auth).json()[0]["id"]
+        from app.models import Prd, Request
+
+        req_id = db.query(Request).first().id   # e.g. R-33 — a pre-tag stored id
+        prd_id = db.query(Prd).first().id       # e.g. PRD-1
         assert keys.resolve_request(db, req_id) == req_id
         assert keys.resolve_prd(db, prd_id) == prd_id
 
 
 def test_kind_is_enforced_so_numbers_cannot_cross_entities(client, auth):
     """Asking for a PRD must never return an item that happens to share a number."""
-    item = client.get("/api/items?project_id=core", headers=auth).json()[0]
     with SessionLocal() as db:
-        assert keys.resolve_item(db, item["id"]) == item["id"]
-        assert keys.resolve_prd(db, item["id"]) is None
-        assert keys.resolve_request(db, item["id"]) is None
+        from app.models import Item
+
+        stored_id = db.query(Item).first().id
+        assert keys.resolve_item(db, stored_id) == stored_id
+        assert keys.resolve_prd(db, stored_id) is None
+        assert keys.resolve_request(db, stored_id) is None
 
 
 @pytest.mark.parametrize("junk", ["", "   ", "NOPE-1", "ZZ9-99999", "not a key", "AL-", "---"])
@@ -120,7 +131,9 @@ def test_rest_get_accepts_a_pre_retag_key(client, auth, retagged):
     for key in (old_key, new_key, stored_id):
         r = client.get(f"/api/items/{key}", headers=auth)
         assert r.status_code == 200, (key, r.text)
-        assert r.json()["id"] == stored_id
+        # Every accepted form resolves to the same entity and comes back rendered under
+        # the CURRENT tag — never as the stored id it was reached by.
+        assert r.json()["id"] == new_key
 
 
 def test_unknown_key_is_404_not_500(client, auth):
@@ -153,10 +166,10 @@ def test_mcp_get_item_details_accepts_a_pre_retag_key(client, retagged):
 # The half a reads-only audit would miss. An agent that claimed AL-12 keeps calling
 # heartbeat with AL-12; if writes don't resolve, its lease silently breaks at retag.
 def test_rest_patch_accepts_a_pre_retag_key(client, auth, retagged):
-    _p, old_key, _new, stored_id = retagged
+    _p, old_key, _new, _stored = retagged
     r = client.patch(f"/api/items/{old_key}", json={"title": "renamed via old key"}, headers=auth)
     assert r.status_code == 200, r.text
-    assert r.json()["id"] == stored_id
+    assert r.json()["id"] == _new  # written via the retired key, returned under the new tag
     assert r.json()["title"] == "renamed via old key"
 
 
@@ -217,11 +230,11 @@ def test_reorder_accepts_pre_retag_keys(client, auth, retagged):
     # something — reorder returns the whole list either way, so a membership assertion
     # would pass even when the reorder silently did nothing.
     items = client.get("/api/items?project_id=core", headers=auth).json()
-    target = items[-1]
     with SessionLocal() as db:
         from app.models import Item
 
-        row = db.get(Item, target["id"])
+        target_id = keys.resolve_item(db, items[-1]["id"])  # output renders now (AL-256)
+        row = db.get(Item, target_id)
         assert row.sort_order != 0, "need an item that is not already at position 0"
         target_key = f"{old_tag}-{row.number}"
 
@@ -230,7 +243,7 @@ def test_reorder_accepts_pre_retag_keys(client, auth, retagged):
     with SessionLocal() as db:
         from app.models import Item
 
-        assert db.get(Item, target["id"]).sort_order == 0
+        assert db.get(Item, target_id).sort_order == 0
 
 
 def test_retag_never_moves_a_stored_id(client, auth, retagged):

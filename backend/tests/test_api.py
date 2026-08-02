@@ -39,7 +39,9 @@ def test_items_require_auth(client):
 def test_seeded_items(client, auth):
     items = client.get("/api/items?project_id=core", headers=auth).json()
     assert len(items) == 9
-    assert items[0]["id"] == "AL-12"  # sort_order 0
+    # Responses render the key from the project tag; `AL-12` is the frozen stored id
+    # and never appears in output again (PRD-13). Requests still ACCEPT it — see below.
+    assert items[0]["id"] == "CP-12"  # sort_order 0
 
 
 def test_create_and_update_item(client, auth):
@@ -75,7 +77,8 @@ def test_requests_vote_and_link(client, auth):
     assert v.json()["votes"] == 4
     ln = client.post("/api/requests/R-35/link", json={"item_id": "AL-12"}, headers=auth)
     assert ln.json()["status"] == "linked"
-    assert ln.json()["linked_to"] == "AL-12"
+    # The reference field renders too, or a retag would leak the old tag through it.
+    assert ln.json()["linked_to"] == "CP-12"  # posted as AL-12; resolution accepted it
 
 
 def test_link_unknown_item_422(client, auth):

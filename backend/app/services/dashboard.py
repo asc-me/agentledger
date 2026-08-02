@@ -49,7 +49,8 @@ def build(db: Session, project_id: str | None = None) -> dict:
         "prd_count": db.scalar(select(func.count()).select_from(_scoped(Prd).subquery())) or 0,
         "mcp_calls": mcp_stats.total(db),
         "recent_items": [
-            {"id": it.id, "title": it.title, "status": it.status, "date": it.date}
+            # Rendered, not stored — this feeds the "recent activity" tiles (PRD-13).
+            {"id": it.key, "title": it.title, "status": it.status, "date": it.date}
             for it in recent
         ],
     }

@@ -7,10 +7,10 @@ def test_seeded_prds(client, auth):
     prds = client.get("/api/prds?project_id=core", headers=auth).json()
     assert len(prds) == 3
     ids = {p["id"] for p in prds}
-    assert ids == {"PRD-1", "PRD-2", "PRD-3"}
-    p1 = next(p for p in prds if p["id"] == "PRD-1")
+    assert ids == {"CP-P1", "CP-P2", "CP-P3"}  # <TAG>-P<n>, rendered (PRD-13)
+    p1 = next(p for p in prds if p["id"] == "CP-P1")
     assert p1["status"] == "approved" and p1["version"] == "v1.0"
-    assert "AL-08" in p1["linked"]
+    assert "CP-8" in p1["linked"]  # linked item ids render too; padding is dropped
 
 
 def test_get_prd_body_and_versions(client, auth):
@@ -69,10 +69,11 @@ def test_create_version_snapshots_and_bumps(client, auth):
 
 
 def test_link_item_add_and_remove(client, auth):
+    # Posted with the frozen stored id (resolution accepts it); read back rendered.
     linked = client.post("/api/prds/PRD-3/link", json={"item_id": "AL-04", "add": True}, headers=auth).json()
-    assert "AL-04" in linked["linked"]
+    assert "CP-4" in linked["linked"]
     unlinked = client.post("/api/prds/PRD-3/link", json={"item_id": "AL-04", "add": False}, headers=auth).json()
-    assert "AL-04" not in unlinked["linked"]
+    assert "CP-4" not in unlinked["linked"]
 
 
 def test_ai_command_stub(client, auth):
