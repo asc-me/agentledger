@@ -26,8 +26,11 @@ Interactive OpenAPI docs are at **`/docs`**.
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
-| GET | `/api/projects` | JWT | List projects |
-| PATCH | `/api/projects/{id}` | JWT | Update project config |
+| GET | `/api/projects` | JWT | List projects (each carries its `tag`) |
+| POST | `/api/projects` | JWT | Create a project. `tag` is optional — derived from `name` when omitted, refused with 422 when taken or malformed |
+| GET | `/api/projects/tag-suggestion?name=` | JWT | A free tag derived from a project name (prefills the creation form) |
+| GET | `/api/projects/tag-check?tag=` | JWT | `{tag, available, reason}` for live form feedback |
+| PATCH | `/api/projects/{id}` | JWT | Update project config. **Not** the tag — changing that has to record tag history |
 | GET | `/api/projects/{id}/members` | JWT | List members (role/access) |
 
 ## Items (tracker)

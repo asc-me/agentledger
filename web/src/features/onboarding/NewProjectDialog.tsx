@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useProjectCtx } from "@/features/ProjectContext";
+import { TagField, useTagField } from "@/features/onboarding/TagField";
 import { api } from "@/lib/api";
 import { keys } from "@/lib/queries";
 
@@ -29,6 +30,7 @@ export function NewProjectDialog({
   const [accent, setAccent] = React.useState(PROJECT_ACCENTS[0]);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
+  const tagField = useTagField(name);
 
   // Reset the form each time the dialog opens.
   React.useEffect(() => {
@@ -36,16 +38,21 @@ export function NewProjectDialog({
       setName("");
       setAccent(PROJECT_ACCENTS[0]);
       setError("");
+      tagField.reset();
     }
   }, [open]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim() || tagField.blocked) return;
     setBusy(true);
     setError("");
     try {
-      const project = await api.createProject({ name: name.trim(), accent });
+      const project = await api.createProject({
+        name: name.trim(),
+        tag: tagField.tag || undefined,
+        accent,
+      });
       await qc.invalidateQueries({ queryKey: keys.projects });
       setActiveId(project.id);
       onOpenChange(false);
@@ -74,6 +81,7 @@ export function NewProjectDialog({
               autoFocus
             />
           </div>
+          <TagField tag={tagField.tag} setTag={tagField.setTag} status={tagField.status} />
           <div>
             <label className="mb-2 block font-mono text-[10px] uppercase tracking-wide text-faint">
               Accent

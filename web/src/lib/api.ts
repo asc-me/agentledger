@@ -179,8 +179,23 @@ export const api = {
   config: () => request<AppConfig>("/config"),
 
   projects: () => request<Project[]>("/projects"),
-  createProject: (body: { name: string; accent?: string; description?: string; org_id?: string }) =>
-    request<Project>("/projects", { method: "POST", body: JSON.stringify(body) }),
+  createProject: (body: {
+    name: string;
+    /** Omit to let the server derive one from `name`. */
+    tag?: string;
+    accent?: string;
+    description?: string;
+    org_id?: string;
+  }) => request<Project>("/projects", { method: "POST", body: JSON.stringify(body) }),
+
+  // Tag derivation lives server-side so the form and the API can't drift apart — the
+  // implementation that matters is the one that actually assigns the tag (PRD-13).
+  tagSuggestion: (name: string) =>
+    request<{ tag: string }>(`/projects/tag-suggestion?name=${encodeURIComponent(name)}`),
+  tagCheck: (tag: string) =>
+    request<{ tag: string; available: boolean; reason: string }>(
+      `/projects/tag-check?tag=${encodeURIComponent(tag)}`,
+    ),
 
   // ── Organizations (hosted-only, AL-74b) ───────────────────────────────
   orgs: () => request<Org[]>("/orgs"),

@@ -188,6 +188,7 @@ class SetPlanIn(BaseModel):
 class ProjectOut(ORMModel):
     id: str
     name: str
+    tag: str  # short key prefix; item/request/PRD keys render from it (PRD-13)
     accent: str
     visibility: str
     description: str
@@ -203,6 +204,9 @@ class ProjectOut(ORMModel):
 
 class ProjectCreate(BaseModel):
     name: str
+    # Optional: derived from `name` when omitted. NOT on ProjectUpdate — changing a tag
+    # has to go through the retag path so it records tag history (AL-258).
+    tag: str | None = None
     accent: str = "#c6f24e"
     description: str = ""
     # Hosted-only (AL-74b): the org to create the project under. Optional when the

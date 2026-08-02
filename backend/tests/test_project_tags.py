@@ -277,3 +277,103 @@ def test_backfill_never_rewrites_a_stored_id(client, auth):
     with engine.connect() as conn:
         after = sorted(r[0] for r in conn.execute(text("SELECT id FROM items")).fetchall())
     assert after == before
+
+
+# ---- the creation surface (AL-260) ------------------------------------------------
+def test_project_payload_exposes_the_tag(client, auth):
+    projects = client.get("/api/projects", headers=auth).json()
+    assert all(tagging.validate(p["tag"]) for p in projects)
+
+
+def test_create_accepts_an_explicit_tag(client, auth):
+    r = client.post("/api/projects", json={"name": "Explicit", "tag": "xpl"}, headers=auth)
+    assert r.status_code == 201, r.text
+    assert r.json()["tag"] == "XPL", "stored uppercase regardless of how it was typed"
+
+
+@pytest.mark.parametrize("bad,fragment", [("A", "2-4 characters"), ("1AB", "start with a letter")])
+def test_create_refuses_an_invalid_tag(client, auth, bad, fragment):
+    r = client.post("/api/projects", json={"name": "Bad Tag", "tag": bad}, headers=auth)
+    assert r.status_code == 422, r.text
+    assert fragment in r.json()["detail"]
+
+
+def test_create_refuses_a_tag_already_in_use(client, auth):
+    taken = client.get("/api/projects", headers=auth).json()[0]["tag"]
+    r = client.post("/api/projects", json={"name": "Collider Two", "tag": taken}, headers=auth)
+    assert r.status_code == 422, r.text
+    assert "already in use" in r.json()["detail"]
+
+
+def test_tag_suggestion_returns_something_free(client, auth):
+    r = client.get("/api/projects/tag-suggestion?name=Graph%20Widgets", headers=auth)
+    assert r.status_code == 200, r.text
+    assert r.json()["tag"] == "GW"
+    assert client.get("/api/projects/tag-check?tag=GW", headers=auth).json()["available"] is True
+
+
+def test_tag_check_reports_why_a_tag_is_blocked(client, auth):
+    taken = client.get("/api/projects", headers=auth).json()[0]["tag"]
+    body = client.get(f"/api/projects/tag-check?tag={taken}", headers=auth).json()
+    assert body["available"] is False and "already in use" in body["reason"]
+
+
+def test_a_previously_held_tag_can_never_be_reclaimed(client, auth):
+    """Reuse would make a key rendered under the old tag ambiguous the moment the new
+    holder had an entity with the same number — which no ordering by date can fix."""
+    from datetime import datetime, timezone
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO project_tag_history (tag, project_id, held_until)"
+                " VALUES ('OLD', :p, :u)"
+            ),
+            {"p": client.get("/api/projects", headers=auth).json()[0]["id"],
+             "u": datetime.now(timezone.utc)},
+        )
+    body = client.get("/api/projects/tag-check?tag=OLD", headers=auth).json()
+    assert body["available"] is False and "previously used" in body["reason"]
+
+
+def test_a_pre_tag_prefix_is_reserved(client, auth):
+    """`PRD` was never a project TAG, so tag history cannot express it — but `PRD-12` is
+    a legal rendering of item 12 in a project tagged PRD, and that id must keep resolving
+    to the old PRD forever. This is the case the legacy table exists to catch.
+
+    The precondition is established explicitly: a fresh deployment migrates an EMPTY
+    database, so its legacy table is empty and `PRD` really is free there. That is the
+    rule working as intended — reservation is per-deployment, derived from data, with no
+    reserved-word list in the product.
+    """
+    project_id = client.get("/api/projects", headers=auth).json()[0]["id"]
+    assert client.get("/api/projects/tag-check?tag=PRD", headers=auth).json()["available"] is True
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO legacy_entity_keys (old_key, entity_type, entity_id, project_id)"
+                " VALUES ('PRD-1', 'prd', 'PRD-1', :p)"
+            ),
+            {"p": project_id},
+        )
+
+    body = client.get("/api/projects/tag-check?tag=PRD", headers=auth).json()
+    assert body["available"] is False
+    assert "before project tags existed" in body["reason"]
+
+
+def test_mcp_list_projects_exposes_the_tag(client, auth):
+    key = client.post(
+        "/api/api-keys", json={"name": "lister", "scopes": ["read"]}, headers=auth
+    ).json()["plaintext"]
+    r = client.post(
+        "/api/mcp",
+        json={"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+              "params": {"name": "list_projects", "arguments": {}}},
+        headers={"X-API-Key": key},
+    )
+    import json as _json
+
+    results = _json.loads(r.json()["result"]["content"][0]["text"])["results"]
+    assert results and all(tagging.validate(p["tag"]) for p in results)

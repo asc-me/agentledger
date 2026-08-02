@@ -12,6 +12,7 @@ from app.schemas import MemberOut, ProjectCreate, ProjectOut, ProjectUpdate, Use
 from app.security import authz
 from app.security.deps import get_current_user
 from app.services import events as events_svc
+from app.services import projects as projects_svc
 from app.services import quotas
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -27,19 +28,22 @@ def _unique_slug(db: Session, name: str) -> str:
     return slug
 
 
-def _unique_tag(db: Session, name: str) -> str:
-    """A free tag derived from the project name (PRD-13), mirroring ``_unique_slug``.
+@router.get("/tag-suggestion")
+def tag_suggestion(name: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """A free tag derived from a project name, for prefilling the creation form.
 
-    Every project needs one, so derivation must always succeed rather than reject —
-    an agent bootstrapping a project shouldn't fail over a missing four-character
-    string, and the result is visible and changeable immediately. AL-258 widens the
-    availability test to also exclude retired tags; today "not currently held" is the
-    whole rule, which is correct while nothing has ever been retagged.
+    Derivation lives server-side on purpose: duplicating it in TypeScript would give the
+    UI and the API two implementations to drift apart, and the one that matters is the
+    one that actually assigns the tag.
     """
-    for candidate in tagging.variants(tagging.derive(name)):
-        if db.scalar(select(Project).where(Project.tag == candidate)) is None:
-            return candidate
-    raise HTTPException(422, f"could not derive a free tag for {name!r}")
+    return {"tag": projects_svc.unique_tag(db, name)}
+
+
+@router.get("/tag-check")
+def tag_check(tag: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Validity + availability for a tag the user typed, for live form feedback."""
+    available, reason = projects_svc.tag_available(db, tag)
+    return {"tag": tagging.normalize(tag), "available": available, "reason": reason}
 
 
 def _resolve_org_id(db: Session, user: User, requested: str | None) -> str | None:
@@ -80,9 +84,22 @@ def create_project(
         raise HTTPException(422, "project name is required")
     org_id = _resolve_org_id(db, user, body.org_id)
     quotas.enforce_project_quota(db, org_id)  # hosted plan cap (no-op self-host)
+
+    # An explicit tag is checked and refused on conflict; an omitted one is derived.
+    # Deriving rather than rejecting matters for agents: bootstrapping a project must
+    # not fail over a missing four-character string, and the result is visible and
+    # changeable immediately (PRD-13).
+    if body.tag:
+        available, reason = projects_svc.tag_available(db, body.tag)
+        if not available:
+            raise HTTPException(422, f"tag {body.tag!r} is not available: {reason}")
+        tag = tagging.normalize(body.tag)
+    else:
+        tag = projects_svc.unique_tag(db, name)
+
     project = Project(
         id=_unique_slug(db, name),
-        tag=_unique_tag(db, name),
+        tag=tag,
         name=name,
         accent=body.accent or "#c6f24e",
         description=body.description or "",
