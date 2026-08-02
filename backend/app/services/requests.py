@@ -6,6 +6,7 @@ import re
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app import tagging
 from app.models import Item, Request
 
 REQUEST_TYPES = ["bug", "feature", "enhancement", "feedback"]
@@ -42,8 +43,14 @@ def create_request(
 ) -> Request:
     if type_ not in REQUEST_TYPES:
         raise ValueError(f"invalid request type: {type_}")
+    # See create_item: the id is frozen identity, `number` is what the key renders from.
+    req_id = next_request_id(db)
+    number = tagging.legacy_number(req_id)
+    if number is None:
+        raise ValueError(f"minted an unparseable request id: {req_id!r}")
     req = Request(
-        id=next_request_id(db),
+        id=req_id,
+        number=number,
         project_id=project_id,
         type=type_,
         title=title,

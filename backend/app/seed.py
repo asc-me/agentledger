@@ -8,6 +8,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app import tagging
 from app.embeddings import get_embedder
 from app.models import (
     Item,
@@ -28,13 +29,13 @@ from app.security.passwords import hash_password
 SEED_PASSWORD = "agentledger"
 
 PROJECTS = [
-    dict(id="core", name="Core Platform", accent="#c6f24e", visibility="private",
+    dict(id="core", name="Core Platform", tag="CP", accent="#c6f24e", visibility="private",
          description="AgentLedger itself — the agent-native tracker + memory core.",
          share_global_memory=True, auto_extract=True, mcp_enabled=True, embed_model="text-embedding-3-small"),
-    dict(id="web", name="Web App", accent="#7ca2ff", visibility="private",
+    dict(id="web", name="Web App", tag="WA", accent="#7ca2ff", visibility="private",
          description="Marketing site + hosted dashboard for agentldgr.dev.",
          share_global_memory=True, auto_extract=True, mcp_enabled=False, embed_model="text-embedding-3-small"),
-    dict(id="infra", name="Infra", accent="#e0b34a", visibility="private",
+    dict(id="infra", name="Infra", tag="INFR", accent="#e0b34a", visibility="private",
          description="Deploy, CI, and self-host packaging.",
          share_global_memory=False, auto_extract=False, mcp_enabled=True, embed_model="nomic-embed-text (Ollama)"),
 ]
@@ -201,11 +202,12 @@ def seed(db: Session) -> bool:
             db.add(Membership(user_id=u["id"], project_id=pid, role=u["role"], access=level))
 
     for order, it in enumerate(ITEMS):
-        db.add(Item(project_id="core", sort_order=order, **it))
+        db.add(Item(project_id="core", sort_order=order,
+                    number=tagging.legacy_number(it["id"]), **it))
     db.flush()
 
     for r in REQUESTS:
-        db.add(Request(project_id="core", **r))
+        db.add(Request(project_id="core", number=tagging.legacy_number(r["id"]), **r))
 
     embedder = get_embedder()
     for s in SHARDS:
@@ -238,7 +240,7 @@ def seed(db: Session) -> bool:
     for p in PRDS:
         versions = p["versions"]
         fields = {k: v for k, v in p.items() if k != "versions"}
-        db.add(Prd(project_id="core", **fields))
+        db.add(Prd(project_id="core", number=tagging.legacy_number(p["id"]), **fields))
     db.flush()
     for p in PRDS:
         # Design lists versions newest-first; insert oldest-first so ids are chronological

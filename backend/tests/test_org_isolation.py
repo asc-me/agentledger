@@ -18,8 +18,8 @@ def _seed_two_orgs(db):
     db.add_all([Organization(id="orgA", name="Org A"), Organization(id="orgB", name="Org B")])
     db.flush()
     db.add_all([
-        Project(id="projA", name="Proj A", org_id="orgA"),
-        Project(id="projB", name="Proj B", org_id="orgB"),
+        Project(id="projA", name="Proj A", tag="PJA", org_id="orgA"),
+        Project(id="projB", name="Proj B", tag="PJB", org_id="orgB"),
         Membership(user_id="u1", project_id="projA", access="write"),
         Membership(user_id="u1", project_id="projB", access="write"),
         OrgMembership(org_id="orgA", user_id="u1", role="owner"),
