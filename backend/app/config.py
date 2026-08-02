@@ -101,11 +101,10 @@ class Settings(BaseSettings):
     # deterministic noise, so search silently returns nonsense while looking healthy.
     # Startup warns loudly; set this to refuse to boot instead.
     require_real_embeddings: bool = False
-    # Same switch for chat. A stub chat provider is LESS dangerous than stub embeddings
-    # — its output is visibly marked as a placeholder rather than confidently wrong —
-    # but on a hosted instance it still means the grill, PRD AI commands, memory
-    # auto-extraction and the judge surfaces are all inert for paying tenants.
-    require_real_chat: bool = False
+    # There is deliberately no REQUIRE_REAL_CHAT counterpart — see security/startup.py.
+    # Embeddings are an instance-wide, deploy-time choice (the vector dimension is baked
+    # into the schema); chat is per-project BYOK resolved from the DB, so no env flag can
+    # describe it.
 
     # ---- AI providers (F1). Defaults are all-stub → fully offline. ----
     # embed_provider: stub | ollama | openai. EMBED_DIM MUST match the model's output
@@ -115,7 +114,11 @@ class Settings(BaseSettings):
     # re-embedding everything (see migration 0019 + /api/memory/backfill), so pick it
     # before real data lands.
     embed_provider: str = "stub"
-    # chat_provider: stub | ollama | anthropic  (drives agent chat + auto-extraction)
+    # chat_provider — LEGACY MIRROR, not the resolution path. `platform.apply_llm` writes
+    # this at runtime to keep the old `llm_mode` field working; the live chat provider is
+    # `PlatformConfig.active_chat_provider`, per project, in the DB (see the provider
+    # registry for the full set — anthropic, openai, xai, gemini, groq, deepseek, mistral,
+    # ollama). Setting CHAT_PROVIDER in the environment does NOT select a chat provider.
     chat_provider: str = "stub"
 
     ollama_base_url: str = "http://localhost:11434"
