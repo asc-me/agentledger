@@ -14,6 +14,8 @@ export interface User {
 export interface Project {
   id: string;
   name: string;
+  /** Short key prefix: item/request/PRD keys render as <TAG>-<n> / -R<n> / -P<n> (PRD-13). */
+  tag: string;
   accent: string;
   visibility: string;
   description: string;

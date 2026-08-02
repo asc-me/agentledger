@@ -8,18 +8,32 @@ Alembic; SQLite (tests / zero-infra dev) uses `create_all`.
 | Table | Key | Purpose |
 | --- | --- | --- |
 | `users` | `id` (`u1`, `u_…`) | Account: name, handle, email, avatar, initials, password hash |
-| `projects` | `id` (`core`) | Project: name, accent, visibility, description, flags (`share_global_memory`, `auto_extract`, `mcp_enabled`, `embed_model`) |
+| `projects` | `id` (`core`) | Project: name, **`tag`** (unique, 2–4 chars), accent, visibility, description, flags (`share_global_memory`, `auto_extract`, `mcp_enabled`, `embed_model`) |
 | `memberships` | `id` | User ↔ project with `role` (owner/admin/member) + `access` (write/read/none) |
-| `items` | `id` (`AL-12`) | Tracker item: title, description, `status`, tags, effort, `sort_order`, blocker, reporter, `pr` (JSON), date |
+| `items` | `id` (frozen at issue) | Tracker item: **`number`** (unique per project), title, description, `status`, tags, effort, `sort_order`, blocker, reporter, `pr` (JSON), date |
 | `memory_shards` | `id` (`m1`, `m_…`) | Shard: text, `scope`, source, optional `item_id`, `embedding` (vector), `fresh` |
-| `requests` | `id` (`R-31`) | Triage: type, title, by, votes, status, `linked_to` |
+| `requests` | `id` (frozen at issue) | Triage: **`number`**, type, title, by, votes, status, `linked_to` |
 | `links` | `id` | Typed edge: `a`, `b`, `type` (dependency/code/semantic/tag), `confidence`, `reason` |
-| `prds` | `id` (`PRD-1`) | PRD: title, status, version, body (markdown), `linked` (item ids), updated |
+| `prds` | `id` (frozen at issue) | PRD: **`number`**, title, status, version, body (markdown), `linked` (item ids), updated |
 | `prd_versions` | `id` | Immutable snapshot: `prd_id`, version, date, note, body |
 | `milestones` | `id` | Roadmap entry: `phase` (mvp/post/later), title, tag, `done`, `sort_order` |
 | `mcp_tool_stats` | `tool` | Per-tool MCP call count |
 | `platform_config` | `project_id` | Per-project LLM mode + provider config + GitHub/Drive connection state |
 | `api_keys` | `id` | Scoped agent key: name, prefix, `hashed_key` (SHA-256), scopes, last used |
+| `project_tag_history` | `tag` | A tag a project used to hold — one row per rename. Tags are never reused on a deployment |
+| `legacy_entity_keys` | `old_key` | Ids issued before project tags existed (`AL-12`, `R-33`, `PRD-1`), seeded once so they resolve forever |
+
+## Keys are rendered, not stored (PRD-13)
+
+A user-visible key — `GRPH-12`, `GRPH-R33`, `GRPH-P4` — is **rendered** from the
+project's current `tag`, the entity kind, and the entity's `number`. The stored `id` is
+frozen when the entity is created and is never rewritten, so changing a tag is one
+`UPDATE` on one row and nothing else in the database moves.
+
+That matters because twelve columns across ten tables hold an entity id and only three
+are enforced foreign keys. `app/tagging.py` owns the grammar; `services/keys.py`
+resolves a supplied key back to a stored id (current form → tag history → legacy table →
+the id itself) and mints new ones.
 
 ## Relationships
 

@@ -81,7 +81,7 @@ Every client authenticates the same way: the key in an `X-API-Key` header (or
 | Tool | Params | Does |
 | --- | --- | --- |
 | `get_context` | — | Orient: the key's project, scopes, project/tool counts. Call this first. |
-| `list_projects` | — | All projects (`id`, `name`, `accent`, `description`) — ids for the `project_id` override |
+| `list_projects` | — | All projects (`id`, `name`, `tag`, `accent`, `description`) — ids for the `project_id` override; `tag` is the short prefix its item/request/PRD keys render with |
 | `setup_project` | `project_id` | **First-run bootstrap** — an ordered, resumable checklist (confirm project → build graph → load memories → propose items). Read-only; call it when `get_context` reports an empty project |
 | `next_cluster` | `agent_id`, `max_items`, `project_id` | **Claim a code-neighborhood at once** — the best ready item plus its related ready items, all assigned to you. |
 | `related_work` | `id` | Items related to a task by shared touchpoints + typed links, best-first (read-only) |

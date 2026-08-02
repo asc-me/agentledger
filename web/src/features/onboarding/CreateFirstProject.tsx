@@ -5,6 +5,7 @@ import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useProjectCtx } from "@/features/ProjectContext";
+import { TagField, useTagField } from "@/features/onboarding/TagField";
 import { api } from "@/lib/api";
 import { keys } from "@/lib/queries";
 
@@ -17,14 +18,19 @@ export function CreateFirstProject() {
   const [accent, setAccent] = React.useState(ACCENTS[0]);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
+  const tagField = useTagField(name);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim() || tagField.blocked) return;
     setBusy(true);
     setError("");
     try {
-      const project = await api.createProject({ name: name.trim(), accent });
+      const project = await api.createProject({
+        name: name.trim(),
+        tag: tagField.tag || undefined,
+        accent,
+      });
       await qc.invalidateQueries({ queryKey: keys.projects });
       setActiveId(project.id);
     } catch {
@@ -58,6 +64,10 @@ export function CreateFirstProject() {
           autoFocus
           className="mb-5"
         />
+
+        <div className="mb-5">
+          <TagField tag={tagField.tag} setTag={tagField.setTag} status={tagField.status} />
+        </div>
 
         <label className="mb-2 block font-mono text-[10px] uppercase tracking-wide text-faint">
           Accent

@@ -72,7 +72,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "list_projects",
-        "description": "List all projects (id, name, accent, description). Use an id as the `project_id` override.",
+        "description": "List all projects (id, name, tag, accent, description). `tag` is the short prefix its item/request/PRD keys render with. Use an id as the `project_id` override.",
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
@@ -625,7 +625,8 @@ _OUTPUT_SCHEMAS: dict[str, dict] = {
         "type": "object",
         "properties": {"results": {"type": "array", "items": {
             "type": "object",
-            "properties": {"id": _STR, "name": _STR, "accent": _STR, "description": _STR},
+            "properties": {"id": _STR, "name": _STR, "tag": _STR, "accent": _STR,
+                           "description": _STR},
         }}},
     },
     "setup_project": {
@@ -1026,7 +1027,8 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
         return setup_svc.checklist(db, pid)
     if name == "list_projects":
         return {"results": [
-            {"id": p.id, "name": p.name, "accent": p.accent, "description": p.description}
+            {"id": p.id, "name": p.name, "tag": p.tag, "accent": p.accent,
+             "description": p.description}
             for p in db.scalars(select(Project).order_by(Project.name)).all()
             if p.id in readable
         ]}

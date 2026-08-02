@@ -9,7 +9,52 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Project
+from app import tagging
+from app.models import LegacyEntityKey, Project, ProjectTagHistory
+
+
+def tag_available(db: Session, tag: str) -> tuple[bool, str]:
+    """Is ``tag`` free on THIS deployment? Returns ``(available, reason)``.
+
+    Three instance-local conditions make a tag unavailable — no reserved-word list ships
+    in the product, so a fresh self-host starts with the whole namespace open, including
+    ``AL`` and ``PRD``:
+
+    1. **currently held** by a project
+    2. **previously held** — in tag history. Reuse would make a key rendered under the
+       old tag ambiguous the moment the new holder had an entity with the same number.
+    3. **present as a pre-tag prefix** in the legacy table. This is the one that is easy
+       to miss: ``PRD`` was never a project *tag*, so history cannot express it, but
+       ``PRD-12`` is a legal rendering of item 12 in a project tagged ``PRD``. Letting a
+       project claim it would collide with a legacy id that must resolve forever.
+
+    ``R`` excludes itself by failing the two-character minimum.
+    """
+    try:
+        tag = tagging.validate(tag)
+    except ValueError as e:
+        return False, str(e)
+
+    if db.scalar(select(Project).where(Project.tag == tag)) is not None:
+        return False, "already in use by another project"
+    if db.get(ProjectTagHistory, tag) is not None:
+        return False, "previously used on this deployment; tags are never reused"
+    if db.scalar(select(LegacyEntityKey).where(LegacyEntityKey.old_key.like(f"{tag}-%"))):
+        return False, "reserved by ids issued before project tags existed"
+    return True, ""
+
+
+def unique_tag(db: Session, name: str) -> str:
+    """A free tag derived from ``name``, mirroring the ``_unique_slug`` convention.
+
+    Derivation must always succeed rather than reject: every project needs a tag, and an
+    agent bootstrapping one shouldn't fail over a missing four-character string. The
+    result is visible and changeable immediately.
+    """
+    for candidate in tagging.variants(tagging.derive(name)):
+        if tag_available(db, candidate)[0]:
+            return candidate
+    raise ValueError(f"could not derive a free tag for {name!r}")
 
 
 def default_project_id(db: Session, allowed_ids: list[str] | None = None) -> str | None:
