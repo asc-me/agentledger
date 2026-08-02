@@ -1,6 +1,8 @@
 """AL-65 + AL-66: PRD authoring over MCP (create_prd/update_prd) and the grill
 command (grill_prd) — the front half of the grill→PRD→decompose loop."""
 
+from app import tagging
+
 
 def _login(client, email="alex@ascme-labs.com"):
     r = client.post("/api/auth/login", json={"email": email, "password": "agentledger"})
@@ -33,7 +35,7 @@ def test_create_prd_via_mcp(client, auth):
     prd = _ok(_mcp(client, key, "create_prd", {
         "title": "Grill loop", "body": "# Grill loop\n\n## Overview\n\n## Goals\n- ship it\n"
     }))
-    assert prd["id"].startswith("PRD-")
+    assert tagging.parse(prd["id"])[1] == "prd"  # <TAG>-P<n>, not the old PRD- (PRD-13)
     assert prd["project_id"] == "core"
     assert prd["sections"] == ["Overview", "Goals"]  # `## ` headings, in order
     # And it's real: decompose_prd sees its sections.

@@ -29,7 +29,7 @@ that happens to share a number.
 """
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app import tagging
@@ -79,6 +79,57 @@ def resolve(db: Session, key: str, kind: str) -> str | None:
         return legacy.entity_id
 
     return key if db.get(model, key) is not None else None
+
+
+def mint(db: Session, project_id: str, kind: str) -> tuple[str, int]:
+    """Reserve the next ``(stored_id, number)`` for a new entity in ``project_id``.
+
+    The number is ``max(number) + 1`` **within the project, per kind** — replacing the
+    single global counter that made every project's tickets share one sequence. Two
+    projects can now both hold a number 235; the ``(project_id, number)`` unique
+    constraint is what keeps that safe, and it is also the backstop if this path is ever
+    bypassed.
+
+    At issue time the stored id is simply the rendered key, so the two agree until the
+    project is retagged. From then on they diverge permanently and only the rendering
+    is user-facing — that divergence is the accepted cost of never rewriting an id.
+    """
+    model = MODELS[kind]
+
+    _lock_project(db, project_id)
+
+    project = db.get(Project, project_id)
+    if project is None:
+        raise ValueError(f"unknown project: {project_id!r}")
+
+    number = (
+        db.scalar(select(func.max(model.number)).where(model.project_id == project_id)) or 0
+    ) + 1
+    stored_id = tagging.render(project.tag, kind, number)
+
+    # A tag can equal a prefix from the pre-tag era (this deployment has a project
+    # tagged `AL`), and back then numbering was GLOBAL — so `AL-101` may already be
+    # owned by a different project even though *this* project has no number 101. The
+    # id is a primary key, so walk forward until it is free. Numbers only ever
+    # increase, which keeps them unique within the project.
+    while db.get(model, stored_id) is not None:
+        number += 1
+        stored_id = tagging.render(project.tag, kind, number)
+
+    return stored_id, number
+
+
+def _lock_project(db: Session, project_id: str) -> None:
+    """Serialize minting for one project so two concurrent creates can't pick the same
+    number. Scoped to the project, so unrelated projects never contend.
+
+    SQLite has no ``SELECT … FOR UPDATE``; SQLAlchemy silently drops the clause there
+    rather than failing, so the branch is explicit. SQLite already serializes writers at
+    the database level, which is why nothing is needed — stating that beats leaving a
+    portable-looking lock that quietly does nothing on one of the two engines we ship.
+    """
+    if db.bind is not None and db.bind.dialect.name == "postgresql":
+        db.execute(select(Project.id).where(Project.id == project_id).with_for_update())
 
 
 def resolve_item(db: Session, key: str) -> str | None:

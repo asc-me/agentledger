@@ -1,31 +1,17 @@
 """Item (tracker) service — shared by REST routers and the MCP server."""
 from __future__ import annotations
 
-import re
 from datetime import timedelta, timezone
 
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session
 
-from app import tagging
 from app.models import Item, Project, utcnow
 from app.services import keys
 
 STATUSES = ["backlog", "next", "in_progress", "review", "done", "blocked"]
 FIDELITIES = ["low", "high"]  # low = specifiable now; high = needs a prototype (AL-68)
 DEFAULT_LEASE_SECONDS = 600  # a claim with no heartbeat within this window is reclaimable
-
-
-def next_item_id(db: Session, project_prefix: str = "AL") -> str:
-    """Compute the next human item id, e.g. AL-23."""
-    ids = db.scalars(select(Item.id)).all()
-    nums = []
-    for i in ids:
-        m = re.match(rf"{project_prefix}-(\d+)", i)
-        if m:
-            nums.append(int(m.group(1)))
-    nxt = (max(nums) + 1) if nums else 1
-    return f"{project_prefix}-{nxt:02d}"
 
 
 def list_items(db: Session, project_id: str | None = None, status: str | None = None) -> list[Item]:
@@ -65,13 +51,8 @@ def create_item(
     if db.get(Project, project_id) is None:
         raise ValueError(f"unknown project: {project_id!r}")
     max_order = db.scalar(select(func.max(Item.sort_order))) or 0
-    # The id is frozen identity; `number` is what the key renders from (PRD-13). Interim:
-    # take the number from the id the global counter mints, which is what the backfill
-    # did for every existing row. AL-259 replaces both with per-project minting.
-    item_id = next_item_id(db)
-    number = tagging.legacy_number(item_id)
-    if number is None:  # next_item_id always mints <PREFIX>-<n>; guard the invariant
-        raise ValueError(f"minted an unparseable item id: {item_id!r}")
+    # The id is frozen identity; `number` is what the key renders from (PRD-13).
+    item_id, number = keys.mint(db, project_id, "item")
     item = Item(
         id=item_id,
         number=number,

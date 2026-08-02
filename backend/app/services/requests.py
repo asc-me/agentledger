@@ -1,23 +1,14 @@
 """Feature/bug request (triage) service."""
 from __future__ import annotations
 
-import re
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app import tagging
 from app.models import Item, Request
 from app.services import keys
 
 REQUEST_TYPES = ["bug", "feature", "enhancement", "feedback"]
-
-
-def next_request_id(db: Session) -> str:
-    ids = db.scalars(select(Request.id)).all()
-    nums = [int(m.group(1)) for i in ids if (m := re.match(r"R-(\d+)", i))]
-    nxt = (max(nums) + 1) if nums else 1
-    return f"R-{nxt}"
 
 
 def list_requests(db: Session, project_id: str | None = None, type_: str | None = None) -> list[Request]:
@@ -45,10 +36,7 @@ def create_request(
     if type_ not in REQUEST_TYPES:
         raise ValueError(f"invalid request type: {type_}")
     # See create_item: the id is frozen identity, `number` is what the key renders from.
-    req_id = next_request_id(db)
-    number = tagging.legacy_number(req_id)
-    if number is None:
-        raise ValueError(f"minted an unparseable request id: {req_id!r}")
+    req_id, number = keys.mint(db, project_id, "request")
     req = Request(
         id=req_id,
         number=number,
