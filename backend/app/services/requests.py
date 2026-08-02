@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app import tagging
 from app.models import Item, Request
+from app.services import keys
 
 REQUEST_TYPES = ["bug", "feature", "enhancement", "feedback"]
 
@@ -70,7 +71,7 @@ def create_request(
 
 
 def vote_request(db: Session, request_id: str, delta: int = 1) -> Request | None:
-    req = db.get(Request, request_id)
+    req = db.get(Request, keys.resolve_request(db, request_id) or request_id)
     if req is None:
         return None
     req.votes = max(0, req.votes + delta)
@@ -80,11 +81,11 @@ def vote_request(db: Session, request_id: str, delta: int = 1) -> Request | None
 
 
 def link_request(db: Session, request_id: str, item_id: str | None) -> Request | None:
-    req = db.get(Request, request_id)
+    req = db.get(Request, keys.resolve_request(db, request_id) or request_id)
     if req is None:
         return None
     if item_id:
-        if db.get(Item, item_id) is None:
+        if db.get(Item, keys.resolve_item(db, item_id) or item_id) is None:
             raise ValueError(f"item not found: {item_id}")
         req.linked_to = item_id
         req.status = "linked"
@@ -97,7 +98,7 @@ def link_request(db: Session, request_id: str, item_id: str | None) -> Request |
 
 
 def set_status(db: Session, request_id: str, status: str) -> Request | None:
-    req = db.get(Request, request_id)
+    req = db.get(Request, keys.resolve_request(db, request_id) or request_id)
     if req is None:
         return None
     req.status = status

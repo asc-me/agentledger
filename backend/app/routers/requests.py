@@ -6,6 +6,7 @@ from app.models import Request, User
 from app.schemas import RequestCreate, RequestLinkIn, RequestOut, RequestVoteIn
 from app.security import authz
 from app.security.deps import get_current_user
+from app.services import keys
 from app.services import requests as req_svc
 
 router = APIRouter(prefix="/requests", tags=["requests"])
@@ -35,7 +36,7 @@ def create_request(body: RequestCreate, db: Session = Depends(get_db), user: Use
 
 @router.post("/{request_id}/vote", response_model=RequestOut)
 def vote(request_id: str, body: RequestVoteIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    existing = db.get(Request, request_id)
+    existing = db.get(Request, keys.resolve_request(db, request_id) or request_id)
     if existing is None:
         raise HTTPException(404, "request not found")
     authz.require_writable(db, user.id, existing.project_id, "request")
@@ -47,7 +48,7 @@ def vote(request_id: str, body: RequestVoteIn, db: Session = Depends(get_db), us
 
 @router.post("/{request_id}/link", response_model=RequestOut)
 def link(request_id: str, body: RequestLinkIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    existing = db.get(Request, request_id)
+    existing = db.get(Request, keys.resolve_request(db, request_id) or request_id)
     if existing is None:
         raise HTTPException(404, "request not found")
     authz.require_writable(db, user.id, existing.project_id, "request")

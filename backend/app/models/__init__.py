@@ -365,6 +365,23 @@ class PrdVersion(Base):
     prd: Mapped[Prd] = relationship(back_populates="versions")
 
 
+class ProjectTagHistory(Base):
+    """A tag a project used to hold, so keys rendered under it keep resolving (PRD-13).
+
+    One row per rename — not one per entity — so this never grows with the corpus. The
+    tag is the primary key because reuse is forbidden per deployment (AL-258): letting
+    two projects hold `AL` at different times would make `AL-12` ambiguous forever, and
+    no ordering by date can fix that once both have an item numbered 12.
+    """
+
+    __tablename__ = "project_tag_history"
+
+    tag: Mapped[str] = mapped_column(String, primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    held_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    held_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class LegacyEntityKey(Base):
     """An id issued before project tags existed, kept resolvable forever (PRD-13).
 

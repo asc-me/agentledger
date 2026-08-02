@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app import tagging
 from app.models import Item, Project, utcnow
+from app.services import keys
 
 STATUSES = ["backlog", "next", "in_progress", "review", "done", "blocked"]
 FIDELITIES = ["low", "high"]  # low = specifiable now; high = needs a prototype (AL-68)
@@ -38,7 +39,7 @@ def list_items(db: Session, project_id: str | None = None, status: str | None = 
 
 
 def get_item(db: Session, item_id: str) -> Item | None:
-    return db.get(Item, item_id)
+    return db.get(Item, keys.resolve_item(db, item_id) or item_id)
 
 
 def create_item(
@@ -121,7 +122,7 @@ def normalize_evidence(raw) -> list[dict]:
 
 
 def update_item(db: Session, item_id: str, **fields) -> Item | None:
-    item = db.get(Item, item_id)
+    item = db.get(Item, keys.resolve_item(db, item_id) or item_id)
     if item is None:
         return None
     if "status" in fields and fields["status"] is not None:
@@ -179,7 +180,7 @@ def _auto_extract_lessons(db: Session, item: Item) -> None:
 def reorder_items(db: Session, ordered_ids: list[str]) -> list[Item]:
     """Persist a new drag order. `ordered_ids` is the full desired top→bottom order."""
     for idx, iid in enumerate(ordered_ids):
-        item = db.get(Item, iid)
+        item = db.get(Item, keys.resolve_item(db, iid) or iid)
         if item is not None:
             item.sort_order = idx
     db.commit()
@@ -231,7 +232,7 @@ def get_backlog(db: Session, limit: int = 20, project_id: str | None = None) -> 
 def get_item_details(db: Session, item_id: str) -> dict | None:
     from app.models import MemoryShard, Request
 
-    item = db.get(Item, item_id)
+    item = db.get(Item, keys.resolve_item(db, item_id) or item_id)
     if item is None:
         return None
     shards = db.scalars(select(MemoryShard).where(MemoryShard.item_id == item_id)).all()
@@ -338,7 +339,7 @@ def _try_claim(db: Session, cand: Item, agent_id: str) -> Item | None:
 def claim_item(db: Session, item_id: str, agent_id: str, lease_seconds: int = DEFAULT_LEASE_SECONDS) -> Item | None:
     """Claim one specific item if it's currently claimable. Used to grab a related cluster."""
     cutoff = utcnow() - timedelta(seconds=lease_seconds)
-    it = db.get(Item, item_id)
+    it = db.get(Item, keys.resolve_item(db, item_id) or item_id)
     if it is None or not _is_claimable(it, cutoff):
         return None
     return _try_claim(db, it, agent_id)
@@ -346,7 +347,7 @@ def claim_item(db: Session, item_id: str, agent_id: str, lease_seconds: int = DE
 
 def heartbeat(db: Session, item_id: str, agent_id: str) -> Item | None:
     """Extend the lease on a claimed item. Returns the item, or None if the agent isn't the holder."""
-    item = db.get(Item, item_id)
+    item = db.get(Item, keys.resolve_item(db, item_id) or item_id)
     if item is None or item.claimed_by != agent_id:
         return None
     item.claimed_at = utcnow()
@@ -357,7 +358,7 @@ def heartbeat(db: Session, item_id: str, agent_id: str) -> Item | None:
 
 def release_item(db: Session, item_id: str, agent_id: str, to_status: str = "next") -> Item | None:
     """Give a claimed item back to the queue. Returns the item, or None if not the holder."""
-    item = db.get(Item, item_id)
+    item = db.get(Item, keys.resolve_item(db, item_id) or item_id)
     if item is None or item.claimed_by != agent_id:
         return None
     item.claimed_by = None

@@ -11,6 +11,7 @@ from collections import Counter
 from app import tagging
 from app.models import Prd, PrdVersion
 from app.services import items as items_svc
+from app.services import keys
 from app.services import platform as platform_svc
 
 STATUSES = ["draft", "review", "approved"]
@@ -50,7 +51,7 @@ def list_prds(db: Session, project_id: str | None = None) -> list[Prd]:
 
 
 def get_prd(db: Session, prd_id: str) -> Prd | None:
-    return db.get(Prd, prd_id)
+    return db.get(Prd, keys.resolve_prd(db, prd_id) or prd_id)
 
 
 def create_prd(
@@ -85,7 +86,7 @@ def create_prd(
 
 
 def update_prd(db: Session, prd_id: str, **fields) -> Prd | None:
-    prd = db.get(Prd, prd_id)
+    prd = db.get(Prd, keys.resolve_prd(db, prd_id) or prd_id)
     if prd is None:
         return None
     if fields.get("status") is not None and fields["status"] not in STATUSES:
@@ -101,7 +102,7 @@ def update_prd(db: Session, prd_id: str, **fields) -> Prd | None:
 
 def create_version(db: Session, prd_id: str, note: str = "") -> Prd | None:
     """Snapshot the current body as a new version and bump the version number."""
-    prd = db.get(Prd, prd_id)
+    prd = db.get(Prd, keys.resolve_prd(db, prd_id) or prd_id)
     if prd is None:
         return None
     prd.version = _bump(prd.version)
@@ -114,7 +115,7 @@ def create_version(db: Session, prd_id: str, note: str = "") -> Prd | None:
 
 
 def link_item(db: Session, prd_id: str, item_id: str, add: bool = True) -> Prd | None:
-    prd = db.get(Prd, prd_id)
+    prd = db.get(Prd, keys.resolve_prd(db, prd_id) or prd_id)
     if prd is None:
         return None
     linked = list(prd.linked or [])
@@ -145,7 +146,7 @@ _COMMANDS = {
 
 
 def ai_command(db: Session, prd_id: str, command: str) -> str:
-    prd = db.get(Prd, prd_id)
+    prd = db.get(Prd, keys.resolve_prd(db, prd_id) or prd_id)
     if prd is None:
         raise ValueError(f"prd not found: {prd_id}")
     if command not in _COMMANDS:
