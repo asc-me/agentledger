@@ -192,6 +192,10 @@ export const api = {
   // implementation that matters is the one that actually assigns the tag (PRD-13).
   tagSuggestion: (name: string) =>
     request<{ tag: string }>(`/projects/tag-suggestion?name=${encodeURIComponent(name)}`),
+  // Its own endpoint, not a PATCH field: moving a tag records tag history so keys
+  // rendered under the old one keep resolving (PRD-13).
+  retagProject: (id: string, tag: string) =>
+    request<Project>(`/projects/${id}/retag`, { method: "POST", body: JSON.stringify({ tag }) }),
   tagCheck: (tag: string) =>
     request<{ tag: string; available: boolean; reason: string }>(
       `/projects/tag-check?tag=${encodeURIComponent(tag)}`,

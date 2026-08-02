@@ -33,7 +33,11 @@ frozen when the entity is created and is never rewritten, so changing a tag is o
 That matters because twelve columns across ten tables hold an entity id and only three
 are enforced foreign keys. `app/tagging.py` owns the grammar; `services/keys.py`
 resolves a supplied key back to a stored id (current form → tag history → legacy table →
-the id itself) and mints new ones.
+the id itself) and mints new ones; `services/projects.retag_project` moves a tag.
+
+Retagging is therefore one `UPDATE` plus one `project_tag_history` row, committed
+together — a tag that moved without its history row would silently break every key ever
+rendered under the old one. Tags are never reusable on a deployment.
 
 ## Relationships
 

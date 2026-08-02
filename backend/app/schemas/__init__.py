@@ -523,6 +523,13 @@ class GithubIssueIn(BaseModel):
     type: str = "feature"  # feature | bug | enhancement | feedback
 
 
+class ProjectRetagIn(BaseModel):
+    """Changing a tag is its own operation, not a PATCH field — it has to record tag
+    history so keys rendered under the old tag keep resolving (PRD-13)."""
+
+    tag: str
+
+
 class ProjectUpdate(BaseModel):
     name: str | None = None
     accent: str | None = None

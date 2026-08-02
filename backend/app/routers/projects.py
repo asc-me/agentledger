@@ -8,7 +8,9 @@ from app import tagging
 from app.config import settings
 from app.db import get_db
 from app.models import Membership, Project, User
-from app.schemas import MemberOut, ProjectCreate, ProjectOut, ProjectUpdate, UserOut
+from app.schemas import (
+    MemberOut, ProjectCreate, ProjectOut, ProjectRetagIn, ProjectUpdate, UserOut,
+)
 from app.security import authz
 from app.security.deps import get_current_user
 from app.services import events as events_svc
@@ -136,6 +138,29 @@ def update_project(
     events_svc.record_user(db, user, action="update_project", target_type="project",
                            target_id=project_id, project_id=project_id,
                            meta={"fields": sorted(changed.keys())})
+    return project
+
+
+@router.post("/{project_id}/retag", response_model=ProjectOut)
+def retag(
+    project_id: str,
+    body: ProjectRetagIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Change a project's tag. Same gate as any other project setting — no new tier."""
+    authz.require_writable(db, user.id, project_id)
+    project = db.get(Project, project_id)
+    if project is None:
+        raise HTTPException(404, "project not found")
+    was = project.tag
+    try:
+        project = projects_svc.retag_project(db, project_id, body.tag)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    events_svc.record_user(db, user, action="retag_project", target_type="project",
+                           target_id=project_id, project_id=project_id,
+                           meta={"from": was, "to": project.tag})
     return project
 
 
