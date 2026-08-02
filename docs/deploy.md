@@ -158,7 +158,12 @@ Drive/filesystem sync is a self-host convenience. On Railway either leave it
 unconfigured (it stays dormant with no Drive folder set) or attach a volume at
 `/data/sync` if you want it — it is not required for the hosted app to run.
 
-## Code-graph sync (local → cloud) — the `agentledger` CLI
+## Code-graph sync (local → cloud) — the `graphban` CLI
+
+> Renamed from `agentledger` (AL-262). **Both console scripts work and the old one
+> is kept indefinitely**, so any command already in a runbook keeps running. Config is
+> read from `~/.graphban/config.json` first, falling back to `~/.agentledger/config.json`;
+> override with `GRAPHBAN_CONFIG` (or the older `AGENTLEDGER_CONFIG`).
 
 A linked local instance builds its code graph on-box and pushes the *result* to a
 cloud tenant (the AL-134 hybrid). The `agentledger` console script drives that sync

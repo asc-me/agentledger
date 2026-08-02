@@ -60,3 +60,19 @@ See [AI providers](ai-providers.md) for the details (and why embeddings are depl
 The dev server proxies `/api` to the backend; override the target with `VITE_API_PROXY`
 (default `http://localhost:8000`). In the built image, nginx proxies `/api` and `/health` to
 the `api` service.
+
+## Wire names during the Graphban rename
+
+The product is being renamed from AgentLedger to Graphban. Every wire-facing name accepts
+**both** forms, and nothing that was ever valid stops working:
+
+| Surface | New | Old — still accepted |
+| --- | --- | --- |
+| API key prefix | `gb_sk_` | `al_sk_` |
+| CLI console script | `graphban` | `agentledger` |
+| CLI config | `~/.graphban/config.json`, `GRAPHBAN_CONFIG` | `~/.agentledger/config.json`, `AGENTLEDGER_CONFIG` |
+| MCP server name | `graphban` | — (the `mcp__*` tool namespace comes from *your* client config key, not from the server) |
+| Upstream report tool | `report_graphban_issue` | `report_agentledger_issue` (dispatches, not advertised) |
+
+API keys are stored only as a SHA-256 hash and cannot be rewritten, so the accepted-prefix
+list only ever grows — an existing key never needs re-issuing.

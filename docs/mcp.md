@@ -111,7 +111,7 @@ Every client authenticates the same way: the key in an `X-API-Key` header (or
 | `search_code` | `query`, `top_k`, `project_id` | Semantic search over code-node summaries (read-only) |
 | `link_code` | `ref_id`, `path`, `relation`, `ref_type`, `project_id` | **Bridge a tracker item/request to a code path** (affects/implements/fixes/tests/references). Idempotent; surfaces both ways |
 | `unlink_code` | `ref_id`, `path`, `relation`, `project_id` | Remove an item/request ↔ code link |
-| `report_agentledger_issue` | `type`, `title`, `detail` | Report a bug/idea about **AgentLedger itself** (not your project) upstream; deduped on arrival |
+| `report_graphban_issue` | `type`, `title`, `detail` | Report a bug/idea about **Graphban itself** (not your project) upstream; deduped on arrival. The retired name `report_agentledger_issue` still dispatches but is not advertised |
 
 Arguments are validated against each tool's `inputSchema` **before dispatch**, so a
 missing required field or a bad enum comes back as an actionable error rather than a
