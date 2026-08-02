@@ -32,6 +32,7 @@ from app.services import events as events_svc
 from app.services import idempotency as idem_svc
 from app.services import insights as insights_svc
 from app.services import items as items_svc
+from app.services import keys
 from app.services import links as links_svc
 from app.services import mcp_proxy
 from app.services import mcp_stats
@@ -959,7 +960,7 @@ def _idempotent_remember(db: Session, args: dict, tool: str, resource_id: str) -
 def _scoped_item(db: Session, item_id: str, scope_ids: list[str]) -> Item:
     """Load an item and require it inside the key's project scope. The refusal
     deliberately does not reveal which project an off-scope item belongs to."""
-    item = db.get(Item, item_id)
+    item = db.get(Item, keys.resolve_item(db, item_id) or item_id)
     if item is None:
         raise errors.NotFound(f"item not found: {item_id}", hint="use search_items to find a valid id")
     if item.project_id not in scope_ids:
