@@ -516,9 +516,9 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
-        "name": "report_agentledger_issue",
+        "name": "report_graphban_issue",
         "description": (
-            "Report a bug or idea about AgentLedger ITSELF (not your project) to its maintainers — "
+            "Report a bug or idea about Graphban ITSELF (not your project) to its maintainers — "
             "a limitation, broken tool, or improvement. Deduped on arrival. Returns the upstream "
             "request id (or matched duplicates)."
         ),
@@ -761,7 +761,7 @@ _OUTPUT_SCHEMAS: dict[str, dict] = {
         "type": "object",
         "properties": {"removed": {"type": "integer"}},
     },
-    "report_agentledger_issue": {
+    "report_graphban_issue": {
         "type": "object",
         "properties": {
             "ok": {"type": "boolean"}, "request_id": _NULLABLE_STR,
@@ -983,7 +983,15 @@ def _scoped_item(db: Session, item_id: str, scope_ids: list[str]) -> Item:
     return item
 
 
+# Retired tool names, kept dispatchable forever. NOT in TOOLS — an alias must not appear
+# in tools/list or inflate the counts asserted by tests/test_api.py and test_phase4.py.
+# Agents cache tool names in memory and in committed configs, so a name that ever worked
+# has to keep working (AL-262).
+TOOL_ALIASES = {"report_agentledger_issue": "report_graphban_issue"}
+
+
 def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any:
+    name = TOOL_ALIASES.get(name, name)
     # Authority: a key's declared scopes ∩ its owner's memberships bound every call
     # (a key never out-ranks the user who minted it). `project_id` args can select
     # among in-scope projects but can no longer escape the scope.
@@ -1290,7 +1298,7 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
             db, project_id=pid, ref_id=args["ref_id"], path=args["path"], relation=args.get("relation"),
         )
         return {"removed": removed}
-    if name == "report_agentledger_issue":
+    if name == "report_graphban_issue":
         try:
             result = up_svc.submit_upstream(
                 type_=args.get("type", "feedback"), title=args["title"],
@@ -1388,7 +1396,7 @@ async def mcp_endpoint(
             {
                 "protocolVersion": version,
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "agentledger", "version": "0.1.0"},
+                "serverInfo": {"name": "graphban", "version": "0.1.0"},
             },
         )
 
@@ -1415,7 +1423,7 @@ async def mcp_endpoint(
                 err = cloud.get("error") or {}
                 return _tool_error(id_, "internal", err.get("message", "cloud proxy error"),
                                    hint="safe to retry once; if it persists, report it")
-            # Run tool dispatch (sync DB + any outbound IO like report_agentledger_issue) off
+            # Run tool dispatch (sync DB + any outbound IO like report_graphban_issue) off
             # the event loop, so a slow/hanging tool never blocks the async server — and a
             # same-host upstream loop-back can still be served concurrently.
             result = await run_in_threadpool(_call_tool, db, name, args, key)

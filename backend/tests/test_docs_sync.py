@@ -50,6 +50,6 @@ def test_mcp_enums_reference_service_constants():
 
     by_name = {t["name"]: t for t in TOOLS}
     link_enum = by_name["link_items"]["inputSchema"]["properties"]["type"]["enum"]
-    req_enum = by_name["report_agentledger_issue"]["inputSchema"]["properties"]["type"]["enum"]
+    req_enum = by_name["report_graphban_issue"]["inputSchema"]["properties"]["type"]["enum"]
     assert link_enum == links_svc.LINK_TYPES
     assert req_enum == req_svc.REQUEST_TYPES

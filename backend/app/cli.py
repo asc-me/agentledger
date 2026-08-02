@@ -7,8 +7,9 @@ body — the `code_sync` service functions do — so the CLI calls the services,
 
 Run it where `DATABASE_URL` points at your instance — inside the backend container
 (`docker compose exec backend agentledger sync`) or with the env exported. The cloud link
-(URL + org-issued sync credential) is stored in `~/.agentledger/config.json`
-(override with `AGENTLEDGER_CONFIG`), chmod 600.
+(URL + org-issued sync credential) is stored in `~/.agentledger/config.json` — read from
+`~/.graphban/config.json` first once that exists (override either with `GRAPHBAN_CONFIG`,
+or the older `AGENTLEDGER_CONFIG`), chmod 600.
 
     agentledger link --cloud-url https://cloud.example/ --api-key al_sk_… --project core
     agentledger status          # link + last-synced state
@@ -26,22 +27,49 @@ import sys
 from pathlib import Path
 
 
+# Config locations in preference order, new name first (AL-262). An operator who linked
+# under the old name keeps working with no action; their file is read where it lies and
+# is never moved or deleted, because it is theirs and it holds a live credential.
+def _config_candidates() -> list[Path]:
+    explicit = os.environ.get("GRAPHBAN_CONFIG") or os.environ.get("AGENTLEDGER_CONFIG")
+    if explicit:
+        return [Path(explicit)]
+    return [
+        Path.home() / ".graphban" / "config.json",
+        Path.home() / ".agentledger" / "config.json",
+    ]
+
+
+def _read_path() -> Path:
+    """Where to read from: the first candidate that exists, else the preferred one."""
+    candidates = _config_candidates()
+    return next((p for p in candidates if p.exists()), candidates[0])
+
+
+def _write_path() -> Path:
+    """Where to write. Still the OLD location until AL-263 — writing the new one before
+    every instance can read it would strand an operator mid-cut-over."""
+    explicit = os.environ.get("GRAPHBAN_CONFIG") or os.environ.get("AGENTLEDGER_CONFIG")
+    return Path(explicit) if explicit else Path.home() / ".agentledger" / "config.json"
+
+
 def _config_path() -> Path:
-    return Path(os.environ.get("AGENTLEDGER_CONFIG") or Path.home() / ".agentledger" / "config.json")
+    """Back-compat shim for callers that only want to name the file."""
+    return _read_path()
 
 
 def load_config() -> dict:
-    path = _config_path()
+    path = _read_path()
     try:
         return json.loads(path.read_text())
     except FileNotFoundError:
         return {}
     except json.JSONDecodeError as e:
-        sys.exit(f"agentledger: config at {path} is not valid JSON ({e})")
+        sys.exit(f"graphban: config at {path} is not valid JSON ({e})")
 
 
 def save_config(cfg: dict) -> Path:
-    path = _config_path()
+    path = _write_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(cfg, indent=2) + "\n")
     path.chmod(0o600)  # holds the sync credential
@@ -177,7 +205,7 @@ def cmd_import(args) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="agentledger", description="Local code-graph sync for AgentLedger self-host (AL-134).")
+        prog="graphban", description="Local code-graph sync for a Graphban self-host (AL-134).")
     sub = p.add_subparsers(dest="command", required=True)
 
     lk = sub.add_parser("link", help="store the cloud sync target (URL + org-issued credential)")

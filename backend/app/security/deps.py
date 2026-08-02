@@ -5,7 +5,7 @@ import jwt
 
 from app.db import get_db
 from app.models import ApiKey, User
-from app.security.apikey import verify_api_key
+from app.security.apikey import is_api_key, verify_api_key
 from app.security.jwt import decode_token
 
 
@@ -36,11 +36,11 @@ def get_agent_key(
     x_api_key: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ) -> ApiKey:
-    """Resolve an agent API key from `X-API-Key` or `Authorization: Bearer al_sk_...`."""
+    """Resolve an agent API key from `X-API-Key` or `Authorization: Bearer <key>`."""
     raw = x_api_key
     if not raw and authorization and authorization.lower().startswith("bearer "):
         candidate = authorization.split(" ", 1)[1]
-        if candidate.startswith("al_sk_"):
+        if is_api_key(candidate):  # any prefix we have ever minted
             raw = candidate
     key = verify_api_key(db, raw or "")
     if key is None:

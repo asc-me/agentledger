@@ -1,7 +1,18 @@
 """Scoped API keys for agent / MCP authentication.
 
-Keys look like `al_sk_<40 hex>`. Only the SHA-256 hash is stored; the plaintext
-is shown to the user exactly once at creation.
+Keys look like `<prefix>_sk_<40 hex>`. Only the SHA-256 hash is stored; the plaintext is
+shown to the user exactly once at creation.
+
+The product rename (AgentLedger → Graphban) moves the prefix, so verification accepts
+**every prefix this product has ever minted** while creation uses exactly one. A key is
+matched by the hash of its full plaintext, so the prefix is only a routing hint — but the
+`startswith` gate is what stops an unrelated bearer token from being hashed and looked up,
+so it has to know the full set.
+
+Order matters for the cut-over: this accept-both change must be deployed to every
+instance BEFORE `MINT_PREFIX` moves, or a credential minted by one instance is rejected
+by another. The self-host and the hosted tenant sync to each other with exactly such a
+key (AL-262 / AL-263).
 """
 from __future__ import annotations
 
@@ -14,7 +25,20 @@ from sqlalchemy.orm import Session
 
 from app.models import ApiKey, utcnow
 
-KEY_PREFIX = "al_sk_"
+# Every prefix this product has ever issued. NOTHING is ever removed from this tuple:
+# keys are long-lived, stored only as a hash, and cannot be rewritten in place.
+ACCEPTED_PREFIXES = ("gb_sk_", "al_sk_")
+
+# The one used for new keys. Moves in AL-263, once AL-262 is deployed everywhere.
+MINT_PREFIX = "al_sk_"
+
+# Back-compat alias: `KEY_PREFIX` was the single source of truth before the rename.
+KEY_PREFIX = MINT_PREFIX
+
+
+def is_api_key(raw: str) -> bool:
+    """Does this look like one of our keys? Used by the Bearer sniff in security/deps."""
+    return bool(raw) and raw.startswith(ACCEPTED_PREFIXES)
 
 
 def _hash_key(raw: str) -> str:
@@ -35,13 +59,13 @@ def generate_api_key(
     None makes a global key. `expires_in_days` sets an optional lifetime; None =
     non-expiring.
     """
-    raw = KEY_PREFIX + secrets.token_hex(20)
+    raw = MINT_PREFIX + secrets.token_hex(20)
     row = ApiKey(
         id=str(uuid.uuid4()),
         user_id=user_id,
         project_id=project_id,
         name=name,
-        prefix=raw[: len(KEY_PREFIX) + 4],
+        prefix=raw[: len(MINT_PREFIX) + 4],  # display fragment, e.g. al_sk_ab12
         hashed_key=_hash_key(raw),
         scopes=scopes or ["read", "write"],
         expires_at=utcnow() + timedelta(days=expires_in_days) if expires_in_days else None,
@@ -53,7 +77,7 @@ def generate_api_key(
 
 
 def verify_api_key(db: Session, raw: str) -> ApiKey | None:
-    if not raw or not raw.startswith(KEY_PREFIX):
+    if not is_api_key(raw):
         return None
     row = db.query(ApiKey).filter(ApiKey.hashed_key == _hash_key(raw)).one_or_none()
     if row is None:

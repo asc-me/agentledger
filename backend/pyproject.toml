@@ -23,6 +23,9 @@ dependencies = [
 ]
 
 [project.scripts]
+# Both names run the same CLI through the rename; `agentledger` is kept indefinitely so a
+# documented command in an operator's runbook never stops working (AL-262).
+graphban = "app.cli:main"
 agentledger = "app.cli:main"
 
 [project.optional-dependencies]

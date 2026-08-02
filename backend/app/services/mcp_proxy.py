@@ -22,7 +22,10 @@ _TIMEOUT = 30.0
 # bridge (graph-adjacent), key introspection, and the separate upstream issue reporter.
 LOCAL_TOOLS = {
     "describe_code", "get_code_map", "code_neighbors", "search_code",
-    "link_code", "unlink_code", "get_context", "report_agentledger_issue",
+    "link_code", "unlink_code", "get_context",
+    # Both names, because the proxy decides local-vs-remote BEFORE the dispatcher
+    # normalizes aliases — a retired name must not start proxying to the cloud (AL-262).
+    "report_graphban_issue", "report_agentledger_issue",
 }
 
 
