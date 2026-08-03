@@ -23,6 +23,8 @@ def test_status_starts_unlinked_and_lists_readable_projects(client, auth):
 
 def test_link_then_status_reflects_it_without_leaking_the_key(client, auth):
     r = client.post("/api/sync/link",
+                    # Deliberately the OLD hostname: both hosts serve the same instance, and
+                    # this pins that an operator who linked before the rename still works.
                     json={"cloud_url": "cloud.agentldgr.dev", "api_key": "al_sk_secret", "org": "acme"},
                     headers=auth)
     assert r.status_code == 200

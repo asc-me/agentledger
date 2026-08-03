@@ -33,7 +33,7 @@ PROJECTS = [
          description="Graphban itself — the agent-native tracker + memory core.",
          share_global_memory=True, auto_extract=True, mcp_enabled=True, embed_model="text-embedding-3-small"),
     dict(id="web", name="Web App", tag="WA", accent="#7ca2ff", visibility="private",
-         description="Marketing site + hosted dashboard for agentldgr.dev.",
+         description="Marketing site + hosted dashboard for graphban.dev.",
          share_global_memory=True, auto_extract=True, mcp_enabled=False, embed_model="text-embedding-3-small"),
     dict(id="infra", name="Infra", tag="INFR", accent="#e0b34a", visibility="private",
          description="Deploy, CI, and self-host packaging.",

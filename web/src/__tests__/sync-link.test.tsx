@@ -56,7 +56,7 @@ describe("SyncLinkPanel", () => {
   it("shows the link form when the instance is not linked", async () => {
     renderPanel();
     expect(await screen.findByText("not linked")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("cloud.agentldgr.dev")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("cloud.graphban.dev")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("paste key…")).toBeInTheDocument();
   });
 
@@ -65,7 +65,7 @@ describe("SyncLinkPanel", () => {
     renderPanel();
     await screen.findByText("not linked");
 
-    await user.type(screen.getByPlaceholderText("cloud.agentldgr.dev"), "cloud.agentldgr.dev");
+    await user.type(screen.getByPlaceholderText("cloud.graphban.dev"), "cloud.agentldgr.dev");
     await user.type(screen.getByPlaceholderText("paste key…"), "al_sk_secret");
     await user.type(screen.getByPlaceholderText("acme"), "acme");
     await user.click(screen.getByRole("button", { name: "Link instance" }));
