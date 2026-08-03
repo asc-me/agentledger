@@ -160,10 +160,12 @@ unconfigured (it stays dormant with no Drive folder set) or attach a volume at
 
 ## Code-graph sync (local → cloud) — the `graphban` CLI
 
-> Renamed from `agentledger` (AL-262). **Both console scripts work and the old one
-> is kept indefinitely**, so any command already in a runbook keeps running. Config is
-> read from `~/.graphban/config.json` first, falling back to `~/.agentledger/config.json`;
-> override with `GRAPHBAN_CONFIG` (or the older `AGENTLEDGER_CONFIG`).
+> Renamed from `agentledger` (AL-262/AL-263). **Both console scripts work and the old one
+> is kept indefinitely**, so any command already in a runbook keeps running. Config is now
+> written to `~/.graphban/config.json` and read from there first, falling back to
+> `~/.agentledger/config.json`; override with `GRAPHBAN_CONFIG` (or the older
+> `AGENTLEDGER_CONFIG`). Newly minted keys start `gb_sk_`; existing `al_sk_` keys keep
+> working and never need re-issuing.
 
 A linked local instance builds its code graph on-box and pushes the *result* to a
 cloud tenant (the AL-134 hybrid). The `agentledger` console script drives that sync

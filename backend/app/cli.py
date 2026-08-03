@@ -7,16 +7,16 @@ body — the `code_sync` service functions do — so the CLI calls the services,
 
 Run it where `DATABASE_URL` points at your instance — inside the backend container
 (`docker compose exec backend agentledger sync`) or with the env exported. The cloud link
-(URL + org-issued sync credential) is stored in `~/.agentledger/config.json` — read from
-`~/.graphban/config.json` first once that exists (override either with `GRAPHBAN_CONFIG`,
-or the older `AGENTLEDGER_CONFIG`), chmod 600.
+(URL + org-issued sync credential) is stored in `~/.graphban/config.json`, chmod 600. An
+existing `~/.agentledger/config.json` is still read if the new one is absent (override
+either with `GRAPHBAN_CONFIG`, or the older `AGENTLEDGER_CONFIG`).
 
-    agentledger link --cloud-url https://cloud.example/ --api-key al_sk_… --project core
-    agentledger status          # link + last-synced state
-    agentledger sync            # incremental push of the linked project's code graph
-    agentledger purge --yes     # delete this project's graph from the cloud
-    agentledger export --out graph.json
-    agentledger import --in graph.json --prune
+    graphban link --cloud-url https://cloud.example/ --api-key gb_sk_… --project core
+    graphban status          # link + last-synced state
+    graphban sync            # incremental push of the linked project's code graph
+    graphban purge --yes     # delete this project's graph from the cloud
+    graphban export --out graph.json
+    graphban import --in graph.json --prune
 """
 from __future__ import annotations
 
@@ -47,10 +47,11 @@ def _read_path() -> Path:
 
 
 def _write_path() -> Path:
-    """Where to write. Still the OLD location until AL-263 — writing the new one before
-    every instance can read it would strand an operator mid-cut-over."""
+    """Where to write: the new location (AL-263). An existing `~/.agentledger/config.json`
+    is still READ and is never moved or deleted — it is the operator's file and it holds a
+    live credential, so removing it is their call, not ours."""
     explicit = os.environ.get("GRAPHBAN_CONFIG") or os.environ.get("AGENTLEDGER_CONFIG")
-    return Path(explicit) if explicit else Path.home() / ".agentledger" / "config.json"
+    return Path(explicit) if explicit else Path.home() / ".graphban" / "config.json"
 
 
 def _config_path() -> Path:
