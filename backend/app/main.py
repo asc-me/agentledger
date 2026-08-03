@@ -148,7 +148,7 @@ def health():
         db_ok = False
     return {
         "status": "ok" if db_ok else "degraded",
-        "service": "agentledger-api",
+        "service": "graphban-api",
         "version": __version__,
         "git_sha": settings.git_sha,
         "db": "ok" if db_ok else "down",
