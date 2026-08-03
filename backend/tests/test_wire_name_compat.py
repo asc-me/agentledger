@@ -5,8 +5,9 @@ written. That ordering is the whole point. The self-host and the hosted tenant s
 each other with a minted credential, so if the producing side moved first, the consuming
 side would reject it — and the failure would look like an auth bug, not a rename.
 
-So every assertion here is about **acceptance**, plus one that pins minting has NOT
-moved yet. AL-263 flips that last one.
+So every assertion here is about **acceptance**. AL-263 has since flipped what is
+produced (`gb_sk_`, `~/.graphban/`), and the acceptance assertions are unchanged — which
+is the property that matters: nothing that ever worked stopped working.
 """
 import pytest
 
@@ -29,11 +30,12 @@ def _mcp(client, api_key: str, tool: str, args: dict | None = None):
 
 
 # ---- API key prefix ---------------------------------------------------------------
-def test_minting_has_not_moved_yet(client, auth):
-    """The deploy gate. If this ever fails unexpectedly, a half-deployed fleet is about
-    to start rejecting freshly minted credentials."""
-    assert apikey.MINT_PREFIX == "al_sk_"
-    assert _key(client, auth).startswith("al_sk_")
+def test_new_keys_are_minted_under_the_new_prefix(client, auth):
+    """Flipped in AL-263, after AL-262 was confirmed live on BOTH instances (self-host
+    alembic 0039 / git_sha 984630a, hosted auto-deployed). Until that was true, minting
+    here would have produced credentials the other side rejected."""
+    assert apikey.MINT_PREFIX == "gb_sk_"
+    assert _key(client, auth).startswith("gb_sk_")
 
 
 def test_no_prefix_is_ever_dropped():
@@ -49,12 +51,12 @@ def test_no_prefix_is_ever_dropped():
 
 
 def test_a_key_minted_under_either_prefix_authenticates(client, auth, monkeypatch):
-    """The real compatibility case: a `gb_sk_` key issued by an instance that already
-    flipped must authenticate here, and an `al_sk_` key must keep working after we do."""
-    old = _key(client, auth)
-    monkeypatch.setattr(apikey, "MINT_PREFIX", "gb_sk_")
+    """The case that outlives the rename: every al_sk_ key already in an agent config or
+    a CI secret has to keep authenticating indefinitely."""
     new = _key(client, auth)
-    assert new.startswith("gb_sk_")
+    monkeypatch.setattr(apikey, "MINT_PREFIX", "al_sk_")
+    old = _key(client, auth)
+    assert new.startswith("gb_sk_") and old.startswith("al_sk_")
 
     for raw in (old, new):
         r = _mcp(client, raw, "list_projects")
@@ -65,9 +67,9 @@ def test_a_key_minted_under_either_prefix_authenticates(client, auth, monkeypatc
 def test_bearer_auth_accepts_both_prefixes(client, auth, monkeypatch):
     """`security/deps` sniffs the Authorization header to tell an API key from a JWT.
     Sniffing only the old prefix would send a new key down the JWT path and 401."""
-    old = _key(client, auth)
-    monkeypatch.setattr(apikey, "MINT_PREFIX", "gb_sk_")
     new = _key(client, auth)
+    monkeypatch.setattr(apikey, "MINT_PREFIX", "al_sk_")
+    old = _key(client, auth)
 
     for raw in (old, new):
         r = client.post(
@@ -81,10 +83,12 @@ def test_bearer_auth_accepts_both_prefixes(client, auth, monkeypatch):
 
 
 def test_the_display_prefix_follows_whatever_minted_the_key(client, auth, monkeypatch):
-    monkeypatch.setattr(apikey, "MINT_PREFIX", "gb_sk_")
     _key(client, auth)
-    listed = client.get("/api/api-keys", headers=auth).json()
-    assert any(k["prefix"].startswith("gb_sk_") for k in listed)
+    monkeypatch.setattr(apikey, "MINT_PREFIX", "al_sk_")
+    _key(client, auth)
+    prefixes = [k["prefix"] for k in client.get("/api/api-keys", headers=auth).json()]
+    assert any(p.startswith("gb_sk_") for p in prefixes)
+    assert any(p.startswith("al_sk_") for p in prefixes)
 
 
 # ---- MCP tool name ----------------------------------------------------------------
@@ -165,9 +169,9 @@ def test_config_is_read_from_either_location(tmp_path, monkeypatch):
     assert old.exists(), "an operator's existing config must never be moved or deleted"
 
 
-def test_writes_still_go_to_the_old_location(tmp_path, monkeypatch):
-    """Until AL-263. Writing the new path before every instance can read it would strand
-    an operator mid-cut-over."""
+def test_writes_go_to_the_new_location(tmp_path, monkeypatch):
+    """Flipped in AL-263. The old file is still read when the new one is absent, and is
+    never moved or deleted — it is the operator's file and it holds a live credential."""
     from app import cli
 
     monkeypatch.delenv("GRAPHBAN_CONFIG", raising=False)
@@ -175,8 +179,9 @@ def test_writes_still_go_to_the_old_location(tmp_path, monkeypatch):
     monkeypatch.setattr(cli.Path, "home", staticmethod(lambda: tmp_path))
 
     written = cli.save_config({"project": "core"})
-    assert written == tmp_path / ".agentledger" / "config.json"
+    assert written == tmp_path / ".graphban" / "config.json"
     assert written.stat().st_mode & 0o777 == 0o600
+    assert not (tmp_path / ".agentledger").exists(), "must not touch the old location"
 
 
 @pytest.mark.parametrize("var", ["GRAPHBAN_CONFIG", "AGENTLEDGER_CONFIG"])

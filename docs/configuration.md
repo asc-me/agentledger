@@ -66,13 +66,18 @@ the `api` service.
 The product is being renamed from AgentLedger to Graphban. Every wire-facing name accepts
 **both** forms, and nothing that was ever valid stops working:
 
-| Surface | New | Old — still accepted |
+| Surface | Produced now | Old — still accepted |
 | --- | --- | --- |
 | API key prefix | `gb_sk_` | `al_sk_` |
-| CLI console script | `graphban` | `agentledger` |
-| CLI config | `~/.graphban/config.json`, `GRAPHBAN_CONFIG` | `~/.agentledger/config.json`, `AGENTLEDGER_CONFIG` |
+| CLI console script | `graphban` (both installed) | `agentledger` |
+| CLI config | written to `~/.graphban/config.json`, `GRAPHBAN_CONFIG` | read from `~/.agentledger/config.json`, `AGENTLEDGER_CONFIG` |
 | MCP server name | `graphban` | — (the `mcp__*` tool namespace comes from *your* client config key, not from the server) |
 | Upstream report tool | `report_graphban_issue` | `report_agentledger_issue` (dispatches, not advertised) |
 
 API keys are stored only as a SHA-256 hash and cannot be rewritten, so the accepted-prefix
-list only ever grows — an existing key never needs re-issuing.
+list only ever grows — **an existing `al_sk_` key never needs re-issuing.** An existing
+`~/.agentledger/config.json` is likewise read where it lies and never moved or deleted;
+removing it is the operator's call.
+
+The accept-both change shipped and was deployed to every instance *before* production
+moved, so no instance could ever be handed a credential it did not understand.

@@ -29,8 +29,10 @@ from app.models import ApiKey, utcnow
 # keys are long-lived, stored only as a hash, and cannot be rewritten in place.
 ACCEPTED_PREFIXES = ("gb_sk_", "al_sk_")
 
-# The one used for new keys. Moves in AL-263, once AL-262 is deployed everywhere.
-MINT_PREFIX = "al_sk_"
+# The one used for new keys. Moved to gb_sk_ in AL-263, once AL-262 (accept-both) was
+# confirmed live on both the self-host and the hosted tenant. Existing al_sk_ keys keep
+# working forever — only the hash is stored, so nothing needs re-issuing.
+MINT_PREFIX = "gb_sk_"
 
 # Back-compat alias: `KEY_PREFIX` was the single source of truth before the rename.
 KEY_PREFIX = MINT_PREFIX
