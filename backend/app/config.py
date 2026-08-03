@@ -140,7 +140,10 @@ class Settings(BaseSettings):
     # (always user/agent-initiated — never silent telemetry). Defaults to ASCME's hosted
     # intake; a deployer can repoint it, or set the URL blank to disable the feature.
     upstream_feedback_url: str = "https://feedback.asc-me.dev/api/public/requests"
-    upstream_feedback_project: str = "agentledger"  # project_id on the upstream instance
+    # FROZEN until the upstream instance changes too: this is a project_id on the separate
+    # feedback.asc-me.dev deployment, so renaming it here makes every issue report 404 on
+    # arrival. It moves when a project with the new id exists there.
+    upstream_feedback_project: str = "agentledger"
 
     # Local↔cloud hybrid (AL-137/139): where a LINKED local instance pushes its code graph,
     # and the org-minted 'sync'-scoped key it authenticates with. Blank = not linked — a pure
@@ -163,7 +166,10 @@ class Settings(BaseSettings):
     smtp_port: int = 587
     smtp_user: str = ""
     smtp_password: str = ""
-    smtp_from: str = "AgentLedger <no-reply@agentldgr.dev>"
+    # Display name only. The mailbox stays on the Resend-verified domain: agentldgr.dev
+    # is a contraction of the OLD product name and cannot survive the rename, but moving
+    # it needs a Graphban domain that does not exist yet (graphban.dev/.app are taken).
+    smtp_from: str = "Graphban <no-reply@agentldgr.dev>"
     smtp_starttls: bool = True
     app_base_url: str = "http://localhost:5173"
     invite_expiry_days: int = 14
