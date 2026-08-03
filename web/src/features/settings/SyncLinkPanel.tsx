@@ -183,7 +183,7 @@ function CloudLinkCard({
         <div className="space-y-3">
           <div>
             <Label>Cloud URL</Label>
-            <Input value={cloudUrl} onChange={(e) => setCloudUrl(e.target.value)} placeholder="cloud.agentldgr.dev" />
+            <Input value={cloudUrl} onChange={(e) => setCloudUrl(e.target.value)} placeholder="cloud.graphban.dev" />
           </div>
           <div>
             <Label>Sync API key</Label>
