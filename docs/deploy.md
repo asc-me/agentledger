@@ -38,6 +38,22 @@ ssh ubuntu-srv "cd ~/agentledger && GIT_SHA=$GIT_SHA docker compose up -d --buil
 
 Migrations apply on API startup, so a schema change ships with the same command.
 
+## Naming: what is frozen on a deployed box
+
+The product rename does **not** touch anything the existing data is keyed by. On this
+server that means the Postgres role, database, and volume all stay `agentledger`:
+
+- The volume is `agentledger_agentledger_pgdata` — `<compose-project>_<volume-key>`.
+  Renaming either half orphans it and Postgres comes up empty.
+- `POSTGRES_USER`/`_PASSWORD`/`_DB` are baked in at initdb. The server pins all three in
+  its `.env`, so it is insulated regardless, but the compose defaults are frozen too for
+  clones that never wrote one.
+- `docker-compose.yml` now pins `name: agentledger`, which decouples the compose project
+  name from the directory name. **The repo directory is therefore safe to rename** —
+  before that pin it was not, and doing so would have looked exactly like data loss.
+
+`backend/tests/test_infra_identity.py` guards all of this against a future cosmetic sweep.
+
 ## Invariants (violating these has broken a deploy)
 
 - **`--exclude .env`** — there is no local `.env`, so a bare `rsync --delete`
@@ -59,7 +75,7 @@ Migrations apply on API startup, so a schema change ships with the same command.
 
 ```bash
 ssh ubuntu-srv 'curl -s http://localhost:8001/health'
-# {"status":"ok","service":"agentledger-api","version":"0.1.0","git_sha":"<sha>","db":"ok"}
+# {"status":"ok","service":"graphban-api","version":"0.1.0","git_sha":"<sha>","db":"ok"}
 ```
 
 - `git_sha` must match `git rev-parse --short HEAD` of what you deployed.

@@ -1,7 +1,16 @@
+# FROZEN, not branding. `docker compose` derives the project name from the directory, and
+# volumes are named <project>_<volume-key> — live, that is `agentledger_agentledger_pgdata`.
+# Pinning it here stops the project name tracking the directory, so this repo can be
+# renamed without orphaning the Postgres volume and appearing to lose the database.
+# Same rule as PRD-13: an identifier existing data is keyed by is identity, not a label.
+name: agentledger
+
 services:
   db:
     image: pgvector/pgvector:pg16
     environment:
+      # These defaults are baked into the volume at initdb, so they are frozen too — a
+      # self-host that never wrote a .env would fail auth on its next `up` if they moved.
       POSTGRES_USER: ${POSTGRES_USER:-agentledger}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agentledger}
       POSTGRES_DB: ${POSTGRES_DB:-agentledger}
@@ -59,4 +68,5 @@ services:
       - "${WEB_PORT:-8080}:80"
 
 volumes:
+  # Frozen: renaming this key orphans the existing volume and reads as data loss.
   agentledger_pgdata:
