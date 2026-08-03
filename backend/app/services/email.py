@@ -1,6 +1,6 @@
 """Outbound email (AL-74b) — a deliberately small transport.
 
-Org invites are the first (and, today, only) email AgentLedger sends. The policy
+Org invites are the first (and, today, only) email Graphban sends. The policy
 mirrors the rest of the codebase's "works offline, hardens for hosted" stance:
 
 - SMTP configured (``SMTP_HOST`` set) — send for real over STARTTLS.
@@ -21,7 +21,7 @@ from email.message import EmailMessage
 
 from app.config import settings
 
-logger = logging.getLogger("agentledger.email")
+logger = logging.getLogger("graphban.email")
 
 
 @dataclass

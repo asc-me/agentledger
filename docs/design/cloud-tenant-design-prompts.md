@@ -1,4 +1,4 @@
-# AgentLedger Cloud Tenant — Design Prompt Set
+# Graphban Cloud Tenant — Design Prompt Set
 
 A reusable set of **Claude Design prompts** for the hosted **Cloud Tenant** UI. Each prompt in
 Part 3 produces one `*.dc.html` screen. Every generated screen must share one visual language and
@@ -31,7 +31,7 @@ accent color.
 
 ## Part 1 — Shared preamble (paste at the top of every screen)
 
-> **Product.** AgentLedger is an agent-native dev tool: a linear tracker + pgvector agent memory +
+> **Product.** Graphban is an agent-native dev tool: a linear tracker + pgvector agent memory +
 > request triage + a code-structure graph, all operable by coding agents through MCP tools. It ships
 > **local-first** (a self-hosted box builds the code graph on the dev's machine) and **cloud-hosted**
 > (a multi-tenant SaaS that holds items, claims, memory, and triage/collision-clustering across a
@@ -165,7 +165,7 @@ Each prompt assumes the Part 1 preamble is already pasted above it.
 > org key a local deployment authenticates with. Fields: key name (e.g. "laptop — acme-core"), target
 > **project** (select — a sync key pins to one cloud project), optional expiry. A callout that the key
 > is **shown once**. On create: a success panel with the key in a mono code box + copy button, and a
-> ready-to-paste **`agentledger link`** command (`agentledger link --cloud-url … --api-key al_sk_… --project …`).
+> ready-to-paste **`graphban link`** command (`graphban link --cloud-url … --api-key al_sk_… --project …`).
 > Emphasize least-privilege: this key can only push a code graph to its one project, nothing else.
 
 ### 9 · Backlog with claims & leases  *(P0)*

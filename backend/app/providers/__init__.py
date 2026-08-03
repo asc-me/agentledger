@@ -95,7 +95,7 @@ def safe_embed(text: str) -> list[float] | None:
     try:
         return get_embedder().embed(text)
     except Exception:  # noqa: BLE001 — ingest must survive a dead embedder
-        logging.getLogger("agentledger.providers").warning(
+        logging.getLogger("graphban.providers").warning(
             "embedding failed; storing row without a vector (backfill will fill it in)",
             exc_info=True,
         )

@@ -1,4 +1,4 @@
-# AgentLedger — Architecture
+# Graphban — Architecture
 
 A decoupled **Vite + React SPA ↔ FastAPI ↔ Postgres/pgvector**, orchestrated by Docker
 Compose. Built local-first so the whole thing runs offline; cloud LLMs, embeddings, and

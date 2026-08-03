@@ -1,6 +1,6 @@
 # Product overview
 
-**AgentLedger** is a semi-open-source, lightweight, agent-native development tool that
+**Graphban** is a semi-open-source, lightweight, agent-native development tool that
 combines **persistent agent memory** with a **skinny linear project tracker** and
 integrated **feature/bug request management**.
 

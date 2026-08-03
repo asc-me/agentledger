@@ -51,7 +51,7 @@ export function LoginPage() {
         <div className="mb-8 flex items-center gap-3">
           <LogoMark />
           <div className="leading-none">
-            <div className="text-[17px] font-bold tracking-tight">AgentLedger</div>
+            <div className="text-[17px] font-bold tracking-tight">Graphban</div>
             <div className="mt-1 font-mono text-[9.5px] tracking-[0.6px] text-faint">
               AGENT MEMORY · LINEAR EXECUTION
             </div>

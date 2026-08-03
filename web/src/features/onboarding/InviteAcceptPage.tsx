@@ -37,7 +37,7 @@ export function InviteAcceptPage() {
           <div className="flex h-9 w-9 items-center justify-center rounded-[9px] bg-[rgba(198,242,78,0.12)]">
             <Building2 size={18} className="text-accent" />
           </div>
-          <div className="text-[15px] font-semibold tracking-tight">AgentLedger</div>
+          <div className="text-[15px] font-semibold tracking-tight">Graphban</div>
         </div>
 
         <div className="rounded-[16px] border border-line bg-surface-3/70 p-6 shadow-[0_24px_60px_rgba(0,0,0,0.4)]">
@@ -77,10 +77,10 @@ function InviteBody({
       {isPlatform ? (
         <>
           <h1 className="mb-1 text-[16px] font-semibold">
-            Welcome to <span className="text-accent">AgentLedger</span>
+            Welcome to <span className="text-accent">Graphban</span>
           </h1>
           <p className="mb-5 text-[12.5px] text-muted">
-            {invitedBy} to AgentLedger. Create your account and you'll set up your
+            {invitedBy} to Graphban. Create your account and you'll set up your
             organization next.
           </p>
         </>

@@ -1,4 +1,4 @@
-"""Report an issue with AgentLedger — the in-app (authenticated) side of the upstream
+"""Report an issue with Graphban — the in-app (authenticated) side of the upstream
 feedback channel. Forwards a user-initiated report to the maintainer's intake."""
 from __future__ import annotations
 

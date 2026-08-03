@@ -15,7 +15,7 @@ Seeded fixtures (seed.py): alex = write on core/web/infra; ops = read on core, w
 
 
 def _login(client, email):
-    r = client.post("/api/auth/login", json={"email": email, "password": "agentledger"})
+    r = client.post("/api/auth/login", json={"email": email, "password": "graphban"})
     assert r.status_code == 200
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 

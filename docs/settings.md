@@ -48,7 +48,7 @@ interface, so a native Drive-API backend can be added without touching the recon
 ```
 <SYNC_DIR>/<folder>/
 └── PRDs/    Each PRD as "<PRD-id> — Title.md" with a front-matter block
-              (agentledger_id / title / status / version)
+              (graphban_id / title / status / version)
 ```
 
 (`Digests/`, `Exports/`, `Attachments/` are reserved for future sync of those artifacts.)
@@ -56,7 +56,7 @@ interface, so a native Drive-API backend can be added without touching the recon
 **Two-way sync (Sync now).** The reconcile is conflict-safe via a per-PRD last-synced hash:
 
 - A PRD with no file yet → **exported** to `PRDs/`.
-- A `.md` file with **no** `agentledger_id` → **imported** as a new draft PRD (title from the first
+- A `.md` file with **no** `graphban_id` → **imported** as a new draft PRD (title from the first
   `# heading` or the file name), and the id is written back into that same file so it isn't
   re-imported. This is the same import the [PRD page](prds.md) exposes manually.
 - Only the **file** changed since last sync → the PRD is updated and a version is snapshotted.

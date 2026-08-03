@@ -54,7 +54,7 @@ async def lifespan(app: FastAPI):
         db = SessionLocal()
         try:
             if seed(db):
-                print("[seed] loaded AgentLedger prototype dataset")
+                print("[seed] loaded Graphban prototype dataset")
         finally:
             db.close()
 
@@ -75,7 +75,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="AgentLedger API", version=__version__, lifespan=lifespan)
+app = FastAPI(title="Graphban API", version=__version__, lifespan=lifespan)
 
 @app.exception_handler(QuotaExceeded)
 async def _quota_handler(_: Request, exc: QuotaExceeded):

@@ -7,7 +7,7 @@ tenants. Self-host keeps no limits at all.
 """
 import pytest
 
-SEED_PW = "agentledger"
+SEED_PW = "graphban"
 ADMIN_EMAIL = "alex@ascme-labs.com"
 
 

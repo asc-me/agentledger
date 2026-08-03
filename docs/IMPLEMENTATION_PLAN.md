@@ -1,4 +1,4 @@
-# AgentLedger — Implementation Plan (PRD → build)
+# Graphban — Implementation Plan (PRD → build)
 
 Roadmap from the shipped **v0.1 core slice** to the full product (see
 [Product overview](product-overview.md)). Each phase is an independently shippable

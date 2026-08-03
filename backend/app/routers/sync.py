@@ -153,7 +153,7 @@ def trigger_push(
     user: User = Depends(get_current_user),
 ):
     """Push THIS (local) instance's code graph for a project up to its linked cloud tenant
-    (AL-139) — the `agentledger sync` trigger. Only a member who can write the project may
+    (AL-139) — the `graphban sync` trigger. Only a member who can write the project may
     sync it; a `409` means the instance isn't linked to a cloud."""
     authz.require_writable(db, user.id, body.project_id, "item")
     try:

@@ -63,7 +63,7 @@ def test_org_rate_cap_trips_rate_limited(client, monkeypatch):
     monkeypatch.setattr(settings, "hosted_mode", True)
     monkeypatch.setattr(settings, "org_rate_per_min", 2)
 
-    r = client.post("/api/auth/login", json={"email": "alex@ascme-labs.com", "password": "agentledger"})
+    r = client.post("/api/auth/login", json={"email": "alex@ascme-labs.com", "password": "graphban"})
     auth = {"Authorization": f"Bearer {r.json()['access_token']}"}
     client.post("/api/orgs", json={"name": "Acme"}, headers=auth)
     client.post("/api/projects", json={"name": "Rocket"}, headers=auth)
@@ -81,7 +81,7 @@ def test_org_rate_cap_off_self_host(client, monkeypatch):
     from app.config import settings
 
     monkeypatch.setattr(settings, "org_rate_per_min", 1)  # would bite if hosted
-    auth_r = client.post("/api/auth/login", json={"email": "alex@ascme-labs.com", "password": "agentledger"})
+    auth_r = client.post("/api/auth/login", json={"email": "alex@ascme-labs.com", "password": "graphban"})
     auth = {"Authorization": f"Bearer {auth_r.json()['access_token']}"}
     key = client.post("/api/api-keys", json={"name": "agent"}, headers=auth).json()["plaintext"]
     for _ in range(3):

@@ -19,19 +19,19 @@ const CLIENTS: Client[] = [
     id: "claude",
     label: "Claude Code",
     note: "Run in your terminal. Add --scope user to make it global.",
-    build: (u, k) => `claude mcp add --transport http agentledger ${u} --header "X-API-Key: ${k}"`,
+    build: (u, k) => `claude mcp add --transport http graphban ${u} --header "X-API-Key: ${k}"`,
   },
   {
     id: "cursor",
     label: "Cursor",
     file: "~/.cursor/mcp.json",
-    build: (u, k) => JSON.stringify({ mcpServers: { agentledger: { url: u, headers: { "X-API-Key": k } } } }, null, 2),
+    build: (u, k) => JSON.stringify({ mcpServers: { graphban: { url: u, headers: { "X-API-Key": k } } } }, null, 2),
   },
   {
     id: "codex",
     label: "Codex",
     file: "~/.codex/config.toml",
-    build: (u, k) => `[mcp_servers.agentledger]\nurl = "${u}"\nhttp_headers = { "X-API-Key" = "${k}" }`,
+    build: (u, k) => `[mcp_servers.graphban]\nurl = "${u}"\nhttp_headers = { "X-API-Key" = "${k}" }`,
   },
   {
     id: "opencode",
@@ -41,7 +41,7 @@ const CLIENTS: Client[] = [
       JSON.stringify(
         {
           $schema: "https://opencode.ai/config.json",
-          mcp: { agentledger: { type: "remote", url: u, enabled: true, headers: { "X-API-Key": k } } },
+          mcp: { graphban: { type: "remote", url: u, enabled: true, headers: { "X-API-Key": k } } },
         },
         null,
         2,
@@ -52,16 +52,16 @@ const CLIENTS: Client[] = [
     label: "Hermes",
     file: "~/.hermes/config.yaml",
     note: "Run /reload-mcp in Hermes after editing the config.",
-    build: (u, k) => `mcp_servers:\n  agentledger:\n    url: "${u}"\n    headers:\n      X-API-Key: "${k}"\n    enabled: true`,
+    build: (u, k) => `mcp_servers:\n  graphban:\n    url: "${u}"\n    headers:\n      X-API-Key: "${k}"\n    enabled: true`,
   },
   {
     id: "openclaw",
     label: "OpenClaw",
     file: "~/.openclaw/openclaw.json",
-    note: "Or run: openclaw mcp set agentledger '<json>'. Verify with openclaw mcp doctor --probe.",
+    note: "Or run: openclaw mcp set graphban '<json>'. Verify with openclaw mcp doctor --probe.",
     build: (u, k) =>
       JSON.stringify(
-        { mcp: { servers: { agentledger: { url: u, transport: "streamable-http", headers: { "X-API-Key": k } } } } },
+        { mcp: { servers: { graphban: { url: u, transport: "streamable-http", headers: { "X-API-Key": k } } } } },
         null,
         2,
       ),
@@ -73,7 +73,7 @@ const CLIENTS: Client[] = [
     note: "Grok's remote-MCP format isn't officially documented; this stdio bridge (mcp-remote) works reliably.",
     build: (u, k) =>
       JSON.stringify(
-        { mcpServers: { agentledger: { command: "npx", args: ["-y", "mcp-remote", u, "--header", `X-API-Key: ${k}`] } } },
+        { mcpServers: { graphban: { command: "npx", args: ["-y", "mcp-remote", u, "--header", `X-API-Key: ${k}`] } } },
         null,
         2,
       ),

@@ -14,7 +14,7 @@ Runs on both engines via the existing two-engine gate.
 """
 import pytest
 
-SEED_PW = "agentledger"
+SEED_PW = "graphban"
 
 
 def _login(client, email):

@@ -14,7 +14,7 @@ from app.embeddings import cosine_similarity, get_embedder, safe_embed
 from app.models import MemoryShard, Project
 from app.services import events as events_svc
 
-logger = logging.getLogger("agentledger.memory")
+logger = logging.getLogger("graphban.memory")
 
 
 def _includes_global(db: Session, project_id: str) -> bool:

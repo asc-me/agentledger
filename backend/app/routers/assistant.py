@@ -33,7 +33,7 @@ from app.services import quotas
 router = APIRouter(prefix="/assistant", tags=["assistant"])
 
 _SYSTEM = (
-    "You are AgentLedger's in-app assistant, scoped to a single item or PRD. Help the user "
+    "You are Graphban's in-app assistant, scoped to a single item or PRD. Help the user "
     "brainstorm, review, and refine it. Use the tools to read context and to PROPOSE changes "
     "— proposed writes are shown to the user for approval and are NOT applied automatically. "
     "Be concise and cite item / PRD ids."

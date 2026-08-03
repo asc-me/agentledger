@@ -18,7 +18,7 @@ def test_export_writes_files_with_front_matter(client, auth, tmp_path):
     files = list((tmp_path / "PRDs").glob("*.md"))
     assert len(files) == 1
     content = files[0].read_text()
-    assert f"agentledger_id: {prd.id}" in content and "## Goals" in content
+    assert f"graphban_id: {prd.id}" in content and "## Goals" in content
     # Second sync with no changes is a no-op.
     assert drive_sync.sync(db, "sync", root_dir=tmp_path)["in_sync"] == 1
     db.close()
@@ -50,7 +50,7 @@ def test_new_file_imports_as_draft_prd_no_duplicate(client, auth, tmp_path):
     p = db.get(Prd, new_id)
     assert p.title == "Manual Idea" and "drafted in the folder" in p.body
     # The file now carries the id, so a re-sync doesn't create a duplicate.
-    assert f"agentledger_id: {new_id}" in (d / "manual-note.md").read_text()
+    assert f"graphban_id: {new_id}" in (d / "manual-note.md").read_text()
     assert drive_sync.sync(db, "sync", root_dir=tmp_path)["imported"] == []
     db.close()
 

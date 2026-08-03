@@ -74,7 +74,7 @@ def test_hosted_rest_read_refused_cross_org(client, two_orgs, monkeypatch):
     from app.config import settings
 
     monkeypatch.setattr(settings, "hosted_mode", True)
-    r = client.post("/api/auth/login", json={"email": "alex@ascme-labs.com", "password": "agentledger"})
+    r = client.post("/api/auth/login", json={"email": "alex@ascme-labs.com", "password": "graphban"})
     auth = {"Authorization": f"Bearer {r.json()['access_token']}"}
 
     assert client.get("/api/items?project_id=projA", headers=auth).status_code == 200

@@ -45,7 +45,7 @@ def client():
 @pytest.fixture()
 def auth(client):
     r = client.post(
-        "/api/auth/login", json={"email": "alex@ascme-labs.com", "password": "agentledger"}
+        "/api/auth/login", json={"email": "alex@ascme-labs.com", "password": "graphban"}
     )
     assert r.status_code == 200
     return {"Authorization": f"Bearer {r.json()['access_token']}"}

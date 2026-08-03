@@ -20,7 +20,7 @@ import time
 from app.config import settings
 from app.services import spam
 
-logger = logging.getLogger("agentledger.ratelimit")
+logger = logging.getLogger("graphban.ratelimit")
 
 _client = None
 _client_resolved = False

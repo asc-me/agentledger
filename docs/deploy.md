@@ -1,6 +1,6 @@
 # Deploy runbook
 
-How to deploy AgentLedger to the self-hosted LAN box, verify the exact revision
+How to deploy Graphban to the self-hosted LAN box, verify the exact revision
 went live, and recover when a deploy goes wrong. This is the proven path — every
 step here has been run in anger.
 
@@ -30,10 +30,10 @@ rsync -az --delete \
   --exclude .git --exclude .env --exclude sync \
   --exclude node_modules --exclude dist --exclude __pycache__ \
   --exclude .venv --exclude .serena \
-  ./ ubuntu-srv:~/agentledger/
+  ./ ubuntu-srv:~/graphban/
 
 # 3. Build + restart on the server, passing the revision through to the images.
-ssh ubuntu-srv "cd ~/agentledger && GIT_SHA=$GIT_SHA docker compose up -d --build"
+ssh ubuntu-srv "cd ~/graphban && GIT_SHA=$GIT_SHA docker compose up -d --build"
 ```
 
 Migrations apply on API startup, so a schema change ships with the same command.
@@ -41,14 +41,14 @@ Migrations apply on API startup, so a schema change ships with the same command.
 ## Naming: what is frozen on a deployed box
 
 The product rename does **not** touch anything the existing data is keyed by. On this
-server that means the Postgres role, database, and volume all stay `agentledger`:
+server that means the Postgres role, database, and volume all stay `graphban`:
 
 - The volume is `agentledger_agentledger_pgdata` — `<compose-project>_<volume-key>`.
   Renaming either half orphans it and Postgres comes up empty.
 - `POSTGRES_USER`/`_PASSWORD`/`_DB` are baked in at initdb. The server pins all three in
   its `.env`, so it is insulated regardless, but the compose defaults are frozen too for
   clones that never wrote one.
-- `docker-compose.yml` now pins `name: agentledger`, which decouples the compose project
+- `docker-compose.yml` now pins `name: graphban`, which decouples the compose project
   name from the directory name. **The repo directory is therefore safe to rename** —
   before that pin it was not, and doing so would have looked exactly like data loss.
 
@@ -60,9 +60,9 @@ server that means the Postgres role, database, and volume all stay `agentledger`
   would DELETE the server's `.env`. Then compose reverts to default ports (5432
   conflicts with the box's other Postgres) **and** the persisted Postgres volume
   keeps the *old* password, so the API dies at startup with
-  `password authentication failed for user "agentledger"` (exit 3; Python's
+  `password authentication failed for user "graphban"` (exit 3; Python's
   block-buffered stdout hides the traceback). Never sync over the server `.env`.
-- **`--exclude sync`** — the server's `~/agentledger/sync/` is a root-owned
+- **`--exclude sync`** — the server's `~/graphban/sync/` is a root-owned
   container-written mount; rsync fails `exit 23` (`mkdir ... Permission denied`)
   without this exclude.
 - **Pass `GIT_SHA`** on both the local `export` and the remote `docker compose`
@@ -87,8 +87,8 @@ ssh ubuntu-srv 'curl -s http://localhost:8001/health'
 Confirm the migration chain landed:
 
 ```bash
-ssh ubuntu-srv 'cd ~/agentledger && docker compose exec -T db \
-  psql -U agentledger -d agentledger -tc "SELECT version_num FROM alembic_version;"'
+ssh ubuntu-srv 'cd ~/graphban && docker compose exec -T db \
+  psql -U graphban -d graphban -tc "SELECT version_num FROM alembic_version;"'
 ```
 
 **Post-deploy note:** for the first few seconds after restart the API is warming;
@@ -97,19 +97,19 @@ an MCP/REST call may transient-fail once with an `internal` error whose hint say
 
 ## Recover
 
-- **Server `.env` was clobbered / wrong ports:** recreate `~/agentledger/.env`
+- **Server `.env` was clobbered / wrong ports:** recreate `~/graphban/.env`
   with the remapped ports (`DB_PORT=5433 API_PORT=8001 WEB_PORT=8080` + the CORS
   origins and `POSTGRES_PASSWORD`) **before** `up`.
 - **Postgres password mismatch** (volume kept an old password): reset it over the
   local socket (no password needed there), non-destructive:
   ```bash
-  ssh ubuntu-srv 'cd ~/agentledger && docker compose exec -T db \
-    psql -U agentledger -d agentledger -c "ALTER USER agentledger WITH PASSWORD '\''agentledger'\'';"'
+  ssh ubuntu-srv 'cd ~/graphban && docker compose exec -T db \
+    psql -U graphban -d graphban -c "ALTER USER graphban WITH PASSWORD '\''graphban'\'';"'
   ```
 - **Silent API crash at startup:** stdout is block-buffered, so reproduce with the
   traceback visible:
   ```bash
-  ssh ubuntu-srv 'cd ~/agentledger && docker compose run --rm -e PYTHONUNBUFFERED=1 \
+  ssh ubuntu-srv 'cd ~/graphban && docker compose run --rm -e PYTHONUNBUFFERED=1 \
     --no-deps api python -c "import app.main"'
   ```
 
@@ -121,8 +121,8 @@ earlier one:
 ```bash
 git checkout <previous-good-sha>
 export GIT_SHA=$(git rev-parse --short HEAD)
-rsync ... ubuntu-srv:~/agentledger/          # same excludes as above
-ssh ubuntu-srv "cd ~/agentledger && GIT_SHA=$GIT_SHA docker compose up -d --build"
+rsync ... ubuntu-srv:~/graphban/          # same excludes as above
+ssh ubuntu-srv "cd ~/graphban && GIT_SHA=$GIT_SHA docker compose up -d --build"
 # verify /health git_sha now shows the rollback target
 ```
 
@@ -176,7 +176,7 @@ unconfigured (it stays dormant with no Drive folder set) or attach a volume at
 
 ## Code-graph sync (local → cloud) — the `graphban` CLI
 
-> Renamed from `agentledger` (AL-262/AL-263). **Both console scripts work and the old one
+> Renamed from `graphban` (AL-262/AL-263). **Both console scripts work and the old one
 > is kept indefinitely**, so any command already in a runbook keeps running. Config is now
 > written to `~/.graphban/config.json` and read from there first, falling back to
 > `~/.agentledger/config.json`; override with `GRAPHBAN_CONFIG` (or the older
@@ -184,27 +184,27 @@ unconfigured (it stays dormant with no Drive folder set) or attach a volume at
 > working and never need re-issuing.
 
 A linked local instance builds its code graph on-box and pushes the *result* to a
-cloud tenant (the AL-134 hybrid). The `agentledger` console script drives that sync
+cloud tenant (the AL-134 hybrid). The `graphban` console script drives that sync
 directly against the instance database, so run it where `DATABASE_URL` points at your
 instance — inside the backend container is simplest:
 
 ```bash
 # Link once — stores the cloud URL + org-issued sync credential in
 # ~/.agentledger/config.json (chmod 600; override path via AGENTLEDGER_CONFIG).
-docker compose exec backend agentledger link \
+docker compose exec backend graphban link \
   --cloud-url https://cloud.example/ --api-key al_sk_… --project core
 
-docker compose exec backend agentledger status   # link + last-synced state
-docker compose exec backend agentledger sync      # incremental push (only changed paths ship)
-docker compose exec backend agentledger purge --yes   # delete this project's graph from the cloud
+docker compose exec backend graphban status   # link + last-synced state
+docker compose exec backend graphban sync      # incremental push (only changed paths ship)
+docker compose exec backend graphban purge --yes   # delete this project's graph from the cloud
 ```
 
 Air-gapped / no direct connection? Move the graph as a portable, vector-free bundle
 (the receiver re-embeds on import):
 
 ```bash
-docker compose exec backend agentledger export --project core --out graph.json
-docker compose exec backend agentledger import --in graph.json --prune
+docker compose exec backend graphban export --project core --out graph.json
+docker compose exec backend graphban import --in graph.json --prune
 ```
 
 `sync` is incremental and resumable (content-hash manifest per path); a project with

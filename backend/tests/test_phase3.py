@@ -15,11 +15,11 @@ def test_seeded_prds(client, auth):
 
 def test_get_prd_body_and_versions(client, auth):
     prd = client.get("/api/prds/PRD-1", headers=auth).json()
-    assert prd["title"] == "AgentLedger Core MVP"
-    assert prd["body"].startswith("# AgentLedger Core MVP")
+    assert prd["title"] == "Graphban Core MVP"
+    assert prd["body"].startswith("# Graphban Core MVP")
     versions = client.get("/api/prds/PRD-1/versions", headers=auth).json()
     assert [v["version"] for v in versions] == ["v1.0", "v0.3", "v0.1"]  # newest first
-    assert versions[0]["body"].startswith("# AgentLedger")  # latest snapshot has body
+    assert versions[0]["body"].startswith("# Graphban")  # latest snapshot has body
 
 
 def test_create_from_template(client, auth):

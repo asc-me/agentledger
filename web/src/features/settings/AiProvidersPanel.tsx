@@ -67,7 +67,7 @@ export function AiProvidersPanel() {
         Choose the provider that drives agent chat &amp; extraction. Switches take effect immediately.
       </p>
       <p className="mb-3 text-[11.5px] text-faint">
-        AgentLedger is a technical product (PRDs, code maps, code-aware chat) — <span className="text-fg-2">coding-oriented
+        Graphban is a technical product (PRDs, code maps, code-aware chat) — <span className="text-fg-2">coding-oriented
         models</span> give noticeably better output than general chat models. For local Ollama, a{" "}
         <span className="font-mono text-muted-2">qwen2.5-coder</span> model is a good default.
       </p>

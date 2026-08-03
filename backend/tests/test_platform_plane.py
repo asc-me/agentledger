@@ -7,7 +7,7 @@ platform-admin-only, and 404s for everyone else.
 """
 import pytest
 
-SEED_PW = "agentledger"
+SEED_PW = "graphban"
 ADMIN_EMAIL = "alex@ascme-labs.com"
 
 

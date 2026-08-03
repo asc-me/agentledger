@@ -1,9 +1,9 @@
 # AL-201 spike — collision clusters → Grok Build parallel worktrees
 
-**Goal:** decide whether AgentLedger's collision-aware clustering (AL-192) can drive Grok
+**Goal:** decide whether Graphban's collision-aware clustering (AL-192) can drive Grok
 Build's parallel-worktree execution — several agents building concurrently without merge
 collisions — and whether their output can auto-capture touchpoints to sharpen the next round.
-**Verdict: sound, phase it.** The two halves compose cleanly — AgentLedger decides *what can
+**Verdict: sound, phase it.** The two halves compose cleanly — Graphban decides *what can
 run concurrently*, Grok Build *runs it in isolated worktrees* — and the streaming-json output
 returns ground-truth touchpoints for free. Keep it an **optional, provider-neutral execution
 backend**, not core.
@@ -14,7 +14,7 @@ Ground truth: `backend/app/services/collision.py` (`collision_clusters`) +
 
 ## The two halves
 
-**AgentLedger — `collision_clusters` (AL-192).** Partitions a set of items into connected
+**Graphban — `collision_clusters` (AL-192).** Partitions a set of items into connected
 components over (actual-or-predicted) code touch-area overlap. Output per cluster:
 `{items, areas, collides, predicted}`. The load-bearing invariant: **distinct clusters share
 no touch-areas, so they are safe to run in parallel**; items *within* a cluster overlap and
@@ -29,7 +29,7 @@ The fit is exact: **one non-colliding cluster → one worktree.**
 ## Handoff design
 
 ```
-GET /items/collision-clusters?status=next          # AgentLedger: the divvy
+GET /items/collision-clusters?status=next          # Graphban: the divvy
   → clusters[]   (each non-colliding vs the others)
 for each cluster (up to Grok Build's --parallel cap, default 8):
   grok -p "<cluster brief: items + their areas>" \
@@ -48,7 +48,7 @@ for each cluster (up to Grok Build's --parallel cap, default 8):
 
 Grok Build reports **files modified** per run; map it straight onto the item's touchpoints:
 
-| Grok Build streaming-json | AgentLedger |
+| Grok Build streaming-json | Graphban |
 |---|---|
 | `files_modified` (per worktree) | `update_item(id, touchpoints=[…])` — the **actual** touch-areas |
 | result = success | `update_item(id, status="review")` |
@@ -85,7 +85,7 @@ own (see phase 1).
 
 ## Deliberately out of the spike
 
-Building the orchestration (that's the phased work above); the AgentLedger side already exists
+Building the orchestration (that's the phased work above); the Graphban side already exists
 (`collision_clusters` + `GET /items/collision-clusters`). The immediate, low-risk win is
 **phase 1** — touchpoint capture from streaming-json, which pays off even if the parallel runner
 is never built.

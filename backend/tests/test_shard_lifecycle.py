@@ -3,7 +3,7 @@ published boundary keeps unverified agent notes out of the default retrieval pat
 
 
 def _login(client, email="alex@ascme-labs.com"):
-    r = client.post("/api/auth/login", json={"email": email, "password": "agentledger"})
+    r = client.post("/api/auth/login", json={"email": email, "password": "graphban"})
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 
 

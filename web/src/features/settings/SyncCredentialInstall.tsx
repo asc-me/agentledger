@@ -8,7 +8,7 @@ type Method = "cli" | "web";
 
 /**
  * Hand-off for a freshly minted `sync` credential (AL-219 D4). Two ways a local self-host
- * instance consumes it: the `agentledger link` CLI (writes ~/.agentledger/config.json) or the
+ * instance consumes it: the `graphban link` CLI (writes ~/.graphban/config.json) or the
  * local instance's own Settings → Sync/Link panel.
  *
  * `apiKey` is the one-time plaintext — this only renders right after creation, since the key
@@ -20,7 +20,7 @@ export function SyncCredentialInstall({ apiKey, projectId }: { apiKey: string; p
   const [copied, setCopied] = React.useState(false);
 
   const cli = [
-    "agentledger link \\",
+    "graphban link \\",
     `  --cloud-url ${origin} \\`,
     `  --api-key ${apiKey} \\`,
     `  --project ${projectId}`,
@@ -42,7 +42,7 @@ export function SyncCredentialInstall({ apiKey, projectId }: { apiKey: string; p
       <div className="mb-2 flex flex-wrap gap-1.5">
         {(
           [
-            ["cli", "agentledger CLI"],
+            ["cli", "graphban CLI"],
             ["web", "Local Settings → Sync/Link"],
           ] as const
         ).map(([id, label]) => (
@@ -76,8 +76,8 @@ export function SyncCredentialInstall({ apiKey, projectId }: { apiKey: string; p
       {method === "cli" ? (
         <p className="mt-1.5 text-[10.5px] text-faint">
           Run it where <span className="font-mono text-muted-2">DATABASE_URL</span> points at the local instance —
-          e.g. <span className="font-mono text-muted-2">docker compose exec backend agentledger link …</span>. Then{" "}
-          <span className="font-mono text-muted-2">agentledger sync</span> pushes the graph.
+          e.g. <span className="font-mono text-muted-2">docker compose exec backend graphban link …</span>. Then{" "}
+          <span className="font-mono text-muted-2">graphban sync</span> pushes the graph.
         </p>
       ) : (
         <p className="mt-1.5 text-[10.5px] text-faint">

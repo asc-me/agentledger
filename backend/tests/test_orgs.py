@@ -6,7 +6,7 @@ in with the seed password; new invitees are created through the register flow.
 """
 import pytest
 
-SEED_PW = "agentledger"
+SEED_PW = "graphban"
 
 
 def _login(client, email, password=SEED_PW):

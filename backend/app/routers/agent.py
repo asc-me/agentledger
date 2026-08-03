@@ -55,12 +55,12 @@ def _readable_pid(db: Session, user: User, project_id: str | None) -> str:
 
 
 SYSTEM = (
-    "You are AgentLedger's project agent. Answer using the supplied project state and "
+    "You are Graphban's project agent. Answer using the supplied project state and "
     "memory shards. Be concise and cite item ids where relevant."
 )
 
 CODE_SYSTEM = (
-    "You are AgentLedger's codebase agent. Answer questions about the code's structure and "
+    "You are Graphban's codebase agent. Answer questions about the code's structure and "
     "relations using ONLY the supplied code graph — the described modules/files/symbols and "
     "their imports / calls / ownership edges. Cite paths. If the graph doesn't cover what's "
     "asked, say so plainly and suggest the coding agent run describe_code for that area — do "

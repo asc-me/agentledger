@@ -208,7 +208,7 @@ function IntegrationsPanel() {
           <div className="space-y-3">
             <div className="grid gap-3 sm:grid-cols-2">
               <div><Label>Account</Label><Input value={drAccount} onChange={(e) => setDrAccount(e.target.value)} placeholder="you@example.com" /></div>
-              <div><Label>Folder</Label><Input value={drFolder} onChange={(e) => setDrFolder(e.target.value)} placeholder="/AgentLedger" /></div>
+              <div><Label>Folder</Label><Input value={drFolder} onChange={(e) => setDrFolder(e.target.value)} placeholder="/Graphban" /></div>
             </div>
             <Button size="sm" disabled={!drAccount} onClick={() => api.gdriveConnect(drAccount, drFolder).then(invalidate)}>
               Connect

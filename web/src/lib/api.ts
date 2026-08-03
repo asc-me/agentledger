@@ -575,7 +575,7 @@ export const api = {
       body: JSON.stringify({ message, project_id: projectId }),
     }),
 
-  // ── upstream "report an issue with AgentLedger" ───────────────────────
+  // ── upstream "report an issue with Graphban" ───────────────────────
   upstreamConfig: () => request<{ enabled: boolean; target: string }>("/reports/upstream"),
   upstreamReport: (body: { type: string; title: string; detail?: string }) =>
     request<{ ok: boolean; request_id: string | null; duplicates: unknown[] }>("/reports/upstream", {

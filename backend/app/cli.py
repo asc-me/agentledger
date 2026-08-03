@@ -1,4 +1,4 @@
-"""`agentledger` — a thin local CLI over the code-graph sync services (AL-218 / AL-134 D4).
+"""`graphban` — a thin local CLI over the code-graph sync services (AL-218 / AL-134 D4).
 
 Drives the AL-137/139/140 sync **directly against the local instance's database**, so a
 self-host operator can link, push, purge, and move code-graph bundles with one command
@@ -6,7 +6,7 @@ instead of raw HTTP. (The HTTP sync endpoints don't accept the cloud credential 
 body — the `code_sync` service functions do — so the CLI calls the services, not the API.)
 
 Run it where `DATABASE_URL` points at your instance — inside the backend container
-(`docker compose exec backend agentledger sync`) or with the env exported. The cloud link
+(`docker compose exec backend graphban sync`) or with the env exported. The cloud link
 (URL + org-issued sync credential) is stored in `~/.graphban/config.json`, chmod 600. An
 existing `~/.agentledger/config.json` is still read if the new one is absent (override
 either with `GRAPHBAN_CONFIG`, or the older `AGENTLEDGER_CONFIG`).
@@ -97,7 +97,7 @@ def cmd_link(args) -> int:
     if args.project:
         cfg["project"] = args.project
     if not cfg.get("cloud_url") or not cfg.get("api_key"):
-        sys.exit("agentledger link: need --cloud-url and --api-key (the org-issued sync credential)")
+        sys.exit("graphban link: need --cloud-url and --api-key (the org-issued sync credential)")
     path = save_config(cfg)
     print(f"Linked → {cfg['cloud_url']} (project {cfg.get('project', 'core')}). Saved to {path}.")
     return 0
@@ -106,7 +106,7 @@ def cmd_link(args) -> int:
 def cmd_status(args) -> int:
     cfg = load_config()
     if not cfg.get("cloud_url"):
-        print("Not linked. Run: agentledger link --cloud-url … --api-key …")
+        print("Not linked. Run: graphban link --cloud-url … --api-key …")
         return 0
     project = _project(args, cfg)
     key = cfg.get("api_key", "")
@@ -136,7 +136,7 @@ def cmd_sync(args) -> int:
             cloud_url=cfg.get("cloud_url", ""), api_key=cfg.get("api_key", ""),
         )
     except code_sync.NotLinked as e:
-        sys.exit(f"agentledger sync: {e}  (run `agentledger link` first)")
+        sys.exit(f"graphban sync: {e}  (run `graphban link` first)")
     finally:
         db.close()
     print(json.dumps(result, indent=2, default=str))
@@ -145,7 +145,7 @@ def cmd_sync(args) -> int:
 
 def cmd_purge(args) -> int:
     if not args.yes:
-        sys.exit("agentledger purge: this deletes the project's graph from the cloud. Re-run with --yes.")
+        sys.exit("graphban purge: this deletes the project's graph from the cloud. Re-run with --yes.")
     cfg = load_config()
     from app.services import code_sync
     db = _session()
@@ -155,7 +155,7 @@ def cmd_purge(args) -> int:
             cloud_url=cfg.get("cloud_url", ""), api_key=cfg.get("api_key", ""),
         )
     except code_sync.NotLinked as e:
-        sys.exit(f"agentledger purge: {e}")
+        sys.exit(f"graphban purge: {e}")
     finally:
         db.close()
     print(json.dumps(result, indent=2, default=str))
@@ -187,9 +187,9 @@ def cmd_import(args) -> int:
     try:
         bundle = json.loads(Path(args.infile).read_text())
     except FileNotFoundError:
-        sys.exit(f"agentledger import: no such bundle: {args.infile}")
+        sys.exit(f"graphban import: no such bundle: {args.infile}")
     except json.JSONDecodeError as e:
-        sys.exit(f"agentledger import: {args.infile} is not valid JSON ({e})")
+        sys.exit(f"graphban import: {args.infile} is not valid JSON ({e})")
     project = args.project or bundle.get("project_id") or cfg.get("project") or "core"
     from app.services import code_graph
     db = _session()

@@ -1,6 +1,6 @@
 # Requests & feedback
 
-AgentLedger has an internal **triage queue** plus a **public embeddable feedback form** with
+Graphban has an internal **triage queue** plus a **public embeddable feedback form** with
 **auto-duplicate detection**, and a **Feedback Kit** that generates a themeable widget.
 
 ## Requests (triage queue)
@@ -63,7 +63,7 @@ The **Feedback Kit** view is a no-code generator for the widget above:
   to your triage queue (duplicate detection still runs; it's read-only).
 
 **Auto-resize & host events.** The embedded widget `postMessage`s to the parent:
-`{__agentledger:true, type:'resize', height}` (both snippets size the frame to content) and
+`{__graphban:true, type:'resize', height}` (both snippets size the frame to content) and
 `{type:'submitted', id}` (the launcher closes the popover ~1.8s after a successful submit).
 
 **Captured context.** Every submission records the **page URL** it came from (`source_url`, via

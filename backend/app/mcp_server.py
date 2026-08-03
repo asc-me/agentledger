@@ -1,6 +1,6 @@
 """MCP endpoint (JSON-RPC 2.0 over HTTP).
 
-Exposes the live AgentLedger tools to agents, authenticated by a scoped API key
+Exposes the live Graphban tools to agents, authenticated by a scoped API key
 (the count is `LIVE_TOOL_COUNT`, derived from `TOOLS` — never hardcode it).
 Every tool calls the shared service layer, so an agent's writes are identical to
 what the web app produces — one code path.
@@ -53,7 +53,7 @@ PROTOCOL_VERSION = "2025-11-25"  # latest finalized MCP spec our tools surface c
 # client's requested version when it's one of these, else advertise PROTOCOL_VERSION.
 SUPPORTED_PROTOCOL_VERSIONS = frozenset({"2025-03-26", "2025-06-18", "2025-11-25"})
 
-logger = logging.getLogger("agentledger.mcp")
+logger = logging.getLogger("graphban.mcp")
 
 _STATUS_ENUM = items_svc.STATUSES
 _FIDELITY_ENUM = items_svc.FIDELITIES

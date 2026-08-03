@@ -9,7 +9,7 @@ SEEDED_TOKEN = "demo-core-roadmap"  # seed.py opts `core` into public sharing
 
 
 def _auth(client, email="alex@ascme-labs.com"):
-    r = client.post("/api/auth/login", json={"email": email, "password": "agentledger"})
+    r = client.post("/api/auth/login", json={"email": email, "password": "graphban"})
     assert r.status_code == 200, r.text
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 

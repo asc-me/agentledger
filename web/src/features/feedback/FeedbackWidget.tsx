@@ -18,7 +18,7 @@ declare global {
 /** Post a message to the embedding page (auto-resize, submit events). */
 function postToHost(msg: Record<string, unknown>) {
   if (typeof window !== "undefined" && window.parent !== window) {
-    window.parent.postMessage({ __agentledger: true, ...msg }, "*");
+    window.parent.postMessage({ __graphban: true, ...msg }, "*");
   }
 }
 

@@ -14,7 +14,7 @@ import httpx
 
 from app.config import settings
 
-logger = logging.getLogger("agentledger.providers.openai")
+logger = logging.getLogger("graphban.providers.openai")
 
 
 def _timeout() -> httpx.Timeout:

@@ -1,6 +1,6 @@
 # Design philosophy
 
-AgentLedger is a tool that agents operate unattended. That single fact sets a
+Graphban is a tool that agents operate unattended. That single fact sets a
 higher bar than a normal web app: when the primary user is a coding agent, the
 *environment around it* — the tools, the errors, the guarantees — is the product.
 A confusing error message isn't a rough edge; it's the app failing at its one job.

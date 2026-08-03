@@ -1,8 +1,8 @@
-"""Upstream feedback — forward a "Report an issue with AgentLedger" report to the tool
-maintainer's intake (another AgentLedger's public /requests endpoint).
+"""Upstream feedback — forward a "Report an issue with Graphban" report to the tool
+maintainer's intake (another Graphban's public /requests endpoint).
 
-This is the phone-home channel for tool feedback: a deployer runs AgentLedger for their own
-project, but bugs/ideas about AgentLedger *itself* need to reach whoever develops it. It is
+This is the phone-home channel for tool feedback: a deployer runs Graphban for their own
+project, but bugs/ideas about Graphban *itself* need to reach whoever develops it. It is
 **always initiated** by a person (in-app action) or an agent (MCP tool) — never silent
 telemetry — and is disabled by leaving `upstream_feedback_url` blank.
 """
@@ -42,7 +42,7 @@ def submit_upstream(*, type_: str, title: str, detail: str = "", source: str = "
         "type": type_,
         "title": title,
         "detail": detail or "",
-        "source_url": f"agentledger:{source}",
+        "source_url": f"graphban:{source}",
         "meta": {"reporter": source, "app_version": "0.1.0"},
     }
     resp = httpx.post(url, json=payload, timeout=10.0)

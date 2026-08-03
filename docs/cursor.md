@@ -1,15 +1,15 @@
-# Using AgentLedger with Cursor
+# Using Graphban with Cursor
 
 [Cursor](https://cursor.com) is an MCP *client* and — since Cursor 3 — a **fleet
 orchestrator**: it runs many agents in parallel and can pin each to a different model.
-Connecting it to AgentLedger lets those agents drive the tracker through the same
+Connecting it to Graphban lets those agents drive the tracker through the same
 operating loop Claude Code and [Grok Build](grok-build.md) use — and lets the cheap
 sub-agent fleet in [`.cursor/agents/`](../.cursor/agents/README.md) (AL-213) build with
 real project context instead of a cold, clean context window.
 
 ## Transport: a direct match (no bridge)
 
-AgentLedger's MCP endpoint (`POST /api/mcp`) is **Streamable-HTTP compatible** — JSON-RPC
+Graphban's MCP endpoint (`POST /api/mcp`) is **Streamable-HTTP compatible** — JSON-RPC
 2.0, single-JSON responses, `X-API-Key` auth (see [mcp.md](mcp.md)). Cursor's remote MCP
 servers connect by `url` + `headers`, so Cursor talks **straight to `/api/mcp`** — no
 `mcp-remote` stdio bridge.
@@ -29,7 +29,7 @@ Cursor reads two config files; pick by who the config is for:
 ```json
 {
   "mcpServers": {
-    "agentledger": {
+    "graphban": {
       "url": "https://<your-host>/api/mcp",
       "headers": { "X-API-Key": "al_sk_…" }
     }
@@ -47,7 +47,7 @@ ready-to-paste the moment you create a key.
 
 ## 2. Verify
 
-Cursor **Settings → MCP** should list `agentledger` with its tools discovered. Then, in a
+Cursor **Settings → MCP** should list `graphban` with its tools discovered. Then, in a
 chat/agent, the model should be able to call **`get_context`** — it returns the key's project,
 scopes, and `readable_/writable_projects`. That round-trip is the handshake working:
 
@@ -83,12 +83,12 @@ planned AL-147 — complementary to the fleet.
 Cursor v3.11 added **Team MCP distribution**: a team admin registers a server **once** under
 **Dashboard → Integrations & MCP**, and it's automatically available to **cloud agents, the
 Agents Window, the IDE, and the CLI** — no per-developer setup, no config drift. This is the
-only way **cloud/background** agents get AgentLedger, because they use the *team*-configured
+only way **cloud/background** agents get Graphban, because they use the *team*-configured
 servers rather than your local session. Admins can **Add to Team Marketplace** for
 discoverability; Enterprise admins allowlist servers under **Team Settings → MCP Configuration**.
 
 **Prerequisite (not yet shippable):** Team registration needs a **reachable, authenticated
-AgentLedger URL** an admin can add — the org-scoped hosted endpoint (the local MCP proxy +
+Graphban URL** an admin can add — the org-scoped hosted endpoint (the local MCP proxy +
 org sync credential) tracked as **PRD-11 §D5 / AL-216**, which itself depends on the
 local-first hybrid (**AL-134**). Until that lands, use the **user-scope** path in §1 — it
 works today for local agents. Server-side org stamping and the tenant-isolation sweeps

@@ -37,7 +37,7 @@ dataset mirroring the design prototype:
 - 5 requests, 5 memory shards, a typed link graph, a roadmap, PRDs with version history.
 - Seeded MCP call counts and a platform config (offline stub provider; GitHub shown connected).
 
-The seeded users share the password `agentledger` (e.g. sign in as `alex@ascme-labs.com`) —
+The seeded users share the password `graphban` (e.g. sign in as `alex@ascme-labs.com`) —
 change it for any real deployment. To clear demo data later, set `SEED_ON_START=false` and
 either truncate the tables or run `docker compose down -v` to reset the volume, then sign up
 fresh.

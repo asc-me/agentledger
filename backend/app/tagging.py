@@ -68,7 +68,7 @@ def validate(tag: str) -> str:
 def _tokens(name: str) -> list[str]:
     """Split a project name on separators *and* camelCase boundaries.
 
-    ``AgentLedger`` -> ``[Agent, Ledger]``; ``glyphy-board`` -> ``[glyphy, board]``;
+    ``Graphban`` -> ``[Agent, Ledger]``; ``glyphy-board`` -> ``[glyphy, board]``;
     ``Republiq`` -> ``[Republiq]``. Acronyms stay whole: ``MCPBridge`` -> ``[MCP, Bridge]``.
     """
     out: list[str] = []
@@ -80,7 +80,7 @@ def _tokens(name: str) -> list[str]:
 def derive(name: str) -> str:
     """A plausible tag for a project name — a starting point, never the last word.
 
-    Multi-token names give initials (``AgentLedger`` -> ``AL``); a single token gives
+    Multi-token names give initials (``Graphban`` -> ``AL``); a single token gives
     its leading characters (``Republiq`` -> ``REPU``). Always returns something that
     passes ``validate``, so a caller that omits a tag still gets a usable one rather
     than an error.

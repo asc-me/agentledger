@@ -1,6 +1,6 @@
 # AI providers
 
-Every AI capability in AgentLedger sits behind a small **provider abstraction** so the app
+Every AI capability in Graphban sits behind a small **provider abstraction** so the app
 runs fully offline by default and swaps in real models without touching call sites.
 
 ## Three capabilities

@@ -20,7 +20,7 @@ def test_health_reports_git_sha_from_env(client, monkeypatch):
 
 
 def test_login_and_me(client):
-    r = client.post("/api/auth/login", json={"email": "alex@ascme-labs.com", "password": "agentledger"})
+    r = client.post("/api/auth/login", json={"email": "alex@ascme-labs.com", "password": "graphban"})
     assert r.status_code == 200
     tok = r.json()["access_token"]
     me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {tok}"})

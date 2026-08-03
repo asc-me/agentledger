@@ -8,7 +8,7 @@ _EDGES = [{"src": "a.py", "dst": "b.py", "type": "imports"}]
 
 
 def _login(client, email):
-    r = client.post("/api/auth/login", json={"email": email, "password": "agentledger"})
+    r = client.post("/api/auth/login", json={"email": email, "password": "graphban"})
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 
 
