@@ -6,8 +6,9 @@
 the claimed item's touchpoints, it surfaces a message so the agent double-checks it
 isn't colliding with another worker. Silent (fail-open) when nothing is claimed.
 
-The claim manifest is read from AGENTLEDGER_CLAIM_FILE
-(default `.cursor/agentledger-claim.json`) — see `.cursor/agentledger-claim.example.json`.
+The claim manifest is read from GRAPHBAN_CLAIM_FILE (or the older AGENTLEDGER_CLAIM_FILE)
+(default `.cursor/graphban-claim.json`, falling back to the older
+`.cursor/agentledger-claim.json`) — see `.cursor/graphban-claim.example.json`.
 A fuller version would query the live claim over MCP and block pre-edit once Cursor
 exposes a blocking file hook; that's a follow-up.
 
@@ -32,7 +33,7 @@ def rel_to_workspace(file_path, roots):
 
 
 def matches(rel, touchpoint):
-    """Match AgentLedger-style: exact, glob, or directory prefix."""
+    """Match Graphban-style: exact, glob, or directory prefix."""
     tp = (touchpoint or "").strip()
     if not tp:
         return False
@@ -45,7 +46,12 @@ def matches(rel, touchpoint):
 
 
 def load_manifest():
-    path = os.environ.get("AGENTLEDGER_CLAIM_FILE", ".cursor/agentledger-claim.json")
+    # Same dual-accept as the CLI config (AL-262): prefer the new name and path, fall
+    # back to the old ones, and never move or delete a file the operator already has.
+    path = os.environ.get("GRAPHBAN_CLAIM_FILE") or os.environ.get("AGENTLEDGER_CLAIM_FILE")
+    if not path:
+        candidates = (".cursor/graphban-claim.json", ".cursor/agentledger-claim.json")
+        path = next((c for c in candidates if Path(c).exists()), candidates[0])
     try:
         return json.loads(Path(path).read_text())
     except Exception:
@@ -70,7 +76,7 @@ def main():
     item = manifest.get("item_id", "the claimed item")
     print(json.dumps({
         "user_message": (
-            f"AgentLedger: edited {rel}, which is outside {item}'s touchpoints "
+            f"Graphban: edited {rel}, which is outside {item}'s touchpoints "
             f"({', '.join(touchpoints)}). Confirm you're not colliding with another "
             f"agent's work — or update the item's touchpoints if this is intended."
         )

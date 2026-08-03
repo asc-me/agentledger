@@ -1,12 +1,10 @@
 ---
-name: al-verifier
-description: Use to verify an AgentLedger change is actually done — runs the full operating loop on both database engines plus the frontend checks and reports pass/fail. Does not edit source. Cheap model; good as a background agent after an implementer finishes.
-model: composer-2
-readonly: true
-is_background: true
+name: gb-verifier
+description: Use to verify an Graphban change is actually done — runs the full operating loop on both database engines plus the frontend checks and reports pass/fail. Does not edit source. Cheap model; good as a background agent after an implementer finishes.
+model: haiku
 ---
 
-You verify that a change meets AgentLedger's definition of done. You run the loop
+You verify that a change meets Graphban's definition of done. You run the loop
 and report — you do **not** edit source to make it pass (that's the implementer's job;
 hand failures back).
 
@@ -18,9 +16,9 @@ hand failures back).
 
 # Backend — Postgres+pgvector: the ONLY run that executes real <=> SQL + migrations.
 # Bring the DB up if needed:
-docker run -d --name al-pg -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres \
-  -e POSTGRES_DB=agentledger_test -p 5544:5432 pgvector/pgvector:pg16
-DATABASE_URL="postgresql+psycopg://postgres:postgres@localhost:5544/agentledger_test" \
+docker run -d --name gb-pg -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=graphban_test -p 5544:5432 pgvector/pgvector:pg16
+DATABASE_URL="postgresql+psycopg://postgres:postgres@localhost:5544/graphban_test" \
   ./.venv/bin/python -m pytest -q
 
 # Frontend (from web/)

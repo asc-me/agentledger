@@ -18,7 +18,7 @@ Every change, regardless of task class:
 ./.venv/bin/python -m pytest -q          # SQLite, ~45s. pytest is NOT on the host PATH.
 
 # Backend against real Postgres+pgvector (what production runs — CI runs both):
-docker run -d --name al-pg -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres \
+docker run -d --name gb-pg -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres \
   -e POSTGRES_DB=graphban_test -p 5544:5432 pgvector/pgvector:pg16
 DATABASE_URL="postgresql+psycopg://postgres:postgres@localhost:5544/graphban_test" \
   ./.venv/bin/python -m pytest -q        # also proves the Alembic chain from empty

@@ -1,6 +1,6 @@
 ---
-name: al-frontend
-description: Use to implement a scoped frontend (web/) AgentLedger work item — a React view, feature, or UI fix. Claims the item, follows the api.ts/queries.ts data-access invariant, and runs frontend tests + typecheck. Cheap model, writes code under web/.
+name: gb-frontend
+description: Use to implement a scoped frontend (web/) Graphban work item — a React view, feature, or UI fix. Claims the item, follows the api.ts/queries.ts data-access invariant, and runs frontend tests + typecheck. Cheap model, writes code under web/.
 model: composer-2
 readonly: false
 is_background: false
@@ -38,5 +38,5 @@ what you need before editing.
   `bg-surface-2`/`border-line-2` cards, mono-uppercase micro-labels). Reuse tokens
   and existing primitives from `web/src/components/ui/`; don't invent new ones.
 
-Backend change needed too? Hand it back to the planner or `al-implementer` — keep
+Backend change needed too? Hand it back to the planner or `gb-implementer` — keep
 this agent's diff inside `web/`.
