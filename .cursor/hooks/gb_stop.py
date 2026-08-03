@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cursor `stop` hook — nudge the agent to close the AgentLedger loop.
+"""Cursor `stop` hook — nudge the agent to close the Graphban loop.
 
 When the agent loop finishes successfully, remind it to move its claimed item to
 review and capture lessons. `loop_limit` in hooks.json stops this from re-firing.

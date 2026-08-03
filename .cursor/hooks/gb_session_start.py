@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Cursor `sessionStart` hook — inject the AgentLedger operating loop into context.
+"""Cursor `sessionStart` hook — inject the Graphban operating loop into context.
 
 Cursor subagents start with a clean context window; this hook hands them the loop up
 front so a cheap model doesn't rediscover it. Always injects the static primer; if
-AGENTLEDGER_MCP_URL + AGENTLEDGER_API_KEY are set, it also pulls a live `get_context`
+GRAPHBAN_MCP_URL + GRAPHBAN_API_KEY are set (AGENTLEDGER_* still honoured), it also pulls a live `get_context`
 snapshot. Fail-open — any error still returns the primer.
 
 I/O (Cursor hooks contract): reads the baseline event JSON on stdin, writes
@@ -14,7 +14,7 @@ import os
 import sys
 import urllib.request
 
-PRIMER = """You are working this repo through AgentLedger (MCP). Follow the loop:
+PRIMER = """You are working this repo through Graphban (MCP). Follow the loop:
 1. get_context — orient (your project, scopes, what you can read/write). Call it FIRST.
 2. get_backlog / suggest_next / prd_coverage — find ready or specced-but-unbuilt work.
 3. claim_next (or next_cluster for a code-neighborhood) — atomically claim; two agents
@@ -26,8 +26,9 @@ colliding. Errors are typed: branch on structuredContent.error.code and read the
 
 
 def live_context():
-    url = os.environ.get("AGENTLEDGER_MCP_URL")
-    key = os.environ.get("AGENTLEDGER_API_KEY")
+    # New names first, old ones still honoured — an exported AGENTLEDGER_* keeps working.
+    url = os.environ.get("GRAPHBAN_MCP_URL") or os.environ.get("AGENTLEDGER_MCP_URL")
+    key = os.environ.get("GRAPHBAN_API_KEY") or os.environ.get("AGENTLEDGER_API_KEY")
     if not url or not key:
         return None
     body = json.dumps(

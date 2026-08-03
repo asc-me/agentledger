@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the AgentLedger sub-agent fleet (AL-213 / PRD-11 §D2).
+"""Generate the Graphban sub-agent fleet (AL-213 / PRD-11 §D2).
 
 Single source of truth for the agent roster. Emits identical agent-definition
 files to the three coding-agent toolchains that share the convention:
@@ -7,7 +7,7 @@ files to the three coding-agent toolchains that share the convention:
     .cursor/agents/   .claude/agents/   .codex/agents/
 
 The design: a non-frontier subagent starts with a clean context window, so the
-context AgentLedger hands it (via its MCP tools) is what lets a cheap model build
+context Graphban hands it (via its MCP tools) is what lets a cheap model build
 correctly. Frontier models plan and review; cheap models build.
 
 Anti-drift: the canonical project **invariants** are pulled verbatim from
@@ -91,7 +91,7 @@ def render_claude(role: dict) -> str:
     """`.claude/agents/*.md` — Markdown + Claude Code's subagent frontmatter.
 
     Claude Code has no per-agent `readonly`/`is_background` flag, and an explicit
-    `tools:` allowlist would strip the agent's AgentLedger MCP access — so tools are
+    `tools:` allowlist would strip the agent's Graphban MCP access — so tools are
     inherited and the read-only discipline lives in the prompt body (which already
     states it). `model` is Claude-native (`inherit` | `haiku`).
     """
@@ -138,17 +138,17 @@ RENDERERS = {
 
 ROSTER: list[dict] = [
     {
-        "name": "al-planner",
+        "name": "gb-planner",
         "description": (
-            "Use to pick and partition AgentLedger work before delegating. Selects "
+            "Use to pick and partition Graphban work before delegating. Selects "
             "ready items, computes non-colliding clusters so parallel workers don't "
-            "touch the same files, and hands each cluster to al-implementer / "
-            "al-frontend. Read-only; frontier model."
+            "touch the same files, and hands each cluster to gb-implementer / "
+            "gb-frontend. Read-only; frontier model."
         ),
         "tier": "frontier",
         "readonly": True,
         "is_background": False,
-        "body": """You are the planner for the AgentLedger fleet. You do **not** write code. You
+        "body": """You are the planner for the Graphban fleet. You do **not** write code. You
 decide *what* gets built, in *what order*, and *which work can run in parallel
 without colliding*, then delegate.
 
@@ -163,9 +163,9 @@ without colliding*, then delegate.
 3. For each item you intend to delegate, `get_item_details` to read the full spec,
    blockers, and linked memory, and `related_work` to see the code-neighborhood.
 4. Delegate one cluster member at a time:
-   - Frontend-only work (`web/**`) -> `al-frontend`.
-   - Everything else -> `al-implementer`.
-   - Open questions / "where does X live" -> `al-scout` first, fold the answer into
+   - Frontend-only work (`web/**`) -> `gb-frontend`.
+   - Everything else -> `gb-implementer`.
+   - Open questions / "where does X live" -> `gb-scout` first, fold the answer into
      the delegation prompt.
    Because subagents start with a **clean context window**, put everything the
    worker needs *in the delegation prompt*: the item id, the spec summary, the
@@ -183,9 +183,9 @@ without colliding*, then delegate.
   prediction, so the safe-to-parallelize set changes.""",
     },
     {
-        "name": "al-implementer",
+        "name": "gb-implementer",
         "description": (
-            "Use to implement one scoped backend/general AgentLedger work item "
+            "Use to implement one scoped backend/general Graphban work item "
             "end-to-end. Claims the item, reads its context, makes the change "
             "following the service-layer invariants, runs the full test loop on both "
             "DB engines, and moves it to review. Cheap model, writes code."
@@ -193,9 +193,9 @@ without colliding*, then delegate.
         "tier": "cheap",
         "readonly": False,
         "is_background": False,
-        "body": """You implement **one** AgentLedger work item, correctly, following the canonical
+        "body": """You implement **one** Graphban work item, correctly, following the canonical
 loop. You start with a clean context window — pull what you need from the
-AgentLedger MCP tools rather than guessing.
+Graphban MCP tools rather than guessing.
 
 ## Loop
 
@@ -214,10 +214,10 @@ AgentLedger MCP tools rather than guessing.
    # from backend/  (pytest is NOT on host PATH)
    ./.venv/bin/python -m pytest -q                     # SQLite, ~45s
    # Postgres+pgvector — the only run that executes real <=> SQL + migrations:
-   DATABASE_URL="postgresql+psycopg://postgres:postgres@localhost:5544/agentledger_test" \\
+   DATABASE_URL="postgresql+psycopg://postgres:postgres@localhost:5544/graphban_test" \\
      ./.venv/bin/python -m pytest -q
    ```
-   If you touched `web/`, delegate to `al-frontend` or run `pnpm test && pnpm typecheck`
+   If you touched `web/`, delegate to `gb-frontend` or run `pnpm test && pnpm typecheck`
    from `web/`.
 6. **Close out.** `update_item` -> `review` (or `blocked` with the reason if you hit
    a wall; `release_item` if abandoning). `extract_lessons` to capture anything the
@@ -242,9 +242,9 @@ Keep scope tight: one item, one coherent change. If the item is bigger than it
 looked, `update_item` with what you found and let the planner re-slice it.""",
     },
     {
-        "name": "al-frontend",
+        "name": "gb-frontend",
         "description": (
-            "Use to implement a scoped frontend (web/) AgentLedger work item — a React "
+            "Use to implement a scoped frontend (web/) Graphban work item — a React "
             "view, feature, or UI fix. Claims the item, follows the api.ts/queries.ts "
             "data-access invariant, and runs frontend tests + typecheck. Cheap model, "
             "writes code under web/."
@@ -284,13 +284,13 @@ what you need before editing.
   `bg-surface-2`/`border-line-2` cards, mono-uppercase micro-labels). Reuse tokens
   and existing primitives from `web/src/components/ui/`; don't invent new ones.
 
-Backend change needed too? Hand it back to the planner or `al-implementer` — keep
+Backend change needed too? Hand it back to the planner or `gb-implementer` — keep
 this agent's diff inside `web/`.""",
     },
     {
-        "name": "al-scout",
+        "name": "gb-scout",
         "description": (
-            "Use for read-only research on the AgentLedger codebase — \"where does X "
+            "Use for read-only research on the Graphban codebase — \"where does X "
             "live\", \"how does Y work\", \"what already touches Z\". Answers from the "
             "code map, code search, and memory without writing anything. Cheap "
             "long-context model; returns findings for the parent to act on."
@@ -298,7 +298,7 @@ this agent's diff inside `web/`.""",
         "tier": "cheap",
         "readonly": True,
         "is_background": False,
-        "body": """You answer a specific research question about the AgentLedger codebase and return
+        "body": """You answer a specific research question about the Graphban codebase and return
 findings. You **never** write code, claim items, or change tracker state.
 
 ## How to answer
@@ -324,9 +324,9 @@ Be specific over exhaustive. If the question is ambiguous, state the interpretat
 you answered and note the alternative.""",
     },
     {
-        "name": "al-verifier",
+        "name": "gb-verifier",
         "description": (
-            "Use to verify an AgentLedger change is actually done — runs the full "
+            "Use to verify an Graphban change is actually done — runs the full "
             "operating loop on both database engines plus the frontend checks and "
             "reports pass/fail. Does not edit source. Cheap model; good as a "
             "background agent after an implementer finishes."
@@ -334,7 +334,7 @@ you answered and note the alternative.""",
         "tier": "cheap",
         "readonly": True,
         "is_background": True,
-        "body": """You verify that a change meets AgentLedger's definition of done. You run the loop
+        "body": """You verify that a change meets Graphban's definition of done. You run the loop
 and report — you do **not** edit source to make it pass (that's the implementer's job;
 hand failures back).
 
@@ -346,9 +346,9 @@ hand failures back).
 
 # Backend — Postgres+pgvector: the ONLY run that executes real <=> SQL + migrations.
 # Bring the DB up if needed:
-docker run -d --name al-pg -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres \\
-  -e POSTGRES_DB=agentledger_test -p 5544:5432 pgvector/pgvector:pg16
-DATABASE_URL="postgresql+psycopg://postgres:postgres@localhost:5544/agentledger_test" \\
+docker run -d --name gb-pg -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres \\
+  -e POSTGRES_DB=graphban_test -p 5544:5432 pgvector/pgvector:pg16
+DATABASE_URL="postgresql+psycopg://postgres:postgres@localhost:5544/graphban_test" \\
   ./.venv/bin/python -m pytest -q
 
 # Frontend (from web/)
@@ -379,21 +379,21 @@ def render_readme(invariants: str) -> str:
         [
             "| Agent | Tier | Writes? | Role |",
             "| --- | --- | --- | --- |",
-            "| `al-planner`     | frontier | no  | Pick + partition **non-colliding** work; delegate to workers |",
-            "| `al-implementer` | cheap    | yes | Backend/general workhorse — claim -> build -> both-DB tests -> review |",
-            "| `al-frontend`    | cheap    | yes | `web/` specialization + frontend invariants |",
-            "| `al-scout`       | cheap    | no  | Read-only research — \"where does X live / how does Y work\" |",
-            "| `al-verifier`    | cheap    | no  | Runs the full operating loop, reports pass/fail |",
+            "| `gb-planner`     | frontier | no  | Pick + partition **non-colliding** work; delegate to workers |",
+            "| `gb-implementer` | cheap    | yes | Backend/general workhorse — claim -> build -> both-DB tests -> review |",
+            "| `gb-frontend`    | cheap    | yes | `web/` specialization + frontend invariants |",
+            "| `gb-scout`       | cheap    | no  | Read-only research — \"where does X live / how does Y work\" |",
+            "| `gb-verifier`    | cheap    | no  | Runs the full operating loop, reports pass/fail |",
         ]
     )
-    return f"""# AgentLedger sub-agent fleet (generated)
+    return f"""# Graphban sub-agent fleet (generated)
 
 {GENERATED_NOTE}
 
 ## The idea: context is what lets cheap models build
 
 A non-frontier subagent starts in a **clean context window** — it can't backfill
-missing project knowledge the way a frontier model does. AgentLedger's MCP tools
+missing project knowledge the way a frontier model does. Graphban's MCP tools
 hand it exactly the context it needs (item spec, related work, code map, memory)
 at a tight token footprint, so the cheap model can build correctly. **Frontier
 models plan and review; cheap models build.**
@@ -405,10 +405,10 @@ Each toolchain gets a **native** file — same prompt body, that tool's own form
 | Tool | Role file | Tier → model knob | Read-only via |
 | --- | --- | --- | --- |
 | Cursor      | `.cursor/agents/*.md` (frontmatter) | `inherit` / `composer-2`              | `readonly: true` |
-| Claude Code | `.claude/agents/*.md` (frontmatter) | `inherit` / `haiku`                   | prompt body — tools inherit so the AgentLedger MCP stays available |
+| Claude Code | `.claude/agents/*.md` (frontmatter) | `inherit` / `haiku`                   | prompt body — tools inherit so the Graphban MCP stays available |
 | Codex       | `.codex/agents/*.toml` (TOML role)  | `model_reasoning_effort` `high`/`low` | `sandbox_mode = "read-only"` |
 
-`al-planner` stays frontier (`inherit`) so it rides whatever strong model the human
+`gb-planner` stays frontier (`inherit`) so it rides whatever strong model the human
 is driving; the workers pin to the cheap tier. Repin a tier in the `CURSOR_MODEL` /
 `CLAUDE_MODEL` / `CODEX_EFFORT` maps in `scripts/gen_subagents.py` — the bodies never
 change.
@@ -419,7 +419,7 @@ change.
 for touchpoints -> implement one scoped change -> **run the operating loop (both DB
 engines)** -> `update_item` to `review` -> `extract_lessons`. `heartbeat` while
 working; `release_item` if abandoning. The claim is the lease that keeps parallel
-workers off each other's files — `al-planner` only fans out clusters that don't
+workers off each other's files — `gb-planner` only fans out clusters that don't
 overlap.
 
 ## Non-negotiables (verbatim from AGENTS.md — every agent obeys)

@@ -101,7 +101,8 @@ MCP exposes the tools; **hooks** supply the *when*. This repo ships
 handlers in [`.cursor/hooks/`](../.cursor/hooks/README.md):
 
 - **`sessionStart`** injects the operating-loop primer into context (plus a live
-  `get_context` snapshot when `AGENTLEDGER_MCP_URL`/`AGENTLEDGER_API_KEY` are set) — the
+  `get_context` snapshot when `GRAPHBAN_MCP_URL`/`GRAPHBAN_API_KEY` are set — the
+  older `AGENTLEDGER_*` names are still honoured) — the
   biggest lever for a cheap model starting cold.
 - **`afterFileEdit`** warns when an edit lands outside the claimed item's touchpoints
   (best-effort — the hook fires post-edit and can't block).

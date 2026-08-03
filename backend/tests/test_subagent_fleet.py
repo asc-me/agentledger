@@ -36,20 +36,20 @@ def test_each_toolchain_gets_its_native_format():
     files = gen.render_files()
 
     # Cursor: Markdown + Cursor frontmatter (model/readonly/is_background).
-    cur = files[".cursor/agents/al-implementer.md"]
+    cur = files[".cursor/agents/gb-implementer.md"]
     assert cur.startswith("---\n")
     assert "model: composer-2" in cur and "readonly: false" in cur and "is_background:" in cur
 
     # Claude Code: Markdown + Claude frontmatter — native model, and NONE of the
     # Cursor-only fields (which Claude Code would not understand).
-    cl = files[".claude/agents/al-implementer.md"]
+    cl = files[".claude/agents/gb-implementer.md"]
     assert cl.startswith("---\n")
     assert "model: haiku" in cl
     assert "readonly:" not in cl and "is_background:" not in cl and "composer-2" not in cl
 
     # Codex: a TOML role file, not Markdown — no stale .md emitted for Codex.
-    assert ".codex/agents/al-implementer.md" not in files
-    cx = files[".codex/agents/al-implementer.toml"]
+    assert ".codex/agents/gb-implementer.md" not in files
+    cx = files[".codex/agents/gb-implementer.toml"]
     assert "developer_instructions = '''" in cx and 'model_reasoning_effort = "low"' in cx
 
 
@@ -65,8 +65,8 @@ def test_prompt_body_is_shared_across_toolchains():
 
 def test_readonly_maps_to_each_tools_native_control():
     gen = _load_generator()
-    scout = next(r for r in gen.ROSTER if r["name"] == "al-scout")  # read-only
-    impl = next(r for r in gen.ROSTER if r["name"] == "al-implementer")  # writer
+    scout = next(r for r in gen.ROSTER if r["name"] == "gb-scout")  # read-only
+    impl = next(r for r in gen.ROSTER if r["name"] == "gb-implementer")  # writer
 
     assert "readonly: true" in gen.render_cursor(scout)
     assert "readonly: false" in gen.render_cursor(impl)
