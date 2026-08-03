@@ -1,4 +1,4 @@
-"""SQLAlchemy models for AgentLedger.
+"""SQLAlchemy models for Graphban.
 
 Kept in one module for the core slice; split out later if it grows.
 """
@@ -477,7 +477,7 @@ class CodeNode(Base):
     LLM-written summary, embedded for semantic search over structure.
 
     The *producer* is normally the external coding agent (it has the repo in context);
-    AgentLedger's connected LLM is the *consumer* that reasons over what's stored. Keyed
+    Graphban's connected LLM is the *consumer* that reasons over what's stored. Keyed
     by (project_id, path) so a re-describe upserts. `content_hash` + `fresh` are the
     staleness handle: when a file's hash changes, the agent re-describes and the node is
     marked fresh again; a `prune` pass marks nodes it no longer saw as stale (fresh=False).
@@ -686,7 +686,7 @@ class CodeSyncState(Base):
 
 class SyncLink(Base):
     """Instance-wide link to a cloud tenant (AL-141) — the web-managed counterpart of the
-    `agentledger link` CLI. A self-hosted box pushes its code graph to `cloud_url`,
+    `graphban link` CLI. A self-hosted box pushes its code graph to `cloud_url`,
     authenticating with a `sync`-scoped org key held encrypted at rest (`api_key_enc`, the
     same Fernet-at-rest as provider BYOK keys). Singleton (`id="instance"`); a blank
     `cloud_url` means not linked — a pure local-only tool that never reaches out (the D2
@@ -720,7 +720,7 @@ class IdempotencyKey(Base):
 class Event(Base):
     """Append-only audit log: who did what, when (AL-43). One row per accepted
     mutation, written at the boundary (MCP dispatcher + REST) so the actor's
-    identity is captured — the ledger in AgentLedger."""
+    identity is captured — the ledger in Graphban."""
 
     __tablename__ = "events"
 

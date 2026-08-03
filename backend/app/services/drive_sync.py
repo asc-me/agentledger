@@ -74,7 +74,7 @@ def parse_front_matter_id(content: str) -> str | None:
     if not m:
         return None
     fm = m.group(1)
-    idm = re.search(r"agentledger_id:\s*(\S+)", fm)
+    idm = re.search(r"graphban_id:\s*(\S+)", fm)
     return idm.group(1) if idm else None
 
 
@@ -90,10 +90,10 @@ def extract_title(body: str) -> str:
 
 
 def render(prd) -> str:
-    """PRD → file content with an AgentLedger front-matter block."""
+    """PRD → file content with an Graphban front-matter block."""
     fm = (
         "---\n"
-        f"agentledger_id: {prd.id}\n"
+        f"graphban_id: {prd.id}\n"
         f"title: {prd.title}\n"
         f"status: {prd.status}\n"
         f"version: {prd.version}\n"

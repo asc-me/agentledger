@@ -1,6 +1,6 @@
-# AgentLedger — agent guide
+# Graphban — agent guide
 
-AgentLedger is an agent-native dev tool: linear tracker + pgvector agent memory +
+Graphban is an agent-native dev tool: linear tracker + pgvector agent memory +
 request triage + a code-structure graph, all operable by coding agents through
 32 MCP tools (`POST /api/mcp`, JSON-RPC) that share one service layer with the
 REST API and web UI. Local-Docker-first; stays fully offline by default (stub
@@ -106,6 +106,6 @@ mount); verify the exact revision went live via `/health` (`git_sha` + `db`).
 
 ## Tracker
 
-This repo tracks its own work in AgentLedger (project `agentledger`). Current
+This repo tracks its own work in Graphban (project `graphban`). Current
 priorities and the 2026-07 harness-review findings are items AL-40…AL-57 —
 `get_backlog` / the Tracker view are the source of truth.

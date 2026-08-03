@@ -6,7 +6,7 @@ export function inlineSnippet(embedUrl: string): string {
   width="440" height="520" style="border:0;max-width:100%" title="Feedback"></iframe>
 <script>
 window.addEventListener('message',function(e){
-  var d=e.data; if(d&&d.__agentledger&&d.type==='resize'){
+  var d=e.data; if(d&&d.__graphban&&d.type==='resize'){
     var f=document.getElementById('al-feedback'); if(f) f.style.height=(d.height+4)+'px';
   }
 });
@@ -36,7 +36,7 @@ export function launcherSnippet(embedUrl: string, cfg: FeedbackConfig): string {
   }
   function close(){ if(frame){frame.remove();frame=null;} open=false; }
   function onMsg(e){
-    var d=e.data; if(!d||!d.__agentledger) return;
+    var d=e.data; if(!d||!d.__graphban) return;
     if(d.type==='resize'&&frame){ frame.style.height=Math.min(d.height+4, innerHeight-110)+'px'; }
     if(d.type==='submitted'){ setTimeout(close,1800); }
   }

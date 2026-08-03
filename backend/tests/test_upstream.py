@@ -1,4 +1,4 @@
-"""Upstream 'Report an issue with AgentLedger' — forwards a user/agent report to the
+"""Upstream 'Report an issue with Graphban' — forwards a user/agent report to the
 maintainer's intake. httpx is mocked so nothing leaves the test process."""
 import json as _json
 
@@ -55,9 +55,11 @@ def test_upstream_report_forwards(client, auth, monkeypatch):
     assert body["ok"] is True and body["request_id"] == "R-42"
     # forwarded to the configured upstream project with the right shape
     sent = _fake_post.last["json"]
+    # Frozen until tier 3: this is a project id on the separate feedback.asc-me.dev
+    # instance, so renaming it here would break report routing.
     assert sent["project_id"] == "agentledger"
     assert sent["type"] == "bug"
-    assert sent["source_url"] == "agentledger:in-app"
+    assert sent["source_url"] == "graphban:in-app"
 
 
 def test_upstream_report_requires_auth(client):
@@ -78,4 +80,4 @@ def test_mcp_report_agentledger_issue(client, auth, monkeypatch):
                {"type": "feature", "title": "Add a dark-mode toggle", "detail": "…"})
     assert out["ok"] is True and out["request_id"] == "R-42"
     assert out["target"] == "feedback.asc-me.dev"
-    assert _fake_post.last["json"]["source_url"] == "agentledger:mcp-agent"
+    assert _fake_post.last["json"]["source_url"] == "graphban:mcp-agent"

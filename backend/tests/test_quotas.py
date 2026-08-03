@@ -9,7 +9,7 @@ import pytest
 from app.services import quotas
 
 
-def _login(client, email, password="agentledger"):
+def _login(client, email, password="graphban"):
     r = client.post("/api/auth/login", json={"email": email, "password": password})
     assert r.status_code == 200, r.text
     return {"Authorization": f"Bearer {r.json()['access_token']}"}

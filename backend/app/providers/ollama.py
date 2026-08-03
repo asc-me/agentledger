@@ -12,7 +12,7 @@ import httpx
 
 from app.config import settings
 
-logger = logging.getLogger("agentledger.providers.ollama")
+logger = logging.getLogger("graphban.providers.ollama")
 
 
 def _timeout() -> httpx.Timeout:

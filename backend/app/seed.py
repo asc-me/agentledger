@@ -1,4 +1,4 @@
-"""Seed the database with the AgentLedger design prototype's dataset.
+"""Seed the database with the Graphban design prototype's dataset.
 
 Idempotent: only runs when the DB has no users. All seeded users share the
 password below (dev convenience — change for any real deployment).
@@ -26,11 +26,11 @@ from app.models import (
 )
 from app.security.passwords import hash_password
 
-SEED_PASSWORD = "agentledger"
+SEED_PASSWORD = "graphban"
 
 PROJECTS = [
     dict(id="core", name="Core Platform", tag="CP", accent="#c6f24e", visibility="private",
-         description="AgentLedger itself — the agent-native tracker + memory core.",
+         description="Graphban itself — the agent-native tracker + memory core.",
          share_global_memory=True, auto_extract=True, mcp_enabled=True, embed_model="text-embedding-3-small"),
     dict(id="web", name="Web App", tag="WA", accent="#7ca2ff", visibility="private",
          description="Marketing site + hosted dashboard for agentldgr.dev.",
@@ -142,9 +142,9 @@ MCP_STATS = {
 }
 
 PRDS = [
-    dict(id="PRD-1", title="AgentLedger Core MVP", status="approved", version="v1.0", updated="Jul 20",
+    dict(id="PRD-1", title="Graphban Core MVP", status="approved", version="v1.0", updated="Jul 20",
          linked=["AL-04", "AL-08", "AL-12", "AL-15"],
-         body="# AgentLedger Core MVP\n\n## Overview\nAgent-native tracker combining persistent memory with a skinny linear tracker and native MCP tools.\n\n## Goals\n- Single source of truth for dev items, decisions, and feedback\n- Let agents read/write context via MCP\n- Reduce context loss across projects\n\n## Key Features\n- Linear tracker with drag reorder\n- pgvector memory + semantic search\n- Feature/bug request queue\n\n## Success Metrics\n- Daily usage by creator on 1-2 projects\n- 8+ stable MCP tools\n\n## Risks\n- Embedding model choice (local vs API)\n- Self-host complexity",
+         body="# Graphban Core MVP\n\n## Overview\nAgent-native tracker combining persistent memory with a skinny linear tracker and native MCP tools.\n\n## Goals\n- Single source of truth for dev items, decisions, and feedback\n- Let agents read/write context via MCP\n- Reduce context loss across projects\n\n## Key Features\n- Linear tracker with drag reorder\n- pgvector memory + semantic search\n- Feature/bug request queue\n\n## Success Metrics\n- Daily usage by creator on 1-2 projects\n- 8+ stable MCP tools\n\n## Risks\n- Embedding model choice (local vs API)\n- Self-host complexity",
          versions=[
              dict(version="v1.0", date="Jul 20", note="Approved for build. Locked MVP scope."),
              dict(version="v0.3", date="Jul 12", note="Added success metrics and MCP tool list."),
@@ -230,7 +230,7 @@ def seed(db: Session) -> bool:
         local_base_url="http://localhost:11434", local_model="llama3.1:8b",
         cloud_provider="anthropic", cloud_model="claude-opus-4-8",
         github_connected=True, github_account="ascme-labs",
-        github_repo="ascme-labs/agentledger", github_scope="repo · read/write",
+        github_repo="ascme-labs/graphban", github_scope="repo · read/write",
         gdrive_connected=False,
         # The demo roadmap is meant to be public; a stable token keeps the embed link
         # working. Freshly-created projects stay private until they opt in (AL-73).

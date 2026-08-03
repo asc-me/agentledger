@@ -7,7 +7,7 @@ def test_platform_config_seeded(client, auth):
     cfg = client.get("/api/platform", headers=auth).json()
     assert cfg["llm_mode"] == "stub"
     assert cfg["github_connected"] is True
-    assert cfg["github_repo"] == "ascme-labs/agentledger"
+    assert cfg["github_repo"] == "ascme-labs/graphban"
     assert cfg["cloud_model"] == "claude-opus-4-8"
 
 
@@ -40,7 +40,7 @@ def test_github_create_issue_creates_item(client, auth):
     ).json()
     assert tagging.parse(r["item"]["id"])[1] == "item"  # <TAG>-<n>, not the old AL- (PRD-13)
     assert r["pushed_to_github"] is False
-    assert "ascme-labs/agentledger" in r["detail"]  # connected repo named
+    assert "ascme-labs/graphban" in r["detail"]  # connected repo named
 
 
 def test_gdrive_connect(client, auth):

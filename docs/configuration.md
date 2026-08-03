@@ -8,7 +8,7 @@ Configuration is via environment variables. In Docker, set them in `.env` (copy 
 
 | Var | Default | Notes |
 | --- | --- | --- |
-| `DATABASE_URL` | `postgresql+psycopg://agentledger:agentledger@localhost:5432/agentledger` | Use `sqlite:///./dev.db` for zero-infra dev. Postgres runs Alembic migrations; SQLite uses `create_all`. |
+| `DATABASE_URL` | `postgresql+psycopg://graphban:graphban@localhost:5432/graphban` | Use `sqlite:///./dev.db` for zero-infra dev. Postgres runs Alembic migrations; SQLite uses `create_all`. |
 
 ## Auth
 
@@ -63,13 +63,13 @@ the `api` service.
 
 ## Wire names during the Graphban rename
 
-The product is being renamed from AgentLedger to Graphban. Every wire-facing name accepts
+The product is being renamed from Graphban to Graphban. Every wire-facing name accepts
 **both** forms, and nothing that was ever valid stops working:
 
 | Surface | Produced now | Old — still accepted |
 | --- | --- | --- |
 | API key prefix | `gb_sk_` | `al_sk_` |
-| CLI console script | `graphban` (both installed) | `agentledger` |
+| CLI console script | `graphban` (both installed) | `graphban` |
 | CLI config | written to `~/.graphban/config.json`, `GRAPHBAN_CONFIG` | read from `~/.agentledger/config.json`, `AGENTLEDGER_CONFIG` |
 | MCP server name | `graphban` | — (the `mcp__*` tool namespace comes from *your* client config key, not from the server) |
 | Upstream report tool | `report_graphban_issue` | `report_agentledger_issue` (dispatches, not advertised) |

@@ -4,7 +4,7 @@ A queryable map of the code itself — `CodeNode`s (module/file/symbol, each wit
 embedded summary) joined by typed `CodeEdge`s (imports/calls/owns/tested_by/references).
 
 The producer is normally the *external coding agent* via the MCP `describe_code` tool:
-it has the real repo in context, so it describes structure as ground truth. AgentLedger's
+it has the real repo in context, so it describes structure as ground truth. Graphban's
 connected LLM is the *consumer* — `search_code` / `neighbors` / `get_code_map` are what it
 (and the UI) read to reason about the codebase without holding a checkout.
 

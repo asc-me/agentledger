@@ -38,7 +38,8 @@ def test_validate_normalizes_case():
 @pytest.mark.parametrize(
     "name,expected",
     [
-        ("AgentLedger", "AL"),      # camelCase -> initials
+        ("AgentLedger", "AL"),   # camelCase -> initials; what 0038 derived in production
+        ("Graphban", "GRAP"),    # single token -> leading characters
         ("glyphy-board", "GB"),     # hyphenated -> initials
         ("Super-Arc", "SA"),
         ("SolaScriptura", "SS"),

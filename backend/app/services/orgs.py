@@ -190,10 +190,10 @@ def create_invite(db: Session, org: Organization, email: str, role: str, inviter
 
 def _send_invite_email(invite: OrgInvite, org: Organization, inviter: User) -> None:
     link = f"{settings.app_base_url.rstrip('/')}/invite/{invite.token}"
-    subject = f"You're invited to join {org.name} on AgentLedger"
+    subject = f"You're invited to join {org.name} on Graphban"
     who = inviter.name or inviter.handle or "A teammate"
     text = (
-        f"{who} invited you to join the “{org.name}” organization on AgentLedger "
+        f"{who} invited you to join the “{org.name}” organization on Graphban "
         f"as {invite.role}.\n\n"
         f"Accept your invitation:\n{link}\n\n"
         f"This link expires in {settings.invite_expiry_days} days. If you didn't expect "
@@ -248,10 +248,10 @@ def create_platform_invite(db: Session, email: str, plan: str | None, inviter: U
 
 def _send_platform_invite_email(invite: OrgInvite, inviter: User) -> None:
     link = f"{settings.app_base_url.rstrip('/')}/invite/{invite.token}"
-    subject = "You're invited to AgentLedger"
-    who = inviter.name or inviter.handle or "The AgentLedger team"
+    subject = "You're invited to Graphban"
+    who = inviter.name or inviter.handle or "The Graphban team"
     text = (
-        f"{who} invited you to AgentLedger.\n\n"
+        f"{who} invited you to Graphban.\n\n"
         f"Create your account and set up your organization:\n{link}\n\n"
         f"This link expires in {settings.invite_expiry_days} days. If you didn't expect "
         f"this, you can ignore this email."

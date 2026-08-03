@@ -1,6 +1,6 @@
 # Tracker
 
-The Tracker is the heart of AgentLedger: **one linear stream** of work items ordered by
+The Tracker is the heart of Graphban: **one linear stream** of work items ordered by
 priority and recency — no boards, no columns. It's the landing view.
 
 ## Item model

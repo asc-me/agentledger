@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "agentledger": {
+    "graphban": {
       "url": "http://localhost:8000/api/mcp",
       "headers": { "X-API-Key": "al_sk_REPLACE_ME" }
     }

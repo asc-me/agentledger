@@ -38,7 +38,7 @@ export function TopBar({
       <div className="flex items-center gap-2.5">
         <LogoMark />
         <div className="leading-none">
-          <div className="text-[15px] font-bold tracking-tight">AgentLedger</div>
+          <div className="text-[15px] font-bold tracking-tight">Graphban</div>
           <div className="mt-0.5 font-mono text-[9.5px] tracking-[0.6px] text-faint">
             AGENT MEMORY · LINEAR EXECUTION
           </div>

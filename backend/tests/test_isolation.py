@@ -14,7 +14,7 @@ import pytest
 
 
 def _login(client, email):
-    r = client.post("/api/auth/login", json={"email": email, "password": "agentledger"})
+    r = client.post("/api/auth/login", json={"email": email, "password": "graphban"})
     assert r.status_code == 200, r.text
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 
@@ -25,7 +25,7 @@ def _register(client):
     r = client.post(
         "/api/auth/register",
         json={"name": "Stranger", "email": f"{handle}@example.com",
-              "handle": handle, "password": "agentledger"},
+              "handle": handle, "password": "graphban"},
     )
     assert r.status_code in (200, 201), r.text
     return {"Authorization": f"Bearer {r.json()['access_token']}"}

@@ -15,7 +15,7 @@ const TYPES = [
 ] as const;
 
 /**
- * "Report an issue with AgentLedger" — the in-app, user-initiated side of the upstream
+ * "Report an issue with Graphban" — the in-app, user-initiated side of the upstream
  * feedback channel. Forwards a bug/idea about the tool itself to the maintainer's intake,
  * showing where it goes (transparency — never silent).
  */
@@ -50,8 +50,8 @@ export function ReportIssueDialog({ open, onOpenChange }: { open: boolean; onOpe
     <Dialog open={open} onOpenChange={close}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Report an issue with AgentLedger</DialogTitle>
-          <DialogDescription>A bug or idea about AgentLedger itself — not your project's work.</DialogDescription>
+          <DialogTitle>Report an issue with Graphban</DialogTitle>
+          <DialogDescription>A bug or idea about Graphban itself — not your project's work.</DialogDescription>
         </DialogHeader>
 
         {done ? (
@@ -105,7 +105,7 @@ export function ReportIssueDialog({ open, onOpenChange }: { open: boolean; onOpe
                 {cfg?.target ? (
                   <>Sends to <span className="font-mono text-muted">{cfg.target}</span></>
                 ) : (
-                  "Sends to the AgentLedger maintainers"
+                  "Sends to the Graphban maintainers"
                 )}
               </span>
               <Button size="sm" type="submit" disabled={!title.trim() || submit.isPending}>

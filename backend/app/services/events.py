@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.models import ApiKey, Event, User
 
-logger = logging.getLogger("agentledger.events")
+logger = logging.getLogger("graphban.events")
 
 
 def record(

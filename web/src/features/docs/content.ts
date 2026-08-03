@@ -24,8 +24,8 @@ export interface DocEntry {
 }
 
 const DEFAULT: DocEntry = {
-  badge: "AGENTLEDGER",
-  title: "AgentLedger",
+  badge: "GRAPHBAN",
+  title: "Graphban",
   tagline: "Agent memory. Linear execution.",
   sections: [
     { num: 1, h: "One linear stream", b: "Work lives in a single priority-ordered tracker, not boards. The left nav switches between the workspace views." },

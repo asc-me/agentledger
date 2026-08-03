@@ -39,12 +39,12 @@ function renderSettings() {
 }
 
 describe("SyncCredentialInstall", () => {
-  it("builds the agentledger link command with the pinned project", () => {
+  it("builds the graphban link command with the pinned project", () => {
     const { container } = render(<SyncCredentialInstall apiKey="al_sk_secret" projectId="core" />);
     // The <pre> is the copy target; prose elsewhere also mentions the command.
     const pre = container.querySelector("pre");
     // The exact flags matter — this is copy-pasted verbatim into a terminal.
-    expect(pre?.textContent).toContain("agentledger link");
+    expect(pre?.textContent).toContain("graphban link");
     expect(pre?.textContent).toContain("--api-key al_sk_secret");
     expect(pre?.textContent).toContain("--project core");
     expect(pre?.textContent).toContain("--cloud-url");
@@ -86,7 +86,7 @@ describe("minting a sync credential", () => {
     await user.click(screen.getByRole("button", { name: /Mint credential/ }));
 
     await waitFor(() =>
-      expect(document.querySelector("pre")?.textContent).toContain("agentledger link"),
+      expect(document.querySelector("pre")?.textContent).toContain("graphban link"),
     );
     expect(screen.queryByText(/Connect an agent · MCP/)).not.toBeInTheDocument();
   });

@@ -1,4 +1,4 @@
-# AgentLedger
+# Graphban
 
 **Agent memory. Linear execution.**
 
@@ -11,7 +11,7 @@ path* as the web app.
 API keys, no external services required. Cloud/local LLM providers and integrations are
 opt-in. A hosted multi-tenant service is a later, additive layer.
 
-> Built from the `AgentLedger.dc.html` design prototype. Design tokens (dark-only, lime
+> Built from the `Graphban.dc.html` design prototype. Design tokens (dark-only, lime
 > `#c6f24e` / purple `#a78bfa`, IBM Plex) and the optional demo dataset mirror the prototype.
 > **Full documentation is in [`docs/`](docs/README.md)** — product overview, per-feature
 > guides, architecture, API reference, and the phase-by-phase implementation plan.
@@ -54,7 +54,7 @@ starts **empty**. Open the web app, **Create an account**, then **Create your fi
 To explore a populated app instead, set `SEED_ON_START=true` before the first `docker compose
 up` — it loads a demo dataset (9 items, 5 requests, 5 memory shards, 3 PRDs with history, a
 typed link graph, a roadmap, MCP call counts, and platform config; seeded users share the
-password `agentledger`). See [Getting started](docs/getting-started.md).
+password `graphban`). See [Getting started](docs/getting-started.md).
 
 ## AI providers (F1)
 
@@ -110,7 +110,7 @@ uv venv --python 3.12 .venv && source .venv/bin/activate
 uv pip install -e ".[dev]"
 export DATABASE_URL="sqlite:///./dev.db"     # zero-infra; create_all + seed on boot
 # …or Postgres (runs Alembic migrations):
-# export DATABASE_URL="postgresql+psycopg://agentledger:agentledger@localhost:5432/agentledger"
+# export DATABASE_URL="postgresql+psycopg://graphban:graphban@localhost:5432/graphban"
 uvicorn app.main:app --reload
 pytest            # full backend suite
 ```

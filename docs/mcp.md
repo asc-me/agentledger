@@ -1,6 +1,6 @@
 # MCP tools
 
-AgentLedger exposes a **Model Context Protocol** surface so agents can read and write project
+Graphban exposes a **Model Context Protocol** surface so agents can read and write project
 context. The key property: **MCP tools call the same service layer as the web app**, so an
 agent's writes are identical to a user's and appear instantly in the UI.
 
@@ -49,7 +49,7 @@ config lives:
 
 ```yaml
 mcp_servers:
-  agentledger:
+  graphban:
     url: "https://<your-host>/api/mcp"
     headers:
       X-API-Key: "al_sk_…"
@@ -57,13 +57,13 @@ mcp_servers:
 ```
 
 **OpenClaw** — add under `mcp.servers` in `~/.openclaw/openclaw.json` (or one-shot via
-`openclaw mcp set agentledger '<json>'`), then verify with `openclaw mcp doctor --probe`:
+`openclaw mcp set graphban '<json>'`), then verify with `openclaw mcp doctor --probe`:
 
 ```json
 {
   "mcp": {
     "servers": {
-      "agentledger": {
+      "graphban": {
         "url": "https://<your-host>/api/mcp",
         "transport": "streamable-http",
         "headers": { "X-API-Key": "al_sk_…" }
@@ -177,7 +177,7 @@ joined by typed **edges** (`imports` / `calls` / `owns` / `tested_by` / `referen
 
 - **Producer / consumer split.** The external **coding agent is the producer** — it has the
   real repo in context, so it's the source of truth. It calls `describe_code(nodes, edges)`
-  as a byproduct of the work it's already doing. AgentLedger's **connected LLM is the
+  as a byproduct of the work it's already doing. Graphban's **connected LLM is the
   consumer** — `search_code`, `code_neighbors`, and `get_code_map` are what it (and the UI)
   read to reason about the codebase without holding a checkout. `POST /api/agent/code` is
   that consumer wired up: it grounds the ChatModel in the graph to answer codebase questions

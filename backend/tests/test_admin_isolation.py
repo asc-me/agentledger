@@ -16,7 +16,7 @@ through the normal tenant APIs.
 """
 import pytest
 
-SEED_PW = "agentledger"
+SEED_PW = "graphban"
 ADMIN_EMAIL = "alex@ascme-labs.com"
 
 # Distinctive strings planted in tenant content; none may ever appear in an admin response.

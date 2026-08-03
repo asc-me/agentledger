@@ -1,17 +1,17 @@
-# Using AgentLedger with Grok Build
+# Using Graphban with Grok Build
 
 [Grok Build](https://docs.x.ai/build) is xAI's agentic coding CLI (`grok`). It's an MCP
-*client*, so it can drive AgentLedger's tools directly — the same operating loop Claude Code
+*client*, so it can drive Graphban's tools directly — the same operating loop Claude Code
 and Cursor use. This guide connects it and primes it on the loop.
 
 ## Transport: a direct match (no bridge)
 
-AgentLedger's MCP endpoint (`POST /api/mcp`) is **Streamable-HTTP compatible** — JSON-RPC 2.0,
+Graphban's MCP endpoint (`POST /api/mcp`) is **Streamable-HTTP compatible** — JSON-RPC 2.0,
 single-JSON responses, `X-API-Key` auth (see [mcp.md](mcp.md)). Grok Build accepts
 **Streamable HTTP or SSE** transports and, per xAI's docs, *not* stdio. The two match, so Grok
 Build connects **straight to `/api/mcp`** — no `mcp-remote` stdio bridge.
 
-> AgentLedger returns single-JSON responses (no SSE server-push); that's the request/response
+> Graphban returns single-JSON responses (no SSE server-push); that's the request/response
 > half of Streamable HTTP, which is all tool calls need — streamable-HTTP clients already
 > connect this way (e.g. OpenClaw). Grok Build is 0.1 beta, so run `grok mcp doctor` (below) to
 > confirm on your version.
@@ -22,7 +22,7 @@ Mint a key in **Settings → API Keys** (scoped to your project — the plaintex
 Then, using the documented `grok mcp add`:
 
 ```bash
-grok mcp add --transport http agentledger https://<your-host>/api/mcp \
+grok mcp add --transport http graphban https://<your-host>/api/mcp \
   --header "X-API-Key: al_sk_…"
 ```
 
@@ -37,7 +37,7 @@ repo. Never commit a real key — ship a `.mcp.json.example`:
 ```json
 {
   "mcpServers": {
-    "agentledger": {
+    "graphban": {
       "url": "https://<your-host>/api/mcp",
       "transport": "streamable-http",
       "headers": { "X-API-Key": "al_sk_…" }
@@ -49,8 +49,8 @@ repo. Never commit a real key — ship a `.mcp.json.example`:
 ## 2. Verify
 
 ```bash
-grok mcp list                 # agentledger should be listed
-grok mcp doctor agentledger   # diagnoses config + connectivity
+grok mcp list                 # graphban should be listed
+grok mcp doctor graphban   # diagnoses config + connectivity
 grok inspect                  # shows the MCP servers / skills / hooks Grok discovered
 ```
 
@@ -66,7 +66,7 @@ repo's agent rules — Grok Build reads project instructions) that teaches the c
 session doesn't rediscover it each time:
 
 ```markdown
-# Working this repo via AgentLedger (MCP)
+# Working this repo via Graphban (MCP)
 
 Call `get_context` FIRST — it names your project, scopes, and what you can read/write.
 

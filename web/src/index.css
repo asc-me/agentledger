@@ -1,7 +1,7 @@
 /* IBM Plex fonts are self-hosted via @fontsource (imported in main.tsx) — no runtime CDN fetch. */
 @import "tailwindcss";
 
-/* ---- AgentLedger design tokens (dark-only, from AgentLedger.dc.html) ---- */
+/* ---- Graphban design tokens (dark-only, from Graphban.dc.html) ---- */
 @theme {
   --font-sans: "IBM Plex Sans", system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;

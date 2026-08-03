@@ -258,6 +258,6 @@ def test_retag_never_moves_a_stored_id(client, auth, retagged):
 
 def _login(client) -> dict:
     r = client.post(
-        "/api/auth/login", json={"email": "alex@ascme-labs.com", "password": "agentledger"}
+        "/api/auth/login", json={"email": "alex@ascme-labs.com", "password": "graphban"}
     )
     return {"Authorization": f"Bearer {r.json()['access_token']}"}

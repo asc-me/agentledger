@@ -36,7 +36,7 @@ export function EmbedRoadmapPage() {
           </svg>
         </div>
         <div>
-          <div className="text-[15px] font-bold tracking-tight">AgentLedger Roadmap</div>
+          <div className="text-[15px] font-bold tracking-tight">Graphban Roadmap</div>
           <div className="font-mono text-[10px] tracking-[0.6px] text-faint">PUBLIC · READ ONLY</div>
         </div>
       </div>

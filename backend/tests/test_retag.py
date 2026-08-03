@@ -176,7 +176,7 @@ def test_retag_requires_write_access(client, auth):
     """Same gate as any other project setting — no new permission tier."""
     project = _project(client, auth)
     other = client.post(
-        "/api/auth/login", json={"email": "kate@ascme-labs.com", "password": "agentledger"}
+        "/api/auth/login", json={"email": "kate@ascme-labs.com", "password": "graphban"}
     )
     if other.status_code != 200:
         pytest.skip("seed has no read-only user to assert with")

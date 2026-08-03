@@ -125,7 +125,7 @@ SSE event, then `delta`s, then `done`. Body is `{message, project_id?}`.
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
 | GET | `/api/reports/upstream` | JWT | Whether upstream reporting is on + where reports go |
-| POST | `/api/reports/upstream` | JWT | Forward a user-initiated AgentLedger issue report upstream |
+| POST | `/api/reports/upstream` | JWT | Forward a user-initiated Graphban issue report upstream |
 
 ## MCP
 

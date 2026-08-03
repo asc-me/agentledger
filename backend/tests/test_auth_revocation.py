@@ -7,7 +7,7 @@ a leaked/logged-out refresh token no longer lives to its 14d expiry.
 
 
 def _login(client, email="alex@ascme-labs.com"):
-    r = client.post("/api/auth/login", json={"email": email, "password": "agentledger"})
+    r = client.post("/api/auth/login", json={"email": email, "password": "graphban"})
     assert r.status_code == 200, r.text
     return r.json()
 

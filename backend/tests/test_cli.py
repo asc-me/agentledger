@@ -1,4 +1,4 @@
-"""AL-218: the `agentledger` sync CLI — thin wrapper over the code-graph sync services.
+"""AL-218: the `graphban` sync CLI — thin wrapper over the code-graph sync services.
 
 The service calls are monkeypatched (they're covered by test_code_push / test_export_import);
 these tests pin the CLI's own behaviour: config persistence, link resolution, guards.

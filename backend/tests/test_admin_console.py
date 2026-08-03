@@ -6,7 +6,7 @@ no-tenant-content / audit matrix lives in AL-95; these cover the endpoints thems
 """
 import pytest
 
-SEED_PW = "agentledger"
+SEED_PW = "graphban"
 ADMIN_EMAIL = "alex@ascme-labs.com"
 
 
