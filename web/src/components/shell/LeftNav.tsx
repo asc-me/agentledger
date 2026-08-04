@@ -32,6 +32,7 @@ import { useProjectCtx } from "@/features/ProjectContext";
 import { NewProjectDialog } from "@/features/onboarding/NewProjectDialog";
 import { cn } from "@/lib/cn";
 import {
+  useAutoActions,
   useCandidateShards,
   useConfig,
   useIsPlatformAdmin,
@@ -44,6 +45,13 @@ export function LeftNav() {
   const { data: items } = useItems(activeId);
   const { data: requests } = useRequests(activeId);
   const { data: candidates } = useCandidateShards(activeId);
+  // The reviewer's real backlog is candidates PLUS anything published without them
+  // (AL-287). Counting only candidates reads as "no work" on a project whose agents
+  // publish directly — which is exactly when there is most to look at.
+  const { data: autoActions } = useAutoActions(activeId);
+  const reviewCount =
+    (candidates?.length ?? 0) +
+    (autoActions ?? []).filter((s) => ["trusted", "agent"].includes(s.scoring_source)).length;
   const { data: config } = useConfig();
   // 404 (the non-admin case) resolves as an error, so this is false for tenants.
   const { data: adminMe } = useIsPlatformAdmin();
@@ -106,7 +114,7 @@ export function LeftNav() {
         <NavItem to="/code" icon={<Network size={16} />} label="Code graph" />
         <NavItem to="/roadmap" icon={<Map size={16} />} label="Roadmap" />
         <NavItem to="/mcp-tools" icon={<Plug size={16} />} label="MCP Tools" />
-        <NavItem to="/memory-review" icon={<Inbox size={16} />} label="Memory review" count={candidates?.length || undefined} />
+        <NavItem to="/memory-review" icon={<Inbox size={16} />} label="Memory review" count={reviewCount || undefined} />
         <NavItem to="/activity" icon={<ScrollText size={16} />} label="Activity" />
         <NavItem to="/prds" icon={<BarChart3 size={16} />} label="PRDs" />
       </nav>
