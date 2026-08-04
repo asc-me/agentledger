@@ -27,6 +27,7 @@ export interface Project {
   memory_auto_reject: boolean;
   memory_write_mode: string;
   memory_llm_judge: boolean;
+  agent_adjudication: boolean;
 }
 
 // ── Deploy config + Organizations (hosted-only, AL-74b) ────────────────────

@@ -210,6 +210,8 @@ class ProjectOut(ORMModel):
     memory_write_mode: str = "review"
     memory_auto_reject: bool = True
     memory_llm_judge: bool = False
+    # May an agent operate this project's quality gates (AL-282)? Never authority gates.
+    agent_adjudication: bool = False
 
 
 class ProjectCreate(BaseModel):
@@ -542,6 +544,7 @@ class ProjectUpdate(BaseModel):
     memory_write_mode: str | None = None
     memory_auto_reject: bool | None = None
     memory_llm_judge: bool | None = None
+    agent_adjudication: bool | None = None
 
     @field_validator("memory_write_mode")
     @classmethod

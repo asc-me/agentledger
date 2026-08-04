@@ -199,6 +199,38 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "publish_memory",
+        "description": (
+            "SUBMIT one of your candidate shards for adjudication — you do not publish it, "
+            "an independent judge decides. Returns `{shard, verdict}`: a `kept: false` "
+            "verdict means the judge rejected it, which is a normal outcome, not an error. "
+            "Requires the project to allow agent adjudication AND a real chat model; "
+            "without either the shard stays a candidate for a human to review."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {"shard_id": {"type": "string"}},
+            "required": ["shard_id"],
+        },
+    },
+    {
+        "name": "reject_memory",
+        "description": (
+            "Discard one of your candidate shards — a note you now know is wrong, "
+            "superseded, or noise. Unlike publishing this needs no judge: removing your "
+            "own candidate takes nothing out of the trusted pool. The shard is kept for "
+            "provenance and never surfaces in search."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "shard_id": {"type": "string"},
+                "reason": {"type": "string", "description": "Why it's being discarded."},
+            },
+            "required": ["shard_id"],
+        },
+    },
+    {
         "name": "get_backlog",
         "description": (
             "Prioritized backlog/next items, ready-first then by composite score. Each row carries "
@@ -650,6 +682,21 @@ _OUTPUT_SCHEMAS: dict[str, dict] = {
         "properties": {"item": {**_ITEM_SCHEMA, "type": ["object", "null"]}},
     },
     "add_memory": _SHARD_SCHEMA,
+    "publish_memory": {  # the VERDICT is the payload — the caller didn't decide this
+        "type": "object",
+        "properties": {
+            "shard": _SHARD_SCHEMA,
+            "verdict": {
+                "type": "object",
+                "properties": {
+                    "kept": {"type": "boolean"},
+                    "quality": {"type": "number"},
+                    "reason": _STR,
+                },
+            },
+        },
+    },
+    "reject_memory": _SHARD_SCHEMA,
     "search_memory": {
         "type": "object",
         "properties": {
@@ -1125,6 +1172,39 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
         )
         _idempotent_remember(db, args, "add_memory", shard.id)
         return _shard_dict(shard)
+    if name in ("publish_memory", "reject_memory"):
+        shard = db.get(MemoryShard, args["shard_id"])
+        if shard is None or shard.project_id not in allowed:
+            # Same message either way: whether a shard exists in a project you can't
+            # write to is not something a key should be able to probe.
+            raise errors.NotFound(f"shard not found: {args['shard_id']}")
+        if not mem_svc.agent_adjudication_enabled(db, shard.project_id):
+            raise authz.Forbidden(
+                f"project {shard.project_id!r} does not allow agents to adjudicate memory; "
+                "a human publishes candidates from Memory review, or an owner can enable "
+                "agent adjudication in project settings"
+            )
+        if shard.status != "candidate":
+            raise errors.Conflict(
+                f"shard {shard.id} is already {shard.status}; only a candidate is adjudicated"
+            )
+        origin = f"agent:{key.name or key.id}"
+        if name == "reject_memory":
+            return _shard_dict(mem_svc.agent_reject(db, shard, origin=origin))
+        try:
+            shard, verdict = mem_svc.agent_publish(db, shard, origin=origin)
+        except mem_svc.AdjudicationUnavailable as e:
+            # Degrade to the human boundary; never fall through to publishing.
+            raise errors.Unavailable(
+                str(e),
+                hint="the shard is unchanged and still a candidate; ask an operator to "
+                     "configure a chat provider, or leave it for human review",
+            ) from e
+        return {
+            "shard": _shard_dict(shard),
+            "verdict": {"kept": shard.status == "published",
+                        "quality": verdict["quality"], "reason": verdict.get("reason", "")},
+        }
     if name == "search_memory":
         top_k = args.get("top_k", 5)
         hits = mem_svc.search_memory(

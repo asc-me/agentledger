@@ -142,6 +142,13 @@ class Project(Base):
     memory_llm_judge: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=false(), nullable=False
     )
+    # May an agent operate this project's QUALITY gates (AL-282 / PRD-14 D2)? Off by
+    # default: it moves the AL-49 boundary, so it is the owner's decision, not a default.
+    # It never reaches an AUTHORITY gate — credential minting, retag, org/tenant — which
+    # stays human in every configuration (see tests/test_authority_gates.py).
+    agent_adjudication: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
     embed_model: Mapped[str] = mapped_column(String, default="stub-384")
     # Hosted SaaS only (AL-74): the owning organization. NULL on self-host, where
     # the org layer is inert. In hosted mode authz additionally requires the caller

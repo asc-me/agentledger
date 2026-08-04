@@ -125,6 +125,26 @@ _SIM_REJECTED = 0.85   # resembles something a human already rejected
 _AUTO_ACCEPT_MIN = 0.9
 
 
+# Published shards that NO human ever assessed. `trusted` (AL-280) publishes on write
+# with nothing looked at; `agent` (AL-282) passed a judge but no person. Both are real
+# memory and both surface in search — they are simply not evidence that a NEW claim is
+# sound, which is what the corroboration signal is supposed to mean.
+#
+# This is what stops a long unattended run from hollowing out the review boundary: without
+# it, months of unreviewed shards become the pool that later candidates are measured
+# against, so new junk auto-accepts for corroborating with old junk and the gate reads as
+# enabled while meaning nothing.
+_UNVETTED_SOURCES = ("trusted", "agent")
+
+
+def _corroboration_pool(db: Session, project_id: str | None) -> list[tuple[MemoryShard, list[float]]]:
+    return [
+        (s, list(s.embedding))
+        for s in list_shards(db, project_id=project_id, status="published")
+        if s.embedding is not None and s.scoring_source not in _UNVETTED_SOURCES
+    ]
+
+
 def _best_match(vec: list[float], pool: list[tuple[MemoryShard, list[float]]]) -> tuple[MemoryShard | None, float]:
     """The most-similar shard in `pool` and its cosine score (0.0 if the pool is empty)."""
     best, score = None, 0.0
@@ -141,14 +161,25 @@ def _score_shard(
     rejected: list[tuple[MemoryShard, list[float]]],
     support: int,
     human_derived: bool,
+    corroborating: list[tuple[MemoryShard, list[float]]] | None = None,
 ) -> tuple[str, float, list[str], str | None]:
     """Score one candidate embedding into (suggestion, confidence, reasons, duplicate_of).
 
     The single source of truth for the accept/reject/review heuristic — shared by the
     advisory review queue (`score_candidates`) and synchronous auto-triage
     (`triage_candidate`) so both judge a shard identically. Vetoes (rejection
-    resemblance, duplication) win over accept signals."""
-    best_pub, corr = _best_match(cv, published)
+    resemblance, duplication) win over accept signals.
+
+    Two pools, deliberately (AL-282). `published` is every published shard and drives
+    DEDUP — a trusted project must still detect duplicates of its own trusted shards, or
+    it fills with restatements of one fact. `corroborating` is the vetted subset and
+    drives the ACCEPT signal, because "something already published looks like this" is
+    only evidence when a human or a judge stood behind that something. Defaults to
+    `published` so a caller that doesn't care gets the old single-pool behaviour."""
+    if corroborating is None:
+        corroborating = published
+    best_dup, dup = _best_match(cv, published)
+    best_corr, corr = _best_match(cv, corroborating)
     _, rej = _best_match(cv, rejected)
     reasons: list[str] = []
     duplicate_of: str | None = None
@@ -156,17 +187,17 @@ def _score_shard(
     if rej >= _SIM_REJECTED:
         suggestion, confidence = "reject", rej
         reasons.append(f"resembles a previously rejected shard ({rej:.0%})")
-    elif corr >= _SIM_DUP and best_pub is not None:
-        suggestion, confidence = "reject", corr
-        duplicate_of = best_pub.id
-        reasons.append(f"near-duplicate of published {best_pub.id} ({corr:.0%}) — merge candidate")
+    elif dup >= _SIM_DUP and best_dup is not None:
+        suggestion, confidence = "reject", dup
+        duplicate_of = best_dup.id
+        reasons.append(f"near-duplicate of published {best_dup.id} ({dup:.0%}) — merge candidate")
     elif support >= 2 or corr >= _SIM_STRONG:
         suggestion = "accept"
         confidence = min(1.0, max(corr, 0.6 + 0.1 * support) + (0.1 if human_derived else 0.0))
         if support >= 2:
             reasons.append(f"recurs across {support} candidates")
-        if corr >= _SIM_STRONG and best_pub is not None:
-            reasons.append(f"corroborated by trusted {best_pub.id} ({corr:.0%})")
+        if corr >= _SIM_STRONG and best_corr is not None:
+            reasons.append(f"corroborated by trusted {best_corr.id} ({corr:.0%})")
         if human_derived:
             reasons.append("from a human-reviewed decision")
     else:
@@ -190,6 +221,7 @@ def score_candidates(db: Session, *, project_id: str | None = None) -> list[dict
     cands = [s for s in list_shards(db, project_id=project_id, status="candidate") if s.embedding is not None]
     published = [(s, list(s.embedding)) for s in list_shards(db, project_id=project_id, status="published") if s.embedding is not None]
     rejected = [(s, list(s.embedding)) for s in list_shards(db, project_id=project_id, status="rejected") if s.embedding is not None]
+    corroborating = _corroboration_pool(db, project_id)
 
     # Recurrence: how many candidates each one clusters with (reuse AL-50 clustering).
     cluster_size: dict[str, int] = {}
@@ -202,7 +234,7 @@ def score_candidates(db: Session, *, project_id: str | None = None) -> list[dict
         support = cluster_size.get(c.id, 1)
         human_derived = c.origin.startswith("user:") or "grill" in c.origin
         suggestion, confidence, reasons, duplicate_of = _score_shard(
-            list(c.embedding), published, rejected, support, human_derived
+            list(c.embedding), published, rejected, support, human_derived, corroborating
         )
         out.append({
             "shard": c,
@@ -332,7 +364,8 @@ def triage_candidate(db: Session, shard: MemoryShard) -> MemoryShard:
             break
     human_derived = shard.origin.startswith("user:") or "grill" in shard.origin
     suggestion, confidence, reasons, duplicate_of = _score_shard(
-        list(shard.embedding), published, rejected, support, human_derived
+        list(shard.embedding), published, rejected, support, human_derived,
+        _corroboration_pool(db, shard.project_id),
     )
     source = "similarity"
 
@@ -403,6 +436,80 @@ def undo_triage(db: Session, shard_id: str) -> MemoryShard | None:
     db.commit()
     db.refresh(shard)
     return shard
+
+
+# --- Agent adjudication of the memory quality gate (AL-282 / PRD-14 D2) --------------
+# The product could already let an agent approve its own PRD (`update_prd` takes a
+# status) while refusing to let it publish its own memory note. PRD-14 resolves that by
+# deciding WHO may operate each gate rather than which features exist.
+#
+# The asymmetry below is the whole design:
+#
+#   REJECT is not an escalation. An agent discarding its own candidate removes nothing
+#   from the trusted pool, so it may do that directly.
+#
+#   PUBLISH is an escalation, so an agent never performs it — it SUBMITS the shard and
+#   an independent judge decides. `agent_publish` therefore returns the verdict, not an
+#   acknowledgement, and a rejected submission is a normal outcome rather than an error.
+#
+# That is what makes "an agent may hold a quality gate" different from "an agent may
+# approve its own work". Without a real chat model the judge cannot run and the shard
+# stays a candidate — it degrades to the human boundary, never past it.
+
+class AdjudicationUnavailable(Exception):
+    """No independent judge is configured, so nothing can be adjudicated. Raised rather
+    than falling back to publishing: silently self-approving is the failure this whole
+    path exists to prevent."""
+
+
+def agent_adjudication_enabled(db: Session, project_id: str | None) -> bool:
+    if project_id is None:
+        return False  # a project-less shard has no owner to have opted in
+    project = db.get(Project, project_id)
+    return bool(project and project.agent_adjudication)
+
+
+def agent_reject(db: Session, shard: MemoryShard, *, origin: str) -> MemoryShard:
+    """An agent discards its own candidate. Kept for provenance, never surfaced."""
+    shard.status = "rejected"
+    shard.scoring_source = "agent"
+    db.commit()
+    db.refresh(shard)
+    events_svc.record(
+        db, actor_type="agent", actor_label=origin, surface="mcp",
+        action="agent_reject_shard", target_type="shard", target_id=shard.id,
+        project_id=shard.project_id, meta={"source": "agent"},
+    )
+    return shard
+
+
+def agent_publish(db: Session, shard: MemoryShard, *, origin: str) -> tuple[MemoryShard, dict]:
+    """Submit a candidate for independent adjudication. The JUDGE decides; the caller
+    does not. Returns (shard, verdict) — `verdict["keep"]` False means the judge rejected
+    it, which is a successful call with a negative outcome.
+
+    Raises AdjudicationUnavailable when no real chat model is configured, so an offline
+    instance degrades to the human boundary instead of rubber-stamping."""
+    verdict = _llm_judge(db, shard)
+    if verdict is None:
+        raise AdjudicationUnavailable(
+            "no independent chat model is configured for this project, so a candidate "
+            "cannot be adjudicated; a human publishes it from Memory review"
+        )
+    keep = verdict["keep"] and verdict["quality"] >= _SIM_STRONG
+    shard.status = "published" if keep else "rejected"
+    shard.scoring_source = "agent"
+    shard.auto_confidence = verdict["quality"]
+    db.commit()
+    db.refresh(shard)
+    events_svc.record(
+        db, actor_type="agent", actor_label=origin, surface="mcp",
+        action="agent_publish_shard" if keep else "agent_reject_shard",
+        target_type="shard", target_id=shard.id, project_id=shard.project_id,
+        meta={"source": "agent", "confidence": verdict["quality"],
+              "reason": verdict.get("reason", ""), "kept": keep},
+    )
+    return shard, verdict
 
 
 def set_status(db: Session, shard_id: str, status: str) -> MemoryShard | None:
