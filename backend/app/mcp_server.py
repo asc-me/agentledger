@@ -22,6 +22,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app import errors
+from app.config import settings
 from app.db import get_db
 from app.models import ApiKey, Item, Link, MemoryShard, Project
 from app.security import authz
@@ -40,6 +41,7 @@ from app.services import memory as mem_svc
 from app.services import setup as setup_svc
 from app.services import quotas
 from app.services import prds as prd_svc
+from app.services import projects as projects_svc
 from app.services import prioritization as prio_svc
 from app.services import requests as req_svc
 from app.services import upstream as up_svc
@@ -74,6 +76,26 @@ TOOLS: list[dict[str, Any]] = [
         "name": "list_projects",
         "description": "List all projects (id, name, tag, accent, description). `tag` is the short prefix its item/request/PRD keys render with. Use an id as the `project_id` override.",
         "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "create_project",
+        "description": (
+            "Create a project when the one you need doesn't exist yet, so setup_project has "
+            "somewhere to bootstrap into. SELF-HOST ONLY, and only while this instance is not "
+            "linked to a cloud org — once it is, projects reach that org's tenant space and "
+            "consume its quota, so creating one belongs to whoever owns the org. `tag` is "
+            "derived from the name when omitted. A HUMAN should still confirm this is the "
+            "right workspace: you can create it, but you can't know it's the one they meant."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "tag": {"type": "string", "description": "2-4 chars, e.g. GB. Derived if omitted."},
+                "description": {"type": "string"},
+            },
+            "required": ["name"],
+        },
     },
     {
         "name": "setup_project",
@@ -681,6 +703,13 @@ _OUTPUT_SCHEMAS: dict[str, dict] = {
         "type": "object",
         "properties": {"item": {**_ITEM_SCHEMA, "type": ["object", "null"]}},
     },
+    "create_project": {
+        "type": "object",
+        "properties": {
+            "id": _STR, "name": _STR, "tag": _STR, "description": _STR,
+            "usable_by_this_key": {"type": "boolean"}, "confirm": _STR,
+        },
+    },
     "add_memory": _SHARD_SCHEMA,
     "publish_memory": {  # the VERDICT is the payload — the caller didn't decide this
         "type": "object",
@@ -1095,6 +1124,49 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
             "tool_count": len(_visible_tools(key)),
             # First-run signal (AL-133): an empty project → call setup_project for a bootstrap.
             "empty": setup_svc.is_empty(db, pid) if pid else False,
+        }
+    if name == "create_project":
+        # An AUTHORITY gate, narrowly opened (PRD-14 D4). Both refusals below are the
+        # same rule: a project may only be conjured where doing so can't reach anyone
+        # else's tenant. `link_status` resolves the DB link then the env link, so a box
+        # linked from the UI, from env, OR from the CLI (AL-281) all answer truthfully —
+        # before AL-281 a CLI-linked instance reported unlinked and this would have
+        # FAILED OPEN on exactly the instances the gate exists for.
+        from app.services import code_sync
+
+        if settings.hosted_mode:
+            raise authz.Forbidden(
+                "projects are created by an operator in hosted mode, not by an agent; "
+                "ask an org owner to create it"
+            )
+        link = code_sync.link_status(db)
+        if link["linked"]:
+            raise authz.Forbidden(
+                f"this instance is linked to a cloud org ({link['cloud_url']}, source: "
+                f"{link['source']}), so a project created here would reach that org's "
+                "tenant space and consume its quota; an org owner creates it"
+            )
+        try:
+            project = projects_svc.create_project(
+                db, name=args["name"], owner_user_id=key.user_id,
+                tag=args.get("tag"), description=args.get("description", ""),
+            )
+        except ValueError as e:
+            raise errors.Validation(str(e)) from e
+        events_svc.record(
+            db, actor_type="agent", actor_label=f"agent:{key.name or key.id}", surface="mcp",
+            action="create_project", target_type="project", target_id=project.id,
+            project_id=project.id, meta={"name": project.name, "tag": project.tag},
+        )
+        return {
+            "id": project.id, "name": project.name, "tag": project.tag,
+            "description": project.description,
+            # A key PINNED to another project still can't write here — it was minted for
+            # one project and creating a second doesn't widen it. Say so, or the next
+            # call 403s and reads like a bug.
+            "usable_by_this_key": key.project_id is None,
+            "confirm": "ask a human to confirm this is the right workspace before "
+                       "bootstrapping into it",
         }
     if name == "setup_project":
         return setup_svc.checklist(db, pid)

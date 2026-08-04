@@ -99,6 +99,10 @@ def test_the_mcp_tool_surface_is_an_explicit_allowlist(client):
 
     assert {t["name"] for t in TOOLS} == {
         "get_context", "list_projects", "setup_project", "create_item",
+        # The ONE deliberate authority exception (AL-284), and it is narrow: refused in
+        # hosted mode and refused once the instance is linked to a cloud org, so a
+        # project can only be conjured where it cannot reach anyone else's tenant.
+        "create_project",
         "update_item", "search_items", "add_memory", "search_memory",
         # Quality gates, added deliberately by AL-282. `publish_memory` SUBMITS for
         # independent adjudication rather than publishing, so it is not self-approval.

@@ -23,6 +23,10 @@ _TIMEOUT = 30.0
 LOCAL_TOOLS = {
     "describe_code", "get_code_map", "code_neighbors", "search_code",
     "link_code", "unlink_code", "get_context",
+    # MUST stay local (AL-284). Proxying happens BEFORE dispatch, so a linked instance
+    # would forward this to the cloud and create the project in the org's tenant space —
+    # exactly the authority action the gate refuses. Kept local, the refusal fires.
+    "create_project",
     # Both names, because the proxy decides local-vs-remote BEFORE the dispatcher
     # normalizes aliases — a retired name must not start proxying to the cloud (AL-262).
     "report_graphban_issue", "report_agentledger_issue",
