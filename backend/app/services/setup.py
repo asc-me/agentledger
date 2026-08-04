@@ -39,7 +39,10 @@ def checklist(db: Session, project_id: str) -> dict:
         {"step": 1, "name": "Confirm the project", "status": "action_required",
          "detail": f"You're set to write into '{project_id}'.",
          "how": "A HUMAN confirms this is the right workspace before bootstrapping — writing into "
-                "the wrong project pollutes another (in hosted mode, another tenant). Don't guess."},
+                "the wrong project pollutes another (in hosted mode, another tenant). Don't guess. "
+                "This holds even when an agent created the project itself (AL-284): being able to "
+                "CREATE a workspace is not the same as knowing it's the one that was wanted, so "
+                "the step stays a human confirmation rather than degrading to a notification."},
         {"step": 2, "name": "Build the code graph", "status": "done" if nodes else "pending",
          "detail": f"{nodes} code node(s) described.",
          "how": "describe_code across the repo (link_code to bridge items↔paths). LOCAL-FIRST: run "

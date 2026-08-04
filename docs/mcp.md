@@ -76,12 +76,13 @@ mcp_servers:
 Every client authenticates the same way: the key in an `X-API-Key` header (or
 `Authorization: Bearer`), against a URL reachable **from where the agent runs**.
 
-## The 34 tools
+## The 35 tools
 
 | Tool | Params | Does |
 | --- | --- | --- |
 | `get_context` | — | Orient: the key's project, scopes, project/tool counts. Call this first. |
 | `list_projects` | — | All projects (`id`, `name`, `tag`, `accent`, `description`) — ids for the `project_id` override; `tag` is the short prefix its item/request/PRD keys render with |
+| `create_project` | `name`, `tag`, `description` | Create a project so `setup_project` has somewhere to bootstrap. **Self-host only, and only while unlinked** — refused in hosted mode and once the instance is linked to a cloud org, since a project created here would reach that org's tenant (AL-284) |
 | `setup_project` | `project_id` | **First-run bootstrap** — an ordered, resumable checklist (confirm project → build graph → load memories → propose items). Read-only; call it when `get_context` reports an empty project |
 | `next_cluster` | `agent_id`, `max_items`, `project_id` | **Claim a code-neighborhood at once** — the best ready item plus its related ready items, all assigned to you. |
 | `related_work` | `id` | Items related to a task by shared touchpoints + typed links, best-first (read-only) |
