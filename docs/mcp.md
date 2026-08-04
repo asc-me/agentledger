@@ -76,7 +76,7 @@ mcp_servers:
 Every client authenticates the same way: the key in an `X-API-Key` header (or
 `Authorization: Bearer`), against a URL reachable **from where the agent runs**.
 
-## The 32 tools
+## The 34 tools
 
 | Tool | Params | Does |
 | --- | --- | --- |
@@ -92,6 +92,8 @@ Every client authenticates the same way: the key in an `X-API-Key` header (or
 | `update_item` | `id`, `status`, `title`, `description`, `tags`, `touchpoints`, `effort`, `blocker`, `fidelity`, `prd_id`, `prd_section` | Patch / advance an item |
 | `search_items` | `query`, `tags`, `status`, `fields`, `project_id` | Query the stream (query matches title, description, **and** tags); lean rows by default, `fields="full"` for all |
 | `add_memory` | `text`, `scope`, `item_id`, `project_id` | Record a memory shard. Resolved `status` follows the project's memory write mode: `review` → **`candidate`** pending human publish (AL-49, the default), `auto` → published only when strongly corroborated, `trusted` → published on write so an agent can read its own writes back (AL-280) |
+| `publish_memory` | `shard_id` | **Submit** a candidate for independent adjudication — the judge decides, not the caller. Returns `{shard, verdict}`; `kept: false` is a normal outcome. Needs `agent_adjudication` on the project **and** a real chat model, else `unavailable` and the shard is untouched (AL-282) |
+| `reject_memory` | `shard_id`, `reason` | Discard your own candidate. No judge needed — it removes nothing from the trusted pool (AL-282) |
 | `search_memory` | `query`, `top_k`, `include_candidates`, `project_id` | Semantic search over **published** shards (set `include_candidates` for unreviewed ones); returns `status`, `item_id`, `source` |
 | `get_backlog` | `limit`, `fields`, `project_id` | Prioritized backlog (lean rows + ranking fields by default, `fields="full"` for all) |
 | `get_item_details` | `id` | Item + linked shards + linked requests |

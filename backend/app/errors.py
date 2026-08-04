@@ -5,8 +5,8 @@ machine-readable ``code`` in the JSON-RPC tool error so an agent can branch
 without parsing prose (AL-47 / review finding F6). REST routers may also catch
 these, though most still use HTTPException directly.
 
-Codes: ``not_found`` · ``validation`` · ``conflict`` (authorization uses a
-separate ``unauthorized`` code, owned by ``security/authz.Forbidden``).
+Codes: ``not_found`` · ``validation`` · ``conflict`` · ``unavailable`` (authorization
+uses a separate ``unauthorized`` code, owned by ``security/authz.Forbidden``).
 """
 from __future__ import annotations
 
@@ -37,6 +37,16 @@ class Conflict(AppError):
     """The request collides with current state: lost lease, reused idempotency key."""
 
     code = "conflict"
+
+
+class Unavailable(AppError):
+    """The operation is well-formed and permitted but cannot run in this instance's
+    configuration — e.g. adjudicating a memory candidate with no chat model configured
+    (AL-282). Distinct from ``validation`` (the call was fine) and from ``unauthorized``
+    (the caller is allowed); retrying without an operator change will not help, so the
+    hint names what an operator must configure."""
+
+    code = "unavailable"
 
 
 class QuotaExceeded(AppError):

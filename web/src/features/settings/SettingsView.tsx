@@ -406,7 +406,7 @@ function ProjectPanel() {
   const [form, setForm] = React.useState<Partial<Project>>({});
   const [saved, setSaved] = React.useState(false);
   React.useEffect(() => {
-    if (active) setForm({ name: active.name, description: active.description, share_global_memory: active.share_global_memory, auto_extract: active.auto_extract, mcp_enabled: active.mcp_enabled, memory_write_mode: active.memory_write_mode, memory_auto_reject: active.memory_auto_reject, memory_llm_judge: active.memory_llm_judge });
+    if (active) setForm({ name: active.name, description: active.description, share_global_memory: active.share_global_memory, auto_extract: active.auto_extract, mcp_enabled: active.mcp_enabled, memory_write_mode: active.memory_write_mode, memory_auto_reject: active.memory_auto_reject, memory_llm_judge: active.memory_llm_judge, agent_adjudication: active.agent_adjudication });
   }, [active?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!active) return null;
@@ -428,6 +428,7 @@ function ProjectPanel() {
   const triageFlags: { key: keyof Project; label: string; hint?: string; disabled?: boolean }[] = [
     { key: "memory_auto_reject", label: "Auto-reject duplicate & rejected-alike memories", hint: "On: near-duplicates and shards resembling ones you've rejected drop straight to rejected (kept, never surfaced — undoable). Applies in every write mode." },
     { key: "memory_llm_judge", label: "Use the LLM judge to assess memories", hint: "Needs a chat provider configured. The model rates each candidate's quality to refine the decisions above; falls back to similarity when no model is set." },
+    { key: "agent_adjudication", label: "Let agents adjudicate memory", hint: "Off by default. An agent can discard its own candidates, and can SUBMIT one for review by the configured model — it never publishes its own work, and with no model configured the shard stays here for you. Everything it publishes is labelled." },
   ];
 
   // AL-280: what happens to a NOVEL agent write. Replaced the auto-publish checkbox,
