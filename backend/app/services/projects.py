@@ -6,11 +6,74 @@ while multi-project callers can still be explicit.
 """
 from __future__ import annotations
 
+import re
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import tagging
-from app.models import LegacyEntityKey, Project, ProjectTagHistory, utcnow
+from app.models import LegacyEntityKey, Membership, Project, ProjectTagHistory, utcnow
+
+
+def unique_slug(db: Session, name: str) -> str:
+    """A free project id derived from the name. Ids are frozen at creation and every
+    entity key renders from the project's TAG, not this — so a suffixed slug is only
+    ever cosmetic (PRD-13)."""
+    base = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:32] or "project"
+    slug, n = base, 2
+    while db.get(Project, slug) is not None:
+        slug = f"{base}-{n}"
+        n += 1
+    return slug
+
+
+def create_project(
+    db: Session,
+    *,
+    name: str,
+    owner_user_id: str,
+    tag: str | None = None,
+    accent: str = "",
+    description: str = "",
+    org_id: str | None = None,
+) -> Project:
+    """Create a project and make `owner_user_id` its owner.
+
+    One code path for all three callers — the REST router, first-run provisioning
+    (AL-283), and agent-side creation (AL-284) — because a project that skipped the
+    owner Membership would be invisible to its own creator, and three implementations
+    is three chances to skip it.
+
+    An explicit tag is validated and refused on conflict; an omitted one is derived.
+    Deriving rather than rejecting matters for bootstrapping: creating a project must
+    not fail over a missing four-character string, and the result is visible and
+    changeable immediately (PRD-13).
+    """
+    name = name.strip()
+    if not name:
+        raise ValueError("project name is required")
+    if tag:
+        available, reason = tag_available(db, tag)
+        if not available:
+            raise ValueError(f"tag {tag!r} is not available: {reason}")
+        resolved_tag = tagging.normalize(tag)
+    else:
+        resolved_tag = unique_tag(db, name)
+
+    project = Project(
+        id=unique_slug(db, name),
+        tag=resolved_tag,
+        name=name,
+        accent=accent or "#c6f24e",
+        description=description or "",
+        org_id=org_id,
+    )
+    db.add(project)
+    db.flush()
+    db.add(Membership(user_id=owner_user_id, project_id=project.id, role="owner", access="write"))
+    db.commit()
+    db.refresh(project)
+    return project
 
 
 def tag_available(db: Session, tag: str) -> tuple[bool, str]:

@@ -88,6 +88,35 @@ def _session():
 
 # ---- commands -----------------------------------------------------------------
 
+def cmd_init(args) -> int:
+    """First-run provisioning (AL-283). Prints JSON so `start.sh` can consume it —
+    the credential has to reach the HOST, where the MCP client runs, and this command
+    executes inside the container."""
+    from app import bootstrap
+
+    db = _session()
+    try:
+        result = bootstrap.provision(
+            db, project_name=args.project_name, email=args.email, name=args.operator_name
+        )
+    except bootstrap.BootstrapRefused as e:
+        sys.exit(f"graphban init: {e}")
+    finally:
+        db.close()
+
+    if args.json:
+        print(json.dumps(result))
+        return 0
+    if not result["provisioned"]:
+        print(f"Nothing to do — {result['reason']}.")
+        return 0
+    print(f"Provisioned project {result['project_name']} ({result['project_tag']}).")
+    print(f"Sign in as {result['email']} / {result['password']}")
+    print(f"API key: {result['api_key']}")
+    print("This key is stored only as a hash — it cannot be shown again.")
+    return 0
+
+
 def cmd_link(args) -> int:
     """Link this instance to a cloud tenant, recording it in BOTH places (AL-281).
 
@@ -262,6 +291,13 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="graphban", description="Local code-graph sync for a Graphban self-host (AL-134).")
     sub = p.add_subparsers(dest="command", required=True)
+
+    it = sub.add_parser("init", help="first-run provisioning: operator, project, and one key")
+    it.add_argument("--project-name", default="My Project")
+    it.add_argument("--email", default="operator@localhost")
+    it.add_argument("--operator-name", default="Operator")
+    it.add_argument("--json", action="store_true", help="machine-readable output for start.sh")
+    it.set_defaults(func=cmd_init)
 
     lk = sub.add_parser("link", help="store the cloud sync target (URL + org-issued credential)")
     lk.add_argument("--cloud-url")

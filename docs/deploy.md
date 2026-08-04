@@ -17,6 +17,26 @@ step here has been run in anger.
 - **Schema:** Alembic migrations run automatically on API startup (Postgres); the
   container comes up, migrates `0001 → head`, then serves.
 
+## First run (local / a fresh box)
+
+`./start.sh` brings the stack up and, on an instance with **no users yet**, provisions an
+operator, a project, and one agent credential — then prints the MCP client config and
+writes `~/.graphban/config.json` (chmod 600). Safe to re-run: it keys off the same
+"no users" signal `seed()` uses, so a second run changes nothing.
+
+It **refuses** in two cases, both deliberate:
+
+- `HOSTED_MODE=true` — it mints a credential without authenticating anyone, which on a
+  multi-tenant deployment is a hole, not a convenience. Invite the first operator instead.
+- `SEED_ON_START=true` — seeding creates users during lifespan startup, so it would win
+  the race and you would silently get the prototype dataset instead of your own project.
+
+The password and API key are shown **once**. Keys are stored only as a hash and cannot be
+recovered; if you lose them, mint a new key in Settings → API Keys.
+
+Issuing that first credential is an authority gate, which is why it is a script an
+operator runs rather than something an agent does — see PRD-14.
+
 ## Deploy
 
 From a clean working tree on the revision you want to ship:

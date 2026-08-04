@@ -20,16 +20,6 @@ from app.services import quotas
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 
-def _unique_slug(db: Session, name: str) -> str:
-    base = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:32] or "project"
-    slug = base
-    n = 2
-    while db.get(Project, slug) is not None:
-        slug = f"{base}-{n}"
-        n += 1
-    return slug
-
-
 @router.get("/tag-suggestion")
 def tag_suggestion(name: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """A free tag derived from a project name, for prefilling the creation form.
@@ -81,38 +71,15 @@ def create_project(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    name = body.name.strip()
-    if not name:
-        raise HTTPException(422, "project name is required")
     org_id = _resolve_org_id(db, user, body.org_id)
     quotas.enforce_project_quota(db, org_id)  # hosted plan cap (no-op self-host)
-
-    # An explicit tag is checked and refused on conflict; an omitted one is derived.
-    # Deriving rather than rejecting matters for agents: bootstrapping a project must
-    # not fail over a missing four-character string, and the result is visible and
-    # changeable immediately (PRD-13).
-    if body.tag:
-        available, reason = projects_svc.tag_available(db, body.tag)
-        if not available:
-            raise HTTPException(422, f"tag {body.tag!r} is not available: {reason}")
-        tag = tagging.normalize(body.tag)
-    else:
-        tag = projects_svc.unique_tag(db, name)
-
-    project = Project(
-        id=_unique_slug(db, name),
-        tag=tag,
-        name=name,
-        accent=body.accent or "#c6f24e",
-        description=body.description or "",
-        org_id=org_id,
-    )
-    db.add(project)
-    db.flush()
-    # The creator is the owner with full write access.
-    db.add(Membership(user_id=user.id, project_id=project.id, role="owner", access="write"))
-    db.commit()
-    db.refresh(project)
+    try:
+        project = projects_svc.create_project(
+            db, name=body.name, owner_user_id=user.id, tag=body.tag,
+            accent=body.accent, description=body.description, org_id=org_id,
+        )
+    except ValueError as e:
+        raise HTTPException(422, str(e))
     events_svc.record_user(db, user, action="create_project", target_type="project",
                            target_id=project.id, project_id=project.id, meta={"name": project.name})
     return project
