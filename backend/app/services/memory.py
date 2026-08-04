@@ -216,16 +216,21 @@ def score_candidates(db: Session, *, project_id: str | None = None) -> list[dict
     return out
 
 
-def _triage_prefs(db: Session, project_id: str | None) -> tuple[bool, bool, bool]:
-    """(auto_reject, auto_accept, llm_judge) for a project (AL-227). Project-less
+WRITE_MODES = ("review", "auto", "trusted")
+
+
+def _triage_prefs(db: Session, project_id: str | None) -> tuple[str, bool, bool]:
+    """(write_mode, auto_reject, llm_judge) for a project (AL-280). Project-less
     ("global") shards, or an unknown project, fall back to the platform defaults:
-    reject on, accept off, judge off."""
+    review, reject on, judge off — the conservative combination, because a shard
+    with no project has no owner to have chosen otherwise."""
     if project_id is None:
-        return True, False, False
+        return "review", True, False
     project = db.get(Project, project_id)
     if project is None:
-        return True, False, False
-    return bool(project.memory_auto_reject), bool(project.memory_auto_accept), bool(project.memory_llm_judge)
+        return "review", True, False
+    mode = project.memory_write_mode if project.memory_write_mode in WRITE_MODES else "review"
+    return mode, bool(project.memory_auto_reject), bool(project.memory_llm_judge)
 
 
 # --- LLM judge (AL-227) ---------------------------------------------------------
@@ -303,14 +308,19 @@ def triage_candidate(db: Session, shard: MemoryShard) -> MemoryShard:
     low-quality note) — but never overrides a structural veto. It degrades to the
     similarity signal when only the offline stub is available.
 
+    Under `trusted` (AL-280) a novel shard publishes on write, so an agent can read
+    back what it just wrote. The structural vetoes still run first: `auto_reject`
+    is orthogonal to the mode, and trusted-without-dedup would fill the store with
+    restatements of one fact.
+
     A no-op returning the shard unchanged when it isn't a candidate, has no embedding,
-    or the relevant toggle is off — so the AL-49 human boundary holds by default for
+    or nothing is switched on — so the AL-49 human boundary holds by default for
     anything novel."""
     if shard.status != "candidate" or shard.embedding is None:
         return shard
-    auto_reject, auto_accept, llm_judge = _triage_prefs(db, shard.project_id)
-    if not (auto_reject or auto_accept):
-        return shard
+    mode, auto_reject, llm_judge = _triage_prefs(db, shard.project_id)
+    if mode == "review" and not auto_reject:
+        return shard  # nothing may act; skip the scoring work entirely
 
     published = [(s, list(s.embedding)) for s in list_shards(db, project_id=shard.project_id, status="published") if s.embedding is not None]
     rejected = [(s, list(s.embedding)) for s in list_shards(db, project_id=shard.project_id, status="rejected") if s.embedding is not None]
@@ -342,9 +352,15 @@ def triage_candidate(db: Session, shard: MemoryShard) -> MemoryShard:
                 confidence = round(1.0 - verdict["quality"], 3)
                 reasons = [f"LLM judge: {reason}"] if reason else ["LLM judge rated it low-quality"]
 
+    # Vetoes win over every accept path, in every mode.
     if suggestion == "reject" and auto_reject:
         action, new_status = "auto_reject_shard", "rejected"
-    elif suggestion == "accept" and auto_accept and confidence >= _AUTO_ACCEPT_MIN:
+    elif mode == "trusted":
+        # Provenance, not a score: `trusted` marks the shard as published without
+        # anyone — human or judge — having assessed it, so a human arriving later
+        # can find exactly this set (and AL-282 can exclude it from corroboration).
+        action, new_status, source = "trusted_publish_shard", "published", "trusted"
+    elif mode == "auto" and suggestion == "accept" and confidence >= _AUTO_ACCEPT_MIN:
         action, new_status = "auto_publish_shard", "published"
     else:
         return shard  # left as a candidate for human review

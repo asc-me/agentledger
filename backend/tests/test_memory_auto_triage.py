@@ -30,10 +30,10 @@ def _login(client, email):
 # ---- defaults ----
 
 def test_new_project_defaults(client, auth):
-    """Reject on, accept + LLM judge off — the safe posture (AL-227)."""
+    """Reject on, review mode, LLM judge off — the safe posture (AL-227, AL-280)."""
     p = client.post("/api/projects", json={"name": "TriageDefaults"}, headers=auth).json()
     assert p["memory_auto_reject"] is True
-    assert p["memory_auto_accept"] is False
+    assert p["memory_write_mode"] == "review"
     assert p["memory_llm_judge"] is False
 
 
@@ -88,7 +88,7 @@ def test_novel_candidate_is_left_for_review(client, auth):
 
 def test_auto_accept_publishes_high_confidence_recurrence(client, auth):
     pid = _proj(client, auth, "AutoAcc")
-    client.patch(f"/api/projects/{pid}", json={"memory_auto_accept": True}, headers=auth)
+    client.patch(f"/api/projects/{pid}", json={"memory_write_mode": "auto"}, headers=auth)
     key = _key(client, auth, project_id=pid)
     text = "always set a timeout on outbound http"
     statuses = [_mcp(client, key, "add_memory", {"text": text})["status"] for _ in range(3)]
@@ -202,7 +202,7 @@ def test_llm_judge_auto_rejects_low_quality(client, auth, monkeypatch):
 
 def test_llm_judge_auto_accepts_high_quality(client, auth, monkeypatch):
     pid = _proj(client, auth, "JudgeAccept")
-    client.patch(f"/api/projects/{pid}", json={"memory_llm_judge": True, "memory_auto_accept": True}, headers=auth)
+    client.patch(f"/api/projects/{pid}", json={"memory_llm_judge": True, "memory_write_mode": "auto"}, headers=auth)
     key = _key(client, auth, project_id=pid)
     _patch_judge(monkeypatch, '{"keep": true, "quality": 0.95, "reason": "durable, specific convention"}')
     # A novel note similarity would never auto-publish — the judge greenlights it.
@@ -214,7 +214,7 @@ def test_llm_judge_auto_accepts_high_quality(client, auth, monkeypatch):
 
 def test_llm_judge_keep_but_mediocre_stays_candidate(client, auth, monkeypatch):
     pid = _proj(client, auth, "JudgeMeh")
-    client.patch(f"/api/projects/{pid}", json={"memory_llm_judge": True, "memory_auto_accept": True}, headers=auth)
+    client.patch(f"/api/projects/{pid}", json={"memory_llm_judge": True, "memory_write_mode": "auto"}, headers=auth)
     key = _key(client, auth, project_id=pid)
     _patch_judge(monkeypatch, '{"keep": true, "quality": 0.5, "reason": "ok but not strong"}')
     s = _mcp(client, key, "add_memory", {"text": "consider caching the config lookup"})
@@ -237,7 +237,7 @@ def test_llm_judge_does_not_override_structural_veto(client, auth, monkeypatch):
 def test_llm_judge_falls_back_to_similarity_when_stub(client, auth):
     """Toggle on, but only the offline stub provider → judge is a no-op; similarity rules."""
     pid = _proj(client, auth, "JudgeStub")
-    client.patch(f"/api/projects/{pid}", json={"memory_llm_judge": True, "memory_auto_accept": True}, headers=auth)
+    client.patch(f"/api/projects/{pid}", json={"memory_llm_judge": True, "memory_write_mode": "auto"}, headers=auth)
     key = _key(client, auth, project_id=pid)
     s = _mcp(client, key, "add_memory", {"text": "a novel note with no configured model"})
     assert s["status"] == "candidate"

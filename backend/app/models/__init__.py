@@ -119,16 +119,25 @@ class Project(Base):
     auto_extract: Mapped[bool] = mapped_column(Boolean, default=True)
     mcp_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     # Memory auto-triage (AL-227): let the AL-151 scorer ACT on agent candidates
-    # instead of only advising, so the review queue stays small. `auto_reject`
-    # (on) drops near-dups / resembles-rejected on write; `auto_accept` (off)
-    # publishes high-confidence corroborated lessons; `llm_judge` (off) swaps the
-    # offline similarity scorer for an LLM assessment. Every auto-action is audited
-    # and undoable — the AL-49 human boundary holds for anything left as candidate.
+    # instead of only advising, so the review queue stays small. Every auto-action
+    # is audited and undoable.
+    #
+    # `write_mode` (AL-280) decides what happens to a NOVEL agent write:
+    #   review  — stays a candidate until a human publishes it (the AL-49 boundary)
+    #   auto    — publishes only when strongly corroborated (>= _AUTO_ACCEPT_MIN)
+    #   trusted — publishes on write, so the agent can read back what it wrote
+    # It replaced the `memory_auto_accept` boolean, which never auto-accepted
+    # anything novel and so read as a broken setting rather than a strict one.
+    #
+    # `auto_reject` (on) is ORTHOGONAL to the mode and vetoes in all three: dedup
+    # is worth keeping without a human, and `trusted` without it would accumulate
+    # restatements of one fact. `llm_judge` (off) swaps the offline similarity
+    # scorer for an LLM assessment.
+    memory_write_mode: Mapped[str] = mapped_column(
+        String, default="review", server_default="review", nullable=False
+    )
     memory_auto_reject: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default=true(), nullable=False
-    )
-    memory_auto_accept: Mapped[bool] = mapped_column(
-        Boolean, default=False, server_default=false(), nullable=False
     )
     memory_llm_judge: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=false(), nullable=False

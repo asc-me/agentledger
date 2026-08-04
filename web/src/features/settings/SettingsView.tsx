@@ -406,7 +406,7 @@ function ProjectPanel() {
   const [form, setForm] = React.useState<Partial<Project>>({});
   const [saved, setSaved] = React.useState(false);
   React.useEffect(() => {
-    if (active) setForm({ name: active.name, description: active.description, share_global_memory: active.share_global_memory, auto_extract: active.auto_extract, mcp_enabled: active.mcp_enabled, memory_auto_reject: active.memory_auto_reject, memory_auto_accept: active.memory_auto_accept, memory_llm_judge: active.memory_llm_judge });
+    if (active) setForm({ name: active.name, description: active.description, share_global_memory: active.share_global_memory, auto_extract: active.auto_extract, mcp_enabled: active.mcp_enabled, memory_write_mode: active.memory_write_mode, memory_auto_reject: active.memory_auto_reject, memory_llm_judge: active.memory_llm_judge });
   }, [active?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!active) return null;
@@ -426,9 +426,16 @@ function ProjectPanel() {
 
   // AL-227: memory auto-triage — the scorer acts on agent candidates on write.
   const triageFlags: { key: keyof Project; label: string; hint?: string; disabled?: boolean }[] = [
-    { key: "memory_auto_reject", label: "Auto-reject duplicate & rejected-alike memories", hint: "On: near-duplicates and shards resembling ones you've rejected drop straight to rejected (kept, never surfaced — undoable)." },
-    { key: "memory_auto_accept", label: "Auto-publish high-confidence memories", hint: "Off by default: strongly-corroborated lessons publish without review. Punches through the candidate boundary — every auto-publish is audited and undoable." },
+    { key: "memory_auto_reject", label: "Auto-reject duplicate & rejected-alike memories", hint: "On: near-duplicates and shards resembling ones you've rejected drop straight to rejected (kept, never surfaced — undoable). Applies in every write mode." },
     { key: "memory_llm_judge", label: "Use the LLM judge to assess memories", hint: "Needs a chat provider configured. The model rates each candidate's quality to refine the decisions above; falls back to similarity when no model is set." },
+  ];
+
+  // AL-280: what happens to a NOVEL agent write. Replaced the auto-publish checkbox,
+  // which could never publish anything novel however it was set.
+  const writeModes: { value: string; label: string; hint: string }[] = [
+    { value: "review", label: "Review", hint: "Agent writes wait as candidates until you publish them. The agent can't read back what it just wrote." },
+    { value: "auto", label: "Auto", hint: "Publishes only strongly-corroborated lessons — a recurring or vouched-for note. Novel facts still wait for you." },
+    { value: "trusted", label: "Trusted", hint: "Publishes on write, so the agent can read back what it wrote. Nobody has assessed these — they're labelled and undoable in Memory review." },
   ];
 
   return (
@@ -443,6 +450,26 @@ function ProjectPanel() {
             {fl.label}
           </label>
         ))}
+      </div>
+      <div className="mb-4">
+        <Label>Agent memory writes</Label>
+        <div className="mt-1 space-y-2.5">
+          {writeModes.map((m) => (
+            <label key={m.value} className="flex cursor-pointer gap-2.5 text-[12.5px] text-fg-2">
+              <input
+                type="radio"
+                name="memory_write_mode"
+                className="accent-accent mt-0.5"
+                checked={(form.memory_write_mode ?? "review") === m.value}
+                onChange={() => setForm((f) => ({ ...f, memory_write_mode: m.value }))}
+              />
+              <span>
+                {m.label}
+                <span className="mt-0.5 block text-[11px] leading-snug text-faint">{m.hint}</span>
+              </span>
+            </label>
+          ))}
+        </div>
       </div>
       <div className="mb-4">
         <Label>Memory auto-triage</Label>

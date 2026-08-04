@@ -206,9 +206,9 @@ class ProjectOut(ORMModel):
     auto_extract: bool
     mcp_enabled: bool
     embed_model: str
-    # Memory auto-triage toggles (AL-227).
+    # Memory auto-triage (AL-227); write mode replaced `memory_auto_accept` (AL-280).
+    memory_write_mode: str = "review"
     memory_auto_reject: bool = True
-    memory_auto_accept: bool = False
     memory_llm_judge: bool = False
 
 
@@ -539,9 +539,18 @@ class ProjectUpdate(BaseModel):
     auto_extract: bool | None = None
     mcp_enabled: bool | None = None
     embed_model: str | None = None
+    memory_write_mode: str | None = None
     memory_auto_reject: bool | None = None
-    memory_auto_accept: bool | None = None
     memory_llm_judge: bool | None = None
+
+    @field_validator("memory_write_mode")
+    @classmethod
+    def _valid_write_mode(cls, v: str | None) -> str | None:
+        # Rejected at the boundary rather than coerced, so a typo is a 422 naming the
+        # allowed values instead of a project silently reverting to `review`.
+        if v is not None and v not in ("review", "auto", "trusted"):
+            raise ValueError("memory_write_mode must be one of: review, auto, trusted")
+        return v
 
 
 class MemberOut(BaseModel):
