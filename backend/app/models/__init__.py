@@ -421,6 +421,37 @@ class Prd(Base):
         return [_key_of(self, i, "item") for i in (self.linked or [])]
 
 
+class GrillTurn(Base):
+    """One turn of a PRD's grill, owned by the SERVER (AL-296 / PRD-15 D4).
+
+    The grill used to live entirely in the client: it posted the whole transcript to
+    `/grill/stream` and `/grill/apply`, and nothing was kept. That was fine while the
+    grill was advisory. It stops being fine now that approval is derived from it — the
+    server has to be able to answer "has this PRD been grilled, and is anything still
+    open?" without trusting a caller to tell it.
+
+    Distinct from the memory shards `capture_grill_decisions` writes, and deliberately
+    so. Those hold the durable CONTENT of each decision and flow through Memory review;
+    this holds the STRUCTURE of the conversation — what was asked, what came back, in
+    what order. Merging them would make one of the two jobs worse.
+
+    Append-only. A grill on a PRD is one continuing conversation, so re-opening it adds
+    rounds rather than replacing them; the earlier rounds did happen.
+    """
+
+    __tablename__ = "grill_turns"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    prd_id: Mapped[str] = mapped_column(ForeignKey("prds.id"), index=True)
+    # Position in the conversation. Unique per PRD so a double-submit can't interleave.
+    seq: Mapped[int] = mapped_column(Integer)
+    role: Mapped[str] = mapped_column(String)  # "agent" (question) | "user" (answer)
+    text: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (UniqueConstraint("prd_id", "seq", name="uq_grill_turn_seq"),)
+
+
 class PrdVersion(Base):
     __tablename__ = "prd_versions"
 
