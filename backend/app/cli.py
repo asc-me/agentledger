@@ -96,9 +96,10 @@ def cmd_init(args) -> int:
 
     db = _session()
     try:
-        result = bootstrap.provision(
-            db, project_name=args.project_name, email=args.email, name=args.operator_name
-        )
+        kwargs = {"project_name": args.project_name, "name": args.operator_name}
+        if args.email:
+            kwargs["email"] = args.email
+        result = bootstrap.provision(db, **kwargs)
     except bootstrap.BootstrapRefused as e:
         sys.exit(f"graphban init: {e}")
     finally:
@@ -294,7 +295,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     it = sub.add_parser("init", help="first-run provisioning: operator, project, and one key")
     it.add_argument("--project-name", default="My Project")
-    it.add_argument("--email", default="operator@localhost")
+    it.add_argument("--email", default=None, help="operator sign-in address")
     it.add_argument("--operator-name", default="Operator")
     it.add_argument("--json", action="store_true", help="machine-readable output for start.sh")
     it.set_defaults(func=cmd_init)

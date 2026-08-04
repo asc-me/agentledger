@@ -23,7 +23,11 @@ WEB_PORT=${WEB_PORT:-8080}
 API_URL="http://localhost:${API_PORT}"
 PROJECT_NAME=${PROJECT_NAME:-$(basename "$PWD")}
 CONFIG_DIR="${HOME}/.graphban"
-CONFIG_FILE="${CONFIG_DIR}/config.json"
+# NOT config.json — that file belongs to `graphban link`, which stores the CLOUD SYNC
+# credential under the same `api_key` name. Writing the local MCP key there would both
+# clobber an existing link and leave `graphban sync` pushing with the wrong credential.
+# Found by the AL-286 acceptance walk.
+CONFIG_FILE="${CONFIG_DIR}/mcp.json"
 
 say() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 
@@ -79,6 +83,9 @@ Graphban is running.
   Password   {data['password']}
 
   Project    {data['project_name']}  (keys render as {data['project_tag']}-1, {data['project_tag']}-2, …)
+  Memory     {data['memory_write_mode']} — the agent's notes publish on write so it can read
+             them back. Nobody has vetted them: they're labelled "no review" in
+             Memory review and can be undone there. Change it in project settings.
 
 Add this to your MCP client (~/.claude.json, or .cursor/mcp.json):
 
