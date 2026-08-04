@@ -1,4 +1,5 @@
 import { Check, Layers, RotateCcw, Sparkles, X } from "lucide-react";
+import * as React from "react";
 
 import { cn } from "@/lib/cn";
 import { useProjectCtx } from "@/features/ProjectContext";
@@ -26,6 +27,7 @@ export function MemoryReviewView() {
   const { publish, reject } = useReviewShard();
   const promoteCluster = usePromoteCluster();
   const undoAuto = useUndoAutoShard();
+  const [unvettedOnly, setUnvettedOnly] = React.useState(false);
 
   if (isLoading || !candidates) {
     return <div className="flex h-full items-center justify-center text-[13px] text-muted">Loading…</div>;
@@ -33,6 +35,11 @@ export function MemoryReviewView() {
 
   const clustered = new Set((clusters ?? []).flatMap((c) => [c.representative.id, ...c.members.map((m) => m.id)]));
   const scoreById = new Map((scored ?? []).map((s) => [s.shard.id, s]));
+  // Published with nobody looking (AL-280 trusted / AL-282 agent). With no candidates
+  // queued this is the ONLY work left, so it drives the empty state too.
+  const unvettedTotal = (autoActions ?? []).filter((s) =>
+    UNVETTED_SOURCES.includes(s.scoring_source),
+  ).length;
   // Loose candidates ordered most-actionable first (highest suggestion confidence).
   const loose = candidates
     .filter((s) => !clustered.has(s.id))
@@ -48,14 +55,26 @@ export function MemoryReviewView() {
             search — so an unverified note never becomes ground truth for the next agent.
           </p>
         </div>
-        <div className="ml-auto font-mono text-[10.5px] text-faint">{candidates.length} PENDING</div>
+        <div className="ml-auto flex items-center gap-3 font-mono text-[10.5px] text-faint">
+          <span>{candidates.length} PENDING</span>
+          {unvettedTotal > 0 && (
+            <span className="text-[#a78bfa]">{unvettedTotal} UNREVIEWED</span>
+          )}
+        </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-5">
         <div className="mx-auto flex max-w-3xl flex-col gap-2.5">
           {candidates.length === 0 ? (
             <div className="py-16 text-center text-[13px] text-muted">
-              Nothing to review. Agent-proposed lessons and notes will queue here for your approval.
+              {unvettedTotal > 0 ? (
+                <>
+                  No candidates waiting — but {unvettedTotal} shard{unvettedTotal === 1 ? " was" : "s were"}{" "}
+                  published without a human. Reviewing those is the job below.
+                </>
+              ) : (
+                <>Nothing to review. Agent-proposed lessons and notes will queue here for your approval.</>
+              )}
             </div>
           ) : (
             <>
@@ -89,6 +108,8 @@ export function MemoryReviewView() {
               shards={autoActions}
               onUndo={(id) => undoAuto.mutate(id)}
               busy={undoAuto.isPending}
+              unvettedOnly={unvettedOnly}
+              onToggleUnvetted={() => setUnvettedOnly((v) => !v)}
             />
           )}
         </div>
@@ -97,28 +118,68 @@ export function MemoryReviewView() {
   );
 }
 
-/** AL-227: memories the scorer published or rejected without a human. Shown so no
- *  auto-action is silent — each can be pulled back into the review queue. */
+/** Which of these did a person actually look at? (AL-287)
+ *
+ *  `similarity` / `llm` are the AL-227 scorer acting on its own thresholds. `trusted`
+ *  (AL-280) published on write with nothing assessed at all, and `agent` (AL-282) means
+ *  an agent submitted it and the judge ruled — no human either way.
+ *
+ *  Once agents run the loop, reviewing what they decided IS the human's job, so the two
+ *  unvetted sources get their own label and a one-click filter. These are also the
+ *  shards excluded from the corroboration pool, so this list is exactly the set worth
+ *  sweeping. */
+export const UNVETTED_SOURCES = ["trusted", "agent"];
+
+const SOURCE_LABEL: Record<string, string> = {
+  trusted: "no review",
+  agent: "agent + judge",
+  llm: "llm scorer",
+  similarity: "similarity",
+};
+
 function AutoActionsLane({
   shards,
   onUndo,
   busy,
+  unvettedOnly,
+  onToggleUnvetted,
 }: {
   shards: Shard[];
   onUndo: (id: string) => void;
   busy: boolean;
+  unvettedOnly: boolean;
+  onToggleUnvetted: () => void;
 }) {
+  const unvettedCount = shards.filter((s) => UNVETTED_SOURCES.includes(s.scoring_source)).length;
+  const shown = unvettedOnly
+    ? shards.filter((s) => UNVETTED_SOURCES.includes(s.scoring_source))
+    : shards;
   return (
     <div className="mt-4">
       <div className="mb-2 flex items-center gap-2 px-0.5">
         <Sparkles size={12} className="text-[#a78bfa]" />
         <span className="font-mono text-[10.5px] uppercase tracking-wide text-faint">
-          Recent auto-actions · {shards.length}
+          Recent auto-actions · {shown.length}
         </span>
+        {unvettedCount > 0 && (
+          <button
+            onClick={onToggleUnvetted}
+            aria-pressed={unvettedOnly}
+            className={cn(
+              "rounded-md border px-1.5 py-0.5 font-mono text-[9.5px] uppercase tracking-wide transition-colors",
+              unvettedOnly
+                ? "border-[#a78bfa] bg-[rgba(167,139,250,0.12)] text-[#a78bfa]"
+                : "border-line-2 text-faint hover:border-line-hover hover:text-muted",
+            )}
+          >
+            {unvettedOnly ? "showing" : "show"} {unvettedCount} nobody reviewed
+          </button>
+        )}
       </div>
       <div className="flex flex-col gap-1.5">
-        {shards.map((s) => {
+        {shown.map((s) => {
           const rejected = s.status === "rejected";
+          const unvetted = UNVETTED_SOURCES.includes(s.scoring_source);
           return (
             <div
               key={s.id}
@@ -134,6 +195,23 @@ function AutoActionsLane({
               >
                 auto-{rejected ? "rejected" : "published"}
               </span>
+              {s.scoring_source && (
+                <span
+                  title={
+                    unvetted
+                      ? "Published without a human looking at it. Excluded from the corroboration pool until you review it."
+                      : "Decided by the offline scorer on its confidence thresholds."
+                  }
+                  className={cn(
+                    "mt-0.5 shrink-0 rounded border px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wide",
+                    unvetted
+                      ? "border-[rgba(167,139,250,0.35)] bg-[rgba(167,139,250,0.1)] text-[#a78bfa]"
+                      : "border-line-2 text-faint",
+                  )}
+                >
+                  {SOURCE_LABEL[s.scoring_source] ?? s.scoring_source}
+                </span>
+              )}
               <p className="min-w-0 flex-1 truncate text-[12.5px] text-fg-2" title={s.text}>
                 {s.text}
               </p>
