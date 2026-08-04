@@ -91,7 +91,7 @@ Every client authenticates the same way: the key in an `X-API-Key` header (or
 | `create_item` | `title`, `description`, `tags`, `touchpoints`, `effort`, `status`, `fidelity`, `project_id` | Create a tracker item (returns its `project_id`) |
 | `update_item` | `id`, `status`, `title`, `description`, `tags`, `touchpoints`, `effort`, `blocker`, `fidelity`, `prd_id`, `prd_section` | Patch / advance an item |
 | `search_items` | `query`, `tags`, `status`, `fields`, `project_id` | Query the stream (query matches title, description, **and** tags); lean rows by default, `fields="full"` for all |
-| `add_memory` | `text`, `scope`, `item_id`, `project_id` | Record a memory shard — **enters as a `candidate`** pending human publish (AL-49) |
+| `add_memory` | `text`, `scope`, `item_id`, `project_id` | Record a memory shard. Resolved `status` follows the project's memory write mode: `review` → **`candidate`** pending human publish (AL-49, the default), `auto` → published only when strongly corroborated, `trusted` → published on write so an agent can read its own writes back (AL-280) |
 | `search_memory` | `query`, `top_k`, `include_candidates`, `project_id` | Semantic search over **published** shards (set `include_candidates` for unreviewed ones); returns `status`, `item_id`, `source` |
 | `get_backlog` | `limit`, `fields`, `project_id` | Prioritized backlog (lean rows + ranking fields by default, `fields="full"` for all) |
 | `get_item_details` | `id` | Item + linked shards + linked requests |

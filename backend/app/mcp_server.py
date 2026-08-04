@@ -159,10 +159,14 @@ TOOLS: list[dict[str, Any]] = [
         "name": "add_memory",
         "description": (
             "Record a memory shard (decision, lesson, or note) on an item or the global scope. "
-            "Agent-written shards enter as `candidate` and surface in search only after a human "
-            "publishes them — though the project may auto-triage on write (near-duplicates auto-"
-            "rejected, strongly-corroborated lessons auto-published). Returns the shard incl. its "
-            "resolved `status` and, if auto-triaged, `scoring_source` + `auto_confidence`."
+            "What happens next depends on the project's memory write mode: `review` (default) "
+            "holds it as a `candidate` until a human publishes it, `auto` publishes only "
+            "strongly-corroborated lessons, and `trusted` publishes on write — so under "
+            "`trusted` you can read your own writes back with search_memory in the same "
+            "session. Near-duplicates are auto-rejected in every mode. ALWAYS check the "
+            "returned `status`: a `candidate` will NOT come back from search_memory unless you "
+            "pass include_candidates. Returns the shard incl. `status` and, when it was acted "
+            "on without a human, `scoring_source` + `auto_confidence`."
         ),
         "inputSchema": {
             "type": "object",

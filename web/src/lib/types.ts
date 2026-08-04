@@ -25,7 +25,7 @@ export interface Project {
   embed_model: string;
   // Memory auto-triage toggles (AL-227).
   memory_auto_reject: boolean;
-  memory_auto_accept: boolean;
+  memory_write_mode: string;
   memory_llm_judge: boolean;
 }
 
