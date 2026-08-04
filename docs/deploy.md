@@ -189,8 +189,11 @@ directly against the instance database, so run it where `DATABASE_URL` points at
 instance — inside the backend container is simplest:
 
 ```bash
-# Link once — stores the cloud URL + org-issued sync credential in
-# ~/.agentledger/config.json (chmod 600; override path via AGENTLEDGER_CONFIG).
+# Link once. Records the link in BOTH places (AL-281): `~/.graphban/config.json`
+# (chmod 600; override via GRAPHBAN_CONFIG) is what the CLI's own commands read, and
+# the `sync_link` row is what everything server-side reads. The DB write is required —
+# run this where DATABASE_URL points at the instance, or the command exits non-zero
+# rather than reporting a link the server can't see.
 docker compose exec backend graphban link \
   --cloud-url https://cloud.example/ --api-key al_sk_… --project core
 
