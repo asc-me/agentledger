@@ -89,6 +89,20 @@ def _session():
 # ---- commands -----------------------------------------------------------------
 
 def cmd_link(args) -> int:
+    """Link this instance to a cloud tenant, recording it in BOTH places (AL-281).
+
+    The config file is what the CLI's own commands read. The `sync_link` row is what
+    everything server-side reads — `code_sync.link_status()` resolves that row, then the
+    env link, and never consults the config file. Writing only the file left a
+    CLI-linked box reporting `linked: false` to the server, which would make the AL-284
+    authority gate FAIL OPEN: an agent could create projects that reach the org's tenant
+    space precisely on the instances that are linked to one.
+
+    The DB write is required, not best-effort. A silent failure here is the fail-open
+    case, and this CLI already runs where `DATABASE_URL` points at the instance.
+    """
+    from app.services import code_sync
+
     cfg = load_config()
     if args.cloud_url:
         cfg["cloud_url"] = args.cloud_url.rstrip("/")
@@ -98,14 +112,46 @@ def cmd_link(args) -> int:
         cfg["project"] = args.project
     if not cfg.get("cloud_url") or not cfg.get("api_key"):
         sys.exit("graphban link: need --cloud-url and --api-key (the org-issued sync credential)")
+
+    db = _session()
+    try:
+        # Carry the existing org label through. `set_link` overwrites it, and the label
+        # is the UI's to set — re-linking from the CLI must not blank it.
+        existing = code_sync.get_link(db)
+        org = args.org if getattr(args, "org", None) else (existing.org if existing else "")
+        code_sync.set_link(db, cloud_url=cfg["cloud_url"], api_key=cfg["api_key"], org=org)
+    except Exception as e:  # noqa: BLE001 — surface it; never leave the row unwritten
+        sys.exit(
+            f"graphban link: could not record the link in the database ({e}).\n"
+            "The link is not saved. Run this where DATABASE_URL points at your instance "
+            "(e.g. `docker compose exec api graphban link …`)."
+        )
+    finally:
+        db.close()
+
     path = save_config(cfg)
     print(f"Linked → {cfg['cloud_url']} (project {cfg.get('project', 'core')}). Saved to {path}.")
     return 0
 
 
 def cmd_status(args) -> int:
+    from app.services import code_sync
+
     cfg = load_config()
+    db = _session()
+    try:
+        server = code_sync.link_status(db)
+    finally:
+        db.close()
+
     if not cfg.get("cloud_url"):
+        if server["linked"]:
+            # The server is linked but this config isn't — sync from here would not know
+            # where to push. Say so rather than reporting a bare "not linked".
+            print(f"Not linked in {_read_path()}, but the INSTANCE is linked to "
+                  f"{server['cloud_url']} (source: {server['source']}).")
+            print("Run: graphban link --cloud-url … --api-key … to link this config too.")
+            return 0
         print("Not linked. Run: graphban link --cloud-url … --api-key …")
         return 0
     project = _project(args, cfg)
@@ -113,6 +159,14 @@ def cmd_status(args) -> int:
     print(f"Linked to : {cfg['cloud_url']}")
     print(f"Project   : {project}")
     print(f"Credential: {'set (' + key[:6] + '…)' if key else 'MISSING'}")
+    # The two records must agree — a mismatch is what AL-281 exists to make impossible,
+    # so surface it loudly rather than letting the server-side gate read the other one.
+    if not server["linked"]:
+        print("WARNING   : the instance has NO link recorded. Re-run `graphban link`.")
+    elif server["cloud_url"] != cfg["cloud_url"]:
+        print(f"WARNING   : the instance is linked to {server['cloud_url']} "
+              f"(source: {server['source']}) — this config disagrees.")
+
     from app.models import CodeSyncState
     db = _session()
     try:
@@ -213,6 +267,8 @@ def build_parser() -> argparse.ArgumentParser:
     lk.add_argument("--cloud-url")
     lk.add_argument("--api-key")
     lk.add_argument("--project")
+    lk.add_argument("--org", help="optional label for the linked org (shown in the UI); "
+                                  "omitted keeps whatever label is already recorded")
     lk.set_defaults(func=cmd_link)
 
     st = sub.add_parser("status", help="show the link + last-synced state")

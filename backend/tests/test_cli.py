@@ -11,8 +11,21 @@ from app import cli
 
 
 class _DummyDB:
+    """Enough Session surface for the CLI's own paths. `link` writes the `sync_link`
+    row as well as the config file (AL-281), so the double has to accept a write —
+    what it records is covered for real in test_cli_link_signal.py."""
+
     def get(self, *a, **k):
         return None
+
+    def add(self, *a, **k):
+        pass
+
+    def commit(self):
+        pass
+
+    def refresh(self, *a, **k):
+        pass
 
     def close(self):
         pass
