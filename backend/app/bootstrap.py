@@ -29,6 +29,13 @@ from app.security.passwords import hash_password
 from app.services import projects as projects_svc
 
 
+# Must survive Pydantic's EmailStr on the LOGIN endpoint, which is a stricter check than
+# the `users.email` column (a plain String). `operator@localhost` provisioned happily and
+# then could not sign in — the exact "account nobody can log into" dead end this script
+# set out to avoid, arriving one layer down. Found by the AL-286 acceptance walk.
+DEFAULT_EMAIL = "operator@example.com"
+
+
 class BootstrapRefused(Exception):
     """This instance must not be bootstrapped. The message says why and what to do."""
 
@@ -72,7 +79,7 @@ def provision(
     db: Session,
     *,
     project_name: str,
-    email: str = "operator@localhost",
+    email: str = DEFAULT_EMAIL,
     name: str = "Operator",
     password: str | None = None,
 ) -> dict:
@@ -101,6 +108,17 @@ def provision(
     db.commit()
 
     project = projects_svc.create_project(db, name=project_name, owner_user_id=user.id)
+    # Trusted memory, deliberately, and ONLY for a project created by this script.
+    #
+    # The AL-286 acceptance walk caught D1 and D3 not composing: each is right alone, but
+    # a bootstrapped project defaulting to `review` cannot read back its own writes, so
+    # the zero-browser install this script exists to deliver stops at the first memory.
+    # Running it is an explicit request for an agent-driven instance, the project is brand
+    # new so there is no existing corpus to poison, and every trusted publish is labelled
+    # and undoable in Memory review. Existing projects are untouched — migration 0040
+    # still defaults them to `review`.
+    project.memory_write_mode = "trusted"
+    db.commit()
     _, api_key = generate_api_key(db, user.id, "first-run", ["read", "write"], project.id, None)
 
     return {
@@ -110,5 +128,6 @@ def provision(
         "project_id": project.id,
         "project_name": project.name,
         "project_tag": project.tag,
+        "memory_write_mode": project.memory_write_mode,
         "api_key": api_key,
     }

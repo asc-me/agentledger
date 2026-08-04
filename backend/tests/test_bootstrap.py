@@ -14,6 +14,7 @@ from sqlalchemy import select
 
 from app import bootstrap
 from app.models import ApiKey, Membership, Project, User
+from app.services import projects as projects_svc
 
 
 @pytest.fixture()
@@ -59,7 +60,22 @@ def test_provisioning_yields_a_working_agent_credential(client, db, monkeypatch)
 
 def test_the_operator_can_sign_in_with_what_was_printed(client, db, monkeypatch):
     """An account nobody can log into is a dead end — the human is the reviewer at the
-    quality gates eventually, so the printed credential has to actually work."""
+    quality gates eventually, so the printed credential has to actually work.
+
+    Uses the DEFAULT email deliberately. The first version of this test passed an explicit
+    `me@example.com` and so proved nothing about the value real operators actually get:
+    the default was `operator@localhost`, which the users table accepted (plain String)
+    and the login endpoint rejected (EmailStr — no TLD). The account provisioned fine and
+    could never sign in. Test the default, because the default is what ships."""
+    monkeypatch.setattr(bootstrap.settings, "seed_on_start", False)
+    out = bootstrap.provision(db, project_name="My Repo")
+    assert out["email"] == bootstrap.DEFAULT_EMAIL
+    r = client.post("/api/auth/login",
+                    json={"email": out["email"], "password": out["password"]})
+    assert r.status_code == 200, r.text
+
+
+def test_a_custom_operator_email_also_signs_in(client, db, monkeypatch):
     monkeypatch.setattr(bootstrap.settings, "seed_on_start", False)
     out = bootstrap.provision(db, project_name="My Repo", email="me@example.com")
     r = client.post("/api/auth/login",
@@ -138,3 +154,44 @@ def test_the_refusals_are_checked_before_anything_is_written(client, db, monkeyp
     assert db.scalars(select(User)).all() == []
     assert db.scalars(select(Project)).all() == []
     assert db.scalars(select(ApiKey)).all() == []
+
+
+# ---- what the AL-286 acceptance walk caught -----------------------------------------
+def test_a_bootstrapped_project_can_read_back_its_own_memory(client, db, monkeypatch):
+    """D1 and D3 did not compose. Each was right alone: `review` is the correct default
+    for an existing project, and provisioning correctly created one. Together they meant
+    a zero-browser install stopped at the first memory the agent wrote — it landed as a
+    candidate and `search_memory` returned nothing, with no human around to publish it.
+
+    Only a project created BY THIS SCRIPT is trusted. Running it is an explicit request
+    for an agent-driven instance, the project is brand new so there is no corpus to
+    poison, and every publish is labelled and undoable."""
+    monkeypatch.setattr(bootstrap.settings, "seed_on_start", False)
+    out = bootstrap.provision(db, project_name="Zero Browser")
+    assert out["memory_write_mode"] == "trusted"
+
+    def mcp(tool, args):
+        r = client.post("/api/mcp",
+                        json={"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                              "params": {"name": tool, "arguments": args}},
+                        headers={"X-API-Key": out["api_key"]})
+        import json as _json
+        return _json.loads(r.json()["result"]["content"][0]["text"])
+
+    written = mcp("add_memory", {"text": "Migrations run on API startup."})
+    assert written["status"] == "published", written
+    found = mcp("search_memory", {"query": "migrations on startup"})
+    assert found["returned"] == 1, found
+
+
+def test_provisioning_does_not_change_an_existing_projects_write_mode(client, db, monkeypatch):
+    """The trusted default is scoped to the project this script creates. Nothing else on
+    the instance moves, and migration 0040 still defaults existing projects to review."""
+    from app.models import Project
+
+    monkeypatch.setattr(bootstrap.settings, "seed_on_start", False)
+    out = bootstrap.provision(db, project_name="First")
+    other = projects_svc.create_project(db, name="Made In The UI",
+                                        owner_user_id=db.scalars(select(User)).first().id)
+    assert other.memory_write_mode == "review"
+    assert db.get(Project, out["project_id"]).memory_write_mode == "trusted"
