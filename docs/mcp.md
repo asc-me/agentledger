@@ -106,7 +106,7 @@ Every client authenticates the same way: the key in an `X-API-Key` header (or
 | `prd_coverage` | `prd_id` | Spec-to-task rollup: per-section counts, coverage %, gaps (read-only) |
 | `decompose_prd` | `prd_id`, `create` | Propose (or create) one task per un-covered PRD section |
 | `create_prd` | `title`, `body`, `template`, `project_id` | **Author a PRD** (the handoff artifact) — `## ` sections drive decompose/coverage |
-| `update_prd` | `prd_id`, `title`, `status`, `body` | Patch a PRD's title / status / body |
+| `update_prd` | `prd_id`, `title`, `status`, `body` | Patch a PRD's title, status (`draft`/`review`) or body. **`approved` is not settable** — it is reached by finishing the grill; setting it returns `conflict` naming what is still outstanding (AL-300) |
 | `answer_grill` | `prd_id`, `answer` | Relay the author's answer to a grill question — recorded as **agent-relayed**, visible to whoever reviews later. Returns `outstanding` + `complete` (AL-299) |
 | `grill_prd` | `prd_id` | **Grill** — next clarifying questions to sharpen a PRD before building (read-only) |
 | `describe_code` | `nodes`, `edges`, `prune`, `project_id` | **Record code structure** — upsert code nodes (module/file/symbol + summary) and typed edges. Idempotent by path; re-describe on change |

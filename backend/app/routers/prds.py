@@ -99,6 +99,7 @@ def prd_grill_defer(prd_id: str, body: GrillDeferIn, db: Session = Depends(get_d
                               graded_by="author")
     except ValueError as e:
         raise HTTPException(422, str(e))
+    prd_svc.sync_status(db, prd)  # a deferral can be what completes the grill
     events_svc.record_user(db, user, action="grill_defer", target_type="prd",
                            target_id=prd.id, project_id=prd.project_id,
                            meta={"dimension": body.dimension, "reason": body.reason})
@@ -125,6 +126,10 @@ def update_prd(prd_id: str, body: PrdUpdate, db: Session = Depends(get_db), user
     _require_writable_prd(db, user, prd_id)
     try:
         prd = prd_svc.update_prd(db, prd_id, **body.model_dump(exclude_unset=True))
+    except prd_svc.ApprovalNotEarned as e:
+        # 409, not 422: the request is well-formed and permitted, the PRD just is not
+        # there yet. A validation error would read as "you sent something malformed".
+        raise HTTPException(409, str(e))
     except ValueError as e:
         raise HTTPException(422, str(e))
     if prd is None:
