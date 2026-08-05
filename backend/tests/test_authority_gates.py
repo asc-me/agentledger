@@ -107,6 +107,8 @@ def test_the_mcp_tool_surface_is_an_explicit_allowlist(client):
         # Quality gates, added deliberately by AL-282. `publish_memory` SUBMITS for
         # independent adjudication rather than publishing, so it is not self-approval.
         "publish_memory", "reject_memory",
+        # AL-299: relays an author's answer into the grill; recorded as agent-supplied.
+        "answer_grill",
         "get_backlog", "get_item_details", "suggest_next", "link_items",
         "unlink_items", "extract_lessons", "generate_digest", "prd_coverage",
         "decompose_prd", "create_prd", "update_prd", "grill_prd",

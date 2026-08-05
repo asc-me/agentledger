@@ -76,7 +76,7 @@ mcp_servers:
 Every client authenticates the same way: the key in an `X-API-Key` header (or
 `Authorization: Bearer`), against a URL reachable **from where the agent runs**.
 
-## The 35 tools
+## The 36 tools
 
 | Tool | Params | Does |
 | --- | --- | --- |
@@ -107,6 +107,7 @@ Every client authenticates the same way: the key in an `X-API-Key` header (or
 | `decompose_prd` | `prd_id`, `create` | Propose (or create) one task per un-covered PRD section |
 | `create_prd` | `title`, `body`, `template`, `project_id` | **Author a PRD** (the handoff artifact) — `## ` sections drive decompose/coverage |
 | `update_prd` | `prd_id`, `title`, `status`, `body` | Patch a PRD's title / status / body |
+| `answer_grill` | `prd_id`, `answer` | Relay the author's answer to a grill question — recorded as **agent-relayed**, visible to whoever reviews later. Returns `outstanding` + `complete` (AL-299) |
 | `grill_prd` | `prd_id` | **Grill** — next clarifying questions to sharpen a PRD before building (read-only) |
 | `describe_code` | `nodes`, `edges`, `prune`, `project_id` | **Record code structure** — upsert code nodes (module/file/symbol + summary) and typed edges. Idempotent by path; re-describe on change |
 | `get_code_map` | `kind`, `project_id` | The project's code graph — described nodes + typed edges (read-only) |

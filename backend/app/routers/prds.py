@@ -95,7 +95,8 @@ def prd_grill_defer(prd_id: str, body: GrillDeferIn, db: Session = Depends(get_d
         raise HTTPException(404, "prd not found")
     authz.require_writable(db, user.id, prd.project_id, "prd")
     try:
-        prd_svc.set_dimension(db, prd.id, body.dimension, "deferred", note=body.reason)
+        prd_svc.set_dimension(db, prd.id, body.dimension, "deferred", note=body.reason,
+                              graded_by="author")
     except ValueError as e:
         raise HTTPException(422, str(e))
     events_svc.record_user(db, user, action="grill_defer", target_type="prd",
@@ -178,7 +179,7 @@ def grill_stream(prd_id: str, body: GrillIn, db: Session = Depends(get_db), user
     client_history = [m.model_dump() for m in body.history]
     if body.message:
         client_history = client_history + [{"role": "user", "text": body.message}]
-    prd_svc.record_grill_turns(db, prd.id, client_history)
+    prd_svc.record_grill_turns(db, prd.id, client_history, via="human", actor=user.id)
 
     # Prefer what the server holds over what the caller sent: it is the same
     # conversation plus anything a second session contributed.
@@ -232,7 +233,8 @@ def grill_apply(prd_id: str, body: GrillApplyIn, db: Session = Depends(get_db), 
     authz.require_writable(db, user.id, prd.project_id, "prd")
     # Catch anything the stream missed — a client that grilled elsewhere, or a reply
     # that died before its turn was written. Appends only what isn't already stored.
-    prd_svc.record_grill_turns(db, prd.id, [m.model_dump() for m in body.history])
+    prd_svc.record_grill_turns(db, prd.id, [m.model_dump() for m in body.history],
+                               via="human", actor=user.id)
     history = prd_svc.grill_history(db, prd.id)
     proposed = prd_svc.grill_apply(db, prd_id, history)
     shards = prd_svc.capture_grill_decisions(db, prd, history)

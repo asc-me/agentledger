@@ -447,6 +447,12 @@ class GrillTurn(Base):
     seq: Mapped[int] = mapped_column(Integer)
     role: Mapped[str] = mapped_column(String)  # "agent" (question) | "user" (answer)
     text: Mapped[str] = mapped_column(Text, default="")
+    # Where an ANSWER came from (AL-299): "human" — typed in an authenticated session —
+    # or "agent" — relayed by an agent from what a person told it in chat. Both are
+    # legitimate; the relayed path is what keeps the coding-agent loop frictionless, so
+    # it is recorded rather than blocked. Empty for questions, which nobody supplies.
+    via: Mapped[str] = mapped_column(String, default="", server_default="", nullable=False)
+    actor: Mapped[str] = mapped_column(String, default="", server_default="", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     __table_args__ = (UniqueConstraint("prd_id", "seq", name="uq_grill_turn_seq"),)
@@ -476,6 +482,11 @@ class GrillDimension(Base):
     dimension: Mapped[str] = mapped_column(String)  # see prds.DIMENSIONS
     outcome: Mapped[str] = mapped_column(String)  # resolved | deferred | unanswered
     note: Mapped[str] = mapped_column(Text, default="")  # why — the deferral reason, etc.
+    # Which provider set the bar (AL-299): a real model id, "stub" for the offline
+    # mechanical rule, or "author" for an explicit deferral. A stub-graded dimension
+    # means "an answer was recorded", not "an answer was good" — without this on the
+    # record the two are indistinguishable to anyone reading a baseline later.
+    graded_by: Mapped[str] = mapped_column(String, default="", server_default="", nullable=False)
     # Which turn settled it, for traceability back into the conversation.
     turn_seq: Mapped[int | None] = mapped_column(Integer, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(

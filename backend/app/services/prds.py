@@ -222,7 +222,10 @@ def grill_history(db: Session, prd_id: str) -> list[dict]:
     return [{"role": t.role, "text": t.text} for t in grill_turns(db, prd_id)]
 
 
-def record_grill_turns(db: Session, prd_id: str, history: list[dict]) -> int:
+def record_grill_turns(
+    db: Session, prd_id: str, history: list[dict],
+    *, via: str = "", actor: str = "",
+) -> int:
     """Append whatever part of `history` isn't recorded yet. Returns how many landed.
 
     The client posts the FULL transcript every round, so this appends only the suffix
@@ -242,11 +245,15 @@ def record_grill_turns(db: Session, prd_id: str, history: list[dict]) -> int:
         text = (message.get("text") or "").strip()
         if not text:
             continue  # an empty turn is not a question and not an answer
+        role = "user" if message.get("role") == "user" else "agent"
         db.add(GrillTurn(
             prd_id=prd_id,
             seq=stored + offset,
-            role="user" if message.get("role") == "user" else "agent",
+            role=role,
             text=text,
+            # Only an ANSWER has a supplier; a question comes from the grill itself.
+            via=via if role == "user" else "",
+            actor=actor if role == "user" else "",
         ))
         added += 1
     if added:
@@ -277,7 +284,7 @@ _BLOCKING = "unanswered"
 
 def set_dimension(
     db: Session, prd_id: str, dimension: str, outcome: str,
-    *, note: str = "", turn_seq: int | None = None,
+    *, note: str = "", turn_seq: int | None = None, graded_by: str = "",
 ) -> GrillDimension:
     """Record one dimension's outcome. Idempotent per (prd, dimension) — a later round
     revises the verdict rather than stacking a second one."""
@@ -296,6 +303,7 @@ def set_dimension(
     row.outcome = outcome
     row.note = note
     row.turn_seq = turn_seq
+    row.graded_by = graded_by
     db.commit()
     db.refresh(row)
     return row
@@ -320,6 +328,7 @@ def completion(db: Session, prd_id: str) -> dict:
             "outcome": rows[name].outcome if name in rows else _BLOCKING,
             "note": rows[name].note if name in rows else "",
             "turn_seq": rows[name].turn_seq if name in rows else None,
+            "graded_by": rows[name].graded_by if name in rows else "",
             "question": prompt,
         }
         for name, prompt in DIMENSIONS.items()
@@ -395,6 +404,14 @@ def _classify_dimensions(db: Session, prd: Prd, history: list[dict]) -> dict | N
     return out or None
 
 
+def _grader_id(db: Session, prd: Prd) -> str:
+    """Which provider is standing behind these verdicts."""
+    try:
+        return platform_svc.resolve_chat(db, prd.project_id)[0] or "stub"
+    except Exception:  # noqa: BLE001 — provenance must never break a grill
+        return "unknown"
+
+
 def _stub_classification(answers: int) -> dict:
     """The offline bar, and it is deliberately mechanical: the first `answers` dimensions
     count as resolved, in order.
@@ -420,7 +437,10 @@ def classify_grill(db: Session, prd: Prd) -> dict:
     question just because the model didn't see the deferral restated."""
     history = grill_history(db, prd.id)
     answers = sum(1 for t in history if t["role"] == "user")
-    graded = _classify_dimensions(db, prd, history) or _stub_classification(answers)
+    verdicts = _classify_dimensions(db, prd, history)
+    # `graded_by` is what makes a stub-graded baseline legible as such later.
+    grader = _grader_id(db, prd) if verdicts is not None else "stub"
+    graded = verdicts or _stub_classification(answers)
 
     existing = {
         d.dimension: d.outcome
@@ -431,7 +451,7 @@ def classify_grill(db: Session, prd: Prd) -> dict:
         if existing.get(name) == "deferred" and verdict["outcome"] != "deferred":
             continue
         set_dimension(db, prd.id, name, verdict["outcome"],
-                      note=verdict.get("note", ""), turn_seq=last_seq)
+                      note=verdict.get("note", ""), turn_seq=last_seq, graded_by=grader)
     return completion(db, prd.id)
 
 
@@ -443,7 +463,8 @@ def grill_state(db: Session, prd_id: str) -> dict:
     done = completion(db, prd_id)
     return {
         "prd_id": prd_id,
-        "turns": [{"seq": t.seq, "role": t.role, "text": t.text} for t in turns],
+        "turns": [{"seq": t.seq, "role": t.role, "text": t.text,
+                   "via": t.via, "actor": t.actor} for t in turns],
         "questions": sum(1 for t in turns if t.role == "agent"),
         "answers": sum(1 for t in turns if t.role == "user"),
         "grilled": any(t.role == "user" for t in turns),
