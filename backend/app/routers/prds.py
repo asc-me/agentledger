@@ -9,6 +9,7 @@ from app.models import User
 from app.providers import iter_reply
 from app.schemas import (
     GrillApplyIn,
+    GrillDeferIn,
     GrillApplyOut,
     GrillIn,
     PrdAiIn,
@@ -78,6 +79,28 @@ def prd_grill_state(prd_id: str, db: Session = Depends(get_db), user: User = Dep
     This is the endpoint that proves the item: before it, "has this PRD been grilled?"
     was only answerable by whoever happened to be holding the conversation."""
     prd = _require_readable_prd(db, user, prd_id)
+    return prd_svc.grill_state(db, prd.id)
+
+
+@router.post("/{prd_id}/grill/defer")
+def prd_grill_defer(prd_id: str, body: GrillDeferIn, db: Session = Depends(get_db),
+                    user: User = Depends(get_current_user)):
+    """Deliberately leave a dimension open (AL-298).
+
+    Deferring is the author's decision, not the model's inference, so it gets an explicit
+    route — and on a stub instance, which cannot detect a deferral in prose, it is the
+    ONLY way to record one. `classify_grill` never downgrades it afterwards."""
+    prd = prd_svc.get_prd(db, prd_id)
+    if prd is None:
+        raise HTTPException(404, "prd not found")
+    authz.require_writable(db, user.id, prd.project_id, "prd")
+    try:
+        prd_svc.set_dimension(db, prd.id, body.dimension, "deferred", note=body.reason)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    events_svc.record_user(db, user, action="grill_defer", target_type="prd",
+                           target_id=prd.id, project_id=prd.project_id,
+                           meta={"dimension": body.dimension, "reason": body.reason})
     return prd_svc.grill_state(db, prd.id)
 
 
@@ -185,6 +208,10 @@ def grill_stream(prd_id: str, body: GrillIn, db: Session = Depends(get_db), user
         reply = "".join(parts).strip()
         if reply:
             prd_svc.record_grill_turns(db, prd.id, history + [{"role": "agent", "text": reply}])
+        # Grade the round (AL-298). Classification is a separate call from the streamed
+        # conversation on purpose: the stream is for the author to read, this is the
+        # state approval derives from, and a malformed token should not cost both.
+        prd_svc.classify_grill(db, prd)
         yield _sse("done", "{}")
 
     return StreamingResponse(
@@ -209,6 +236,7 @@ def grill_apply(prd_id: str, body: GrillApplyIn, db: Session = Depends(get_db), 
     history = prd_svc.grill_history(db, prd.id)
     proposed = prd_svc.grill_apply(db, prd_id, history)
     shards = prd_svc.capture_grill_decisions(db, prd, history)
+    prd_svc.classify_grill(db, prd)
     if shards:
         events_svc.record_user(db, user, action="grill_capture", target_type="prd",
                                target_id=prd.id, project_id=prd.project_id,

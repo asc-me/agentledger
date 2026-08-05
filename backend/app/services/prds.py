@@ -1,6 +1,8 @@
 """PRD tracker service (Phase 3): CRUD, version snapshots, item links, AI commands."""
 from __future__ import annotations
 
+import json
+import logging
 import re
 
 from sqlalchemy import func, select
@@ -12,6 +14,8 @@ from app.models import GrillDimension, GrillTurn, Prd, PrdVersion
 from app.services import items as items_svc
 from app.services import keys
 from app.services import platform as platform_svc
+
+logger = logging.getLogger("graphban.prds")
 
 STATUSES = ["draft", "review", "approved"]
 
@@ -162,7 +166,14 @@ GRILL_CHAT_SYSTEM = (
     "prefer LOW-FIDELITY questions answerable in words over HIGH-FIDELITY ones that need a "
     "prototype (when a question is high-fidelity, say so and suggest prototyping it). Acknowledge "
     "a decision in one line, then keep grilling. Be terse. Do NOT rewrite the PRD here — only "
-    "interrogate."
+    "interrogate.\n"
+    # AL-298: the grill has to be able to STOP. Until PRD-15 this said "keep grilling"
+    # with no terminal state, so "all questions answered" could never become true and
+    # approval-by-grilling was unreachable by construction.
+    "When every one of scope edges, failure modes, contracts, and open decisions has "
+    "either a substantive answer or an explicit decision to defer, say so plainly and "
+    "stop asking — a finished grill is a result, not a failure to think of more "
+    "questions. Deferring is a legitimate answer; hand-waving is not."
 )
 
 GRILL_APPLY_SYSTEM = (
@@ -328,6 +339,102 @@ def completion(db: Session, prd_id: str) -> dict:
     }
 
 
+# ---- concluding the grill (AL-298 / PRD-15 D2) ---------------------------------------
+# GRILL_CHAT_SYSTEM tells the model to "keep grilling", so the conversation could never
+# end and "all questions answered" was never true. Two paths make it terminable.
+#
+# The classification is a SEPARATE call from the streamed conversation, not JSON smuggled
+# into it. Streaming is for the author to read; classifying is state approval derives
+# from, and mixing them would make a malformed token both a broken sentence and a lost
+# outcome. Mirrors `memory._llm_judge`: focused prompt, defensive parse, None on failure.
+GRILL_CLASSIFY_SYSTEM = (
+    "You assess whether a PRD has been interrogated on four fixed dimensions. For EACH "
+    "dimension decide: `resolved` (the author gave a substantive answer), `deferred` (the "
+    "author deliberately chose not to decide yet — a legitimate outcome), or `unanswered` "
+    "(never put to them, or answered evasively without electing to defer). A vague, "
+    "hand-waving, or 'we'll figure it out later' reply that does NOT explicitly choose to "
+    "defer is `unanswered`, not `resolved`. Respond with ONLY a compact JSON object: "
+    '{"scope_edges": {"outcome": "...", "note": "..."}, "failure_modes": {...}, '
+    '"contracts": {...}, "open_decisions": {...}}. Notes are one short sentence.'
+)
+
+
+def _classify_dimensions(db: Session, prd: Prd, history: list[dict]) -> dict | None:
+    """Ask the project's chat model to grade the four dimensions. Returns
+    {dimension: {outcome, note}}, or None when no real model is configured or the reply
+    can't be parsed — the caller then falls back to the stub rule rather than guessing."""
+    provider, chat = platform_svc.resolve_chat(db, prd.project_id)
+    if provider == "stub":
+        return None
+    try:
+        raw = chat.chat(
+            system=GRILL_CLASSIFY_SYSTEM,
+            context=grill_context(prd, history),
+            question="Classify the four dimensions. Return only the JSON object.",
+        )
+    except Exception:  # noqa: BLE001 — a model outage must not break the grill
+        logger.exception("grill classify: chat call failed")
+        return None
+    match = re.search(r"\{.*\}", raw or "", re.DOTALL)
+    if match is None:
+        return None
+    try:
+        data = json.loads(match.group(0))
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    out: dict[str, dict] = {}
+    for name in DIMENSIONS:
+        entry = data.get(name)
+        if not isinstance(entry, dict):
+            continue
+        outcome = str(entry.get("outcome", "")).strip().lower()
+        if outcome in OUTCOMES:
+            out[name] = {"outcome": outcome, "note": str(entry.get("note", "")).strip()}
+    return out or None
+
+
+def _stub_classification(answers: int) -> dict:
+    """The offline bar, and it is deliberately mechanical: the first `answers` dimensions
+    count as resolved, in order.
+
+    A stub cannot assess substance, so pretending it can would be worse than admitting
+    it doesn't. The alternative — leaving the stub unable to conclude — would mean no PRD
+    could ever be approved on the shipped default configuration, which breaks the
+    zero-browser install. AL-299 records that the stub set the bar, so a reader can see
+    which standard was actually applied.
+    """
+    names = list(DIMENSIONS)
+    return {
+        name: {"outcome": "resolved", "note": "stub: answer recorded, substance not assessed"}
+        for name in names[:answers]
+    }
+
+
+def classify_grill(db: Session, prd: Prd) -> dict:
+    """Grade the grill so far and record the outcomes. Returns the completion payload.
+
+    Never downgrades an explicit `deferred` — an author's decision to leave something
+    open is theirs, and a later round should not quietly convert it back into an open
+    question just because the model didn't see the deferral restated."""
+    history = grill_history(db, prd.id)
+    answers = sum(1 for t in history if t["role"] == "user")
+    graded = _classify_dimensions(db, prd, history) or _stub_classification(answers)
+
+    existing = {
+        d.dimension: d.outcome
+        for d in db.scalars(select(GrillDimension).where(GrillDimension.prd_id == prd.id)).all()
+    }
+    last_seq = len(history) - 1 if history else None
+    for name, verdict in graded.items():
+        if existing.get(name) == "deferred" and verdict["outcome"] != "deferred":
+            continue
+        set_dimension(db, prd.id, name, verdict["outcome"],
+                      note=verdict.get("note", ""), turn_seq=last_seq)
+    return completion(db, prd.id)
+
+
 def grill_state(db: Session, prd_id: str) -> dict:
     """What the server knows about this PRD's grill, with no client involved. The shape
     AL-297 hangs per-dimension outcomes off, and what proves this item works: a fresh
@@ -403,13 +510,10 @@ def _stub_command(command: str, prd: Prd) -> str:
     if command == "grill":
         secs = parse_sections(prd.body)
         thin = [s for s in secs if len(section_bodies(prd.body).get(s, "").strip()) < 40]
-        lines = [
-            "- What is the single most important outcome, and how will you know it's met?",
-            "- Which cases are explicitly out of scope for the first version?",
-            "- What should happen on the failure path (bad input, missing data, timeout)?",
-            "- What is the exact shape of the inputs and outputs at the boundary?",
-            "- Which of these decisions actually need a prototype to answer, vs. can be settled now?",
-        ]
+        # One question per dimension, in DIMENSIONS order, so the offline grill asks
+        # exactly what the completion standard grades (AL-298). Previously a fixed list
+        # that overlapped the dimensions by coincidence.
+        lines = [f"- {q}" for q in DIMENSIONS.values()]
         for s in thin[:3]:
             lines.append(f"- Section **{s}** is thin — what belongs there?")
         return "\n".join(lines) + (
