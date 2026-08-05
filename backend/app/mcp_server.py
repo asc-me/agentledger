@@ -61,7 +61,7 @@ _STATUS_ENUM = items_svc.STATUSES
 _FIDELITY_ENUM = items_svc.FIDELITIES
 _LINK_TYPE_ENUM = links_svc.LINK_TYPES
 _REQUEST_TYPE_ENUM = req_svc.REQUEST_TYPES
-_EFFORT_DESC = "Relative effort estimate, integer (higher = more work). No fixed unit."
+_EFFORT_DESC = "Relative effort estimate (higher = more work). No fixed unit."
 
 TOOLS: list[dict[str, Any]] = [
     {
@@ -80,12 +80,10 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "create_project",
         "description": (
-            "Create a project when the one you need doesn't exist yet, so setup_project has "
-            "somewhere to bootstrap into. SELF-HOST ONLY, and only while this instance is not "
-            "linked to a cloud org — once it is, projects reach that org's tenant space and "
-            "consume its quota, so creating one belongs to whoever owns the org. `tag` is "
-            "derived from the name when omitted. A HUMAN should still confirm this is the "
-            "right workspace: you can create it, but you can't know it's the one they meant."
+            "Create a project when the one you need doesn't exist yet. SELF-HOST ONLY, and only "
+            "while this instance is not linked to a cloud org. `tag` is derived from the name "
+            "when omitted. A HUMAN should still confirm it's the right workspace — you can "
+            "create one, but you can't know it's the one they meant."
         ),
         "inputSchema": {
             "type": "object",
@@ -117,7 +115,7 @@ TOOLS: list[dict[str, Any]] = [
                 "description": {"type": "string", "description": "Markdown body."},
                 "tags": {"type": "array", "items": {"type": "string"}},
                 "touchpoints": {"type": "array", "items": {"type": "string"},
-                                "description": "Files/globs/modules this item affects, e.g. backend/app/routers/*. Powers related-work clustering."},
+                                "description": "Files/globs/modules this affects, e.g. backend/app/routers/*. Powers clustering."},
                 "effort": {"type": "integer", "description": _EFFORT_DESC},
                 "status": {"type": "string", "enum": _STATUS_ENUM, "description": "Defaults to backlog."},
                 "fidelity": {"type": "string", "enum": _FIDELITY_ENUM,
@@ -140,7 +138,7 @@ TOOLS: list[dict[str, Any]] = [
                 "description": {"type": "string"},
                 "tags": {"type": "array", "items": {"type": "string"}},
                 "touchpoints": {"type": "array", "items": {"type": "string"},
-                                "description": "Files/globs/modules this item affects (for related-work clustering)."},
+                                "description": "Files/globs/modules this item affects (for clustering)."},
                 "effort": {"type": "integer", "description": _EFFORT_DESC},
                 "blocker": {"type": "string", "description": "Free-text blocker; empty string clears it."},
                 "fidelity": {"type": "string", "enum": _FIDELITY_ENUM,
@@ -149,9 +147,8 @@ TOOLS: list[dict[str, Any]] = [
                 "prd_section": {"type": "string"},
                 "evidence": {
                     "type": "array",
-                    "description": "Proof-on-done receipts — match evidence to the completion claim. "
-                                   "Attach when marking an item done: a test-run summary, a URL, a "
-                                   "screenshot ref, or a deployed-health check.",
+                    "description": "Proof-on-done receipts, matched to the completion claim: a "
+                                   "test-run summary, URL, screenshot ref, or health check.",
                     "items": {
                         "type": "object",
                         "properties": {
@@ -167,7 +164,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "search_items",
-        "description": "Query the linear stream by free text (matches title, description, and tags), tags, and/or status.",
+        "description": "Query the linear stream by free text (title, description, tags), tags, and/or status.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -181,14 +178,10 @@ TOOLS: list[dict[str, Any]] = [
         "name": "add_memory",
         "description": (
             "Record a memory shard (decision, lesson, or note) on an item or the global scope. "
-            "What happens next depends on the project's memory write mode: `review` (default) "
-            "holds it as a `candidate` until a human publishes it, `auto` publishes only "
-            "strongly-corroborated lessons, and `trusted` publishes on write — so under "
-            "`trusted` you can read your own writes back with search_memory in the same "
-            "session. Near-duplicates are auto-rejected in every mode. ALWAYS check the "
-            "returned `status`: a `candidate` will NOT come back from search_memory unless you "
-            "pass include_candidates. Returns the shard incl. `status` and, when it was acted "
-            "on without a human, `scoring_source` + `auto_confidence`."
+            "ALWAYS check the returned `status`: a `candidate` will NOT come back from "
+            "search_memory unless you pass include_candidates. The project's memory write mode "
+            "decides — `review` (default) holds it for a human, `trusted` publishes on write so "
+            "you can read it back immediately. Near-duplicates are auto-rejected in every mode."
         ),
         "inputSchema": {
             "type": "object",
@@ -223,11 +216,10 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "publish_memory",
         "description": (
-            "SUBMIT one of your candidate shards for adjudication — you do not publish it, "
-            "an independent judge decides. Returns `{shard, verdict}`: a `kept: false` "
-            "verdict means the judge rejected it, which is a normal outcome, not an error. "
-            "Requires the project to allow agent adjudication AND a real chat model; "
-            "without either the shard stays a candidate for a human to review."
+            "SUBMIT one of your candidate shards for adjudication — you do not publish it, an "
+            "independent judge decides. Returns `{shard, verdict}`; `kept: false` means the "
+            "judge rejected it, a normal outcome. Needs the project to allow agent adjudication "
+            "and a real chat model, else the shard stays a candidate."
         ),
         "inputSchema": {
             "type": "object",
@@ -387,6 +379,23 @@ TOOLS: list[dict[str, Any]] = [
                 "body": {"type": "string", "description": "Full markdown body (replaces the current draft)."},
             },
             "required": ["prd_id"],
+        },
+    },
+    {
+        "name": "answer_grill",
+        "description": (
+            "Relay the author's answer to a grill question. Ask them first and record what they "
+            "actually said — do NOT answer on their behalf. Returns `outstanding` (dimensions "
+            "still unanswered) and `complete`; call grill_prd for the next questions. Recorded "
+            "as agent-relayed and visible to whoever reviews later."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "prd_id": {"type": "string"},
+                "answer": {"type": "string", "description": "What the author said, in their words."},
+            },
+            "required": ["prd_id", "answer"],
         },
     },
     {
@@ -795,6 +804,16 @@ _OUTPUT_SCHEMAS: dict[str, dict] = {
     },
     "create_prd": _PRD_SCHEMA_REF,
     "update_prd": _PRD_SCHEMA_REF,
+    "answer_grill": {
+        "type": "object",
+        "properties": {
+            "prd_id": _STR,
+            "complete": {"type": "boolean"},
+            "outstanding": {"type": "array", "items": _STR},
+            "deferred": {"type": "array", "items": _STR},
+            "answers": {"type": "integer"},
+        },
+    },
     "grill_prd": {
         "type": "object",
         "properties": {"prd_id": _STR, "questions": _STR},
@@ -1420,6 +1439,28 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
             title=args.get("title"), status=args.get("status"), body=args.get("body"),
         )
         return _prd_dict(updated)
+    if name == "answer_grill":
+        prd = prd_svc.get_prd(db, args["prd_id"])
+        if prd is None:
+            raise errors.NotFound(f"prd not found: {args['prd_id']}")
+        if prd.project_id not in allowed:
+            raise authz.Forbidden(f"prd {args['prd_id']!r} is outside this key's write scope")
+        answer = (args.get("answer") or "").strip()
+        if not answer:
+            raise errors.Validation("answer is empty; relay what the author actually said")
+        history = prd_svc.grill_history(db, prd.id)
+        prd_svc.record_grill_turns(
+            db, prd.id, history + [{"role": "user", "text": answer}],
+            via="agent", actor=f"agent:{key.name or key.id}",
+        )
+        done = prd_svc.classify_grill(db, prd)
+        return {
+            "prd_id": prd.key,
+            "complete": done["complete"],
+            "outstanding": done["outstanding"],
+            "deferred": done["deferred"],
+            "answers": done["answers"],
+        }
     if name == "grill_prd":
         prd = prd_svc.get_prd(db, args["prd_id"])
         if prd is None:

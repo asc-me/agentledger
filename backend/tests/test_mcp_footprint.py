@@ -116,10 +116,21 @@ def test_bad_fields_value_is_a_validation_error(client, auth):
 # ---- regression guard: the manifest can't quietly bloat again ----------------
 def test_manifest_stays_within_token_budget():
     """A ceiling, not an exact size — new tools are fine, unbounded prose is not.
-    Measured ~7.4k tokens for the full manifest at the time of AL-78; 9k leaves room
-    to grow while catching a verbosity regression."""
+    Measured ~7.4k tokens for the full manifest at the time of AL-78.
+
+    Raised 9000 -> 9500 in AL-299, deliberately and with the numbers checked rather than
+    as a reflex when it went red. PRD-14/15 added four tools (publish_memory,
+    reject_memory, create_project, answer_grill) totalling ~3.7k chars; without them the
+    manifest measures ~8.1k tokens, comfortably under the old ceiling. So the growth is
+    tool COUNT, which this guard explicitly permits, not the verbosity it exists to
+    catch.
+
+    Prose was addressed first: ~740 chars came out of the four new descriptions and the
+    shared effort/touchpoint strings before the ceiling moved at all. If this fires
+    again, trim before raising — and check the same way, by subtracting whatever tools
+    are new since the last bump."""
     full_chars = len(json.dumps({"tools": TOOLS}))
     read_chars = len(json.dumps({"tools": [t for t in TOOLS if t["name"] in _READ_ONLY]}))
-    assert full_chars // 4 < 9000, f"full manifest ~{full_chars // 4} tokens — trim descriptions"
+    assert full_chars // 4 < 9500, f"full manifest ~{full_chars // 4} tokens — trim descriptions"
     # scope-gating must keep buying its ~half-off for read keys
     assert read_chars < full_chars * 0.55
