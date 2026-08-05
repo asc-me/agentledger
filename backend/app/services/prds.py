@@ -79,12 +79,31 @@ def create_prd(
     return prd
 
 
+class ApprovalNotEarned(ValueError):
+    """`approved` was set by hand instead of reached by finishing the grill (AL-300)."""
+
+
 def update_prd(db: Session, prd_id: str, **fields) -> Prd | None:
     prd = db.get(Prd, keys.resolve_prd(db, prd_id) or prd_id)
     if prd is None:
         return None
     if fields.get("status") is not None and fields["status"] not in STATUSES:
         raise ValueError(f"invalid status: {fields['status']}")
+    # `approved` is REACHED, not set (PRD-15). Refusing here rather than in the routers
+    # covers REST and MCP at once — and this call is precisely how an agent could
+    # otherwise freeze an intent baseline (AL-239) that nobody had read.
+    #
+    # Setting it to the value it already holds is allowed: a client echoing back an
+    # unchanged status is not trying to approve anything, and 422-ing that would break
+    # every "save the whole object" caller for no safety gain.
+    if fields.get("status") == "approved" and prd.status != "approved":
+        done = completion(db, prd.id)
+        raise ApprovalNotEarned(
+            "approved is reached by finishing the grill, not set directly. "
+            + (f"Still unanswered: {', '.join(done['outstanding'])}. "
+               if done["outstanding"] else "No answers are recorded yet. ")
+            + "Answer the open dimensions (or defer one explicitly) and it approves itself."
+        )
     for key in ("title", "status", "body"):
         if fields.get(key) is not None:
             setattr(prd, key, fields[key])
@@ -452,7 +471,40 @@ def classify_grill(db: Session, prd: Prd) -> dict:
             continue
         set_dimension(db, prd.id, name, verdict["outcome"],
                       note=verdict.get("note", ""), turn_seq=last_seq, graded_by=grader)
+    # Approval is a consequence of the grill, so it lands here rather than waiting for
+    # someone to notice the standard is met (AL-300).
+    sync_status(db, prd)
     return completion(db, prd.id)
+
+
+def sync_status(db: Session, prd: Prd) -> Prd:
+    """Move the PRD's status to match its grill (AL-300 / PRD-15 D5).
+
+        draft    — never grilled, or no answers recorded
+        review   — grilled, answers recorded, dimensions still unanswered
+        approved — the completion standard is met
+
+    Called after every classification, so approval happens as a consequence of the work
+    rather than as a separate act somebody has to remember.
+
+    Two things it deliberately does NOT do:
+
+    - **Never demote an `approved` PRD.** The ones approved under the old manual model
+      (PRD-13 among them) were genuinely agreed, and recomputing history would silently
+      retract that. Derivation governs transitions from here forward.
+    - **Never move a PRD nobody has grilled.** A `draft` with no answers stays `draft`;
+      there is nothing to derive from.
+    """
+    if prd.status == "approved":
+        return prd
+    done = completion(db, prd.id)
+    target = "approved" if done["complete"] else ("review" if done["answers"] else "draft")
+    if target != prd.status:
+        prd.status = target
+        prd.updated = "just now"
+        db.commit()
+        db.refresh(prd)
+    return prd
 
 
 def grill_state(db: Session, prd_id: str) -> dict:

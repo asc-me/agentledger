@@ -366,7 +366,7 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "update_prd",
         "description": (
-            "Patch a PRD's title, status (draft|review|approved), or body (full markdown replace). "
+            "Patch a PRD's title, status (draft|review), or body (full markdown replace). "
             "Returns the updated PRD. To keep a history checkpoint, the UI snapshots versions; edits here "
             "update the working draft."
         ),
@@ -375,7 +375,12 @@ TOOLS: list[dict[str, Any]] = [
             "properties": {
                 "prd_id": {"type": "string"},
                 "title": {"type": "string"},
-                "status": {"type": "string", "enum": ["draft", "review", "approved"]},
+                # `approved` stays in the enum deliberately: dropping it makes the
+                # generic schema check fire first, so an agent gets "invalid status"
+                # instead of the guard's message naming what is still outstanding.
+                "status": {"type": "string", "enum": ["draft", "review", "approved"],
+                           "description": "`approved` is NOT settable — it is reached by "
+                                          "finishing the grill (see answer_grill)."},
                 "body": {"type": "string", "description": "Full markdown body (replaces the current draft)."},
             },
             "required": ["prd_id"],
@@ -1434,10 +1439,16 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
             raise errors.NotFound(f"prd not found: {args['prd_id']}")
         if prd.project_id not in allowed:
             raise authz.Forbidden(f"prd {args['prd_id']!r} is outside this key's project scope")
-        updated = prd_svc.update_prd(
-            db, args["prd_id"],
-            title=args.get("title"), status=args.get("status"), body=args.get("body"),
-        )
+        try:
+            updated = prd_svc.update_prd(
+                db, args["prd_id"],
+                title=args.get("title"), status=args.get("status"), body=args.get("body"),
+            )
+        except prd_svc.ApprovalNotEarned as e:
+            # `conflict`, not `validation`: the call was well-formed and permitted, the
+            # PRD simply is not there yet. The message names what is still outstanding
+            # so the agent knows what to go ask about.
+            raise errors.Conflict(str(e)) from e
         return _prd_dict(updated)
     if name == "answer_grill":
         prd = prd_svc.get_prd(db, args["prd_id"])
