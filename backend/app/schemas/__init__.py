@@ -674,6 +674,11 @@ class GrillApplyIn(BaseModel):
     history: list[GrillMessage] = []
 
 
+class GrillDeferIn(BaseModel):
+    dimension: str  # one of prds.DIMENSIONS
+    reason: str = ""  # why it's being left open — rides onto the AL-302 baseline
+
+
 class GrillApplyOut(BaseModel):
     body: str
     decisions_captured: int = 0  # candidate memory shards created from the transcript (AL-69)
