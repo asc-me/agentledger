@@ -71,6 +71,16 @@ def prd_coverage(prd_id: str, db: Session = Depends(get_db), user: User = Depend
     return prd_svc.coverage(db, prd)
 
 
+@router.get("/{prd_id}/grill")
+def prd_grill_state(prd_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """The grill as the SERVER knows it (AL-296) — no client transcript involved.
+
+    This is the endpoint that proves the item: before it, "has this PRD been grilled?"
+    was only answerable by whoever happened to be holding the conversation."""
+    prd = _require_readable_prd(db, user, prd_id)
+    return prd_svc.grill_state(db, prd.id)
+
+
 @router.post("/{prd_id}/decompose")
 def decompose_prd(prd_id: str, create: bool = False, include_prose: bool = False, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     prd = prd_svc.get_prd(db, prd_id)
@@ -139,7 +149,17 @@ def grill_stream(prd_id: str, body: GrillIn, db: Session = Depends(get_db), user
     if prd is None:
         raise HTTPException(404, "prd not found")
     authz.require_readable(db, user.id, prd.project_id, "prd")
-    history = [m.model_dump() for m in body.history]
+    # Record the caller's side BEFORE generating (AL-296). The server owns the
+    # conversation now, so an answer must survive a stream that dies mid-reply — losing
+    # it would silently roll back progress toward approval.
+    client_history = [m.model_dump() for m in body.history]
+    if body.message:
+        client_history = client_history + [{"role": "user", "text": body.message}]
+    prd_svc.record_grill_turns(db, prd.id, client_history)
+
+    # Prefer what the server holds over what the caller sent: it is the same
+    # conversation plus anything a second session contributed.
+    history = prd_svc.grill_history(db, prd.id)
     context = prd_svc.grill_context(prd, history)
     question = body.message or "Begin — ask your opening clarifying questions about this PRD."
 
@@ -147,14 +167,24 @@ def grill_stream(prd_id: str, body: GrillIn, db: Session = Depends(get_db), user
     provider, chat = platform_svc.resolve_chat(db, prd.project_id)
 
     def gen():
+        # Accumulate the reply as it streams so the questions the grill ASKED are
+        # recorded too — AL-297 has to classify what was put to the author, which it
+        # cannot do from the answers alone. Same in-generator write the assistant
+        # thread route already relies on.
+        parts: list[str] = []
         if provider == "stub":
             # Offline: stream the deterministic opening questions.
             for line in prd_svc._stub_command("grill", prd).splitlines(keepends=True):
+                parts.append(line)
                 yield _sse("delta", json.dumps({"text": line}))
         else:
             for piece in iter_reply(chat, system=prd_svc.GRILL_CHAT_SYSTEM,
                                     context=context, question=question):
+                parts.append(piece)
                 yield _sse("delta", json.dumps({"text": piece}))
+        reply = "".join(parts).strip()
+        if reply:
+            prd_svc.record_grill_turns(db, prd.id, history + [{"role": "agent", "text": reply}])
         yield _sse("done", "{}")
 
     return StreamingResponse(
@@ -173,7 +203,10 @@ def grill_apply(prd_id: str, body: GrillApplyIn, db: Session = Depends(get_db), 
     if prd is None:
         raise HTTPException(404, "prd not found")
     authz.require_writable(db, user.id, prd.project_id, "prd")
-    history = [m.model_dump() for m in body.history]
+    # Catch anything the stream missed — a client that grilled elsewhere, or a reply
+    # that died before its turn was written. Appends only what isn't already stored.
+    prd_svc.record_grill_turns(db, prd.id, [m.model_dump() for m in body.history])
+    history = prd_svc.grill_history(db, prd.id)
     proposed = prd_svc.grill_apply(db, prd_id, history)
     shards = prd_svc.capture_grill_decisions(db, prd, history)
     if shards:

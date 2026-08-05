@@ -3,12 +3,12 @@ from __future__ import annotations
 
 import re
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from collections import Counter
 
-from app.models import Prd, PrdVersion
+from app.models import GrillTurn, Prd, PrdVersion
 from app.services import items as items_svc
 from app.services import keys
 from app.services import platform as platform_svc
@@ -191,6 +191,70 @@ def grill_context(prd: Prd, history: list[dict]) -> str:
     if t:
         parts += ["", "Conversation so far:", t]
     return "\n".join(parts)
+
+
+# ---- server-owned grill state (AL-296 / PRD-15 D4) ---------------------------------
+# PRD-15 derives approval from whether the grill is finished, so the server has to own
+# the conversation rather than receive it. These functions are the whole of that
+# ownership; the completion standard (AL-297) reads them and adds nothing to the store.
+
+def grill_turns(db: Session, prd_id: str) -> list[GrillTurn]:
+    """The persisted conversation, oldest first."""
+    return list(db.scalars(
+        select(GrillTurn).where(GrillTurn.prd_id == prd_id).order_by(GrillTurn.seq)
+    ).all())
+
+
+def grill_history(db: Session, prd_id: str) -> list[dict]:
+    """The conversation in the `{role, text}` shape the prompts and `_transcript` use,
+    so a caller can drop the client-supplied transcript entirely."""
+    return [{"role": t.role, "text": t.text} for t in grill_turns(db, prd_id)]
+
+
+def record_grill_turns(db: Session, prd_id: str, history: list[dict]) -> int:
+    """Append whatever part of `history` isn't recorded yet. Returns how many landed.
+
+    The client posts the FULL transcript every round, so this appends only the suffix
+    beyond what's stored — otherwise each round would duplicate every earlier one.
+
+    Deliberately does NOT reconcile a divergent prefix. If a caller sends a shorter or
+    edited history (a second tab, a lost session), the stored rounds stand and nothing
+    is appended. Rewriting history to match the most recent caller would let a client
+    silently erase answers that approval is derived from, which is a worse failure than
+    a transcript that lags a confused client.
+    """
+    stored = db.scalar(
+        select(func.count()).select_from(GrillTurn).where(GrillTurn.prd_id == prd_id)
+    ) or 0
+    added = 0
+    for offset, message in enumerate(history[stored:]):
+        text = (message.get("text") or "").strip()
+        if not text:
+            continue  # an empty turn is not a question and not an answer
+        db.add(GrillTurn(
+            prd_id=prd_id,
+            seq=stored + offset,
+            role="user" if message.get("role") == "user" else "agent",
+            text=text,
+        ))
+        added += 1
+    if added:
+        db.commit()
+    return added
+
+
+def grill_state(db: Session, prd_id: str) -> dict:
+    """What the server knows about this PRD's grill, with no client involved. The shape
+    AL-297 hangs per-dimension outcomes off, and what proves this item works: a fresh
+    session can answer it."""
+    turns = grill_turns(db, prd_id)
+    return {
+        "prd_id": prd_id,
+        "turns": [{"seq": t.seq, "role": t.role, "text": t.text} for t in turns],
+        "questions": sum(1 for t in turns if t.role == "agent"),
+        "answers": sum(1 for t in turns if t.role == "user"),
+        "grilled": any(t.role == "user" for t in turns),
+    }
 
 
 def capture_grill_decisions(db: Session, prd: Prd, history: list[dict]) -> list:
