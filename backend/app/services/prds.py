@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from collections import Counter
 
-from app.models import GrillTurn, Prd, PrdVersion
+from app.models import GrillDimension, GrillTurn, Prd, PrdVersion
 from app.services import items as items_svc
 from app.services import keys
 from app.services import platform as platform_svc
@@ -243,17 +243,109 @@ def record_grill_turns(db: Session, prd_id: str, history: list[dict]) -> int:
     return added
 
 
+# ---- the completion standard (AL-297 / PRD-15 D1) -----------------------------------
+# What "the grill ran out of objections" means. Fixed and named, because if it were left
+# to whatever chat model is configured then `approved` would denote something different
+# on every instance and PRD-12's baselines would stop being comparable to each other.
+#
+# The four dimensions are the ones GRILL_CHAT_SYSTEM already asks about, so this codifies
+# existing behaviour rather than inventing a checklist.
+DIMENSIONS: dict[str, str] = {
+    "scope_edges": "What is explicitly out of scope for the first version?",
+    "failure_modes": "What happens on the failure path — bad input, missing data, timeout?",
+    "contracts": "What is the exact shape of the inputs and outputs at the boundary?",
+    "open_decisions": "Which decisions are still open, and which need a prototype to settle?",
+}
+
+# `deferred` completes rather than blocks. Authors deferring is normal and healthy; the
+# failure this standard exists to catch is an IMPLICIT non-answer being counted as an
+# answer, which is precisely what having a separate name for deferral makes visible.
+OUTCOMES = ("resolved", "deferred", "unanswered")
+_BLOCKING = "unanswered"
+
+
+def set_dimension(
+    db: Session, prd_id: str, dimension: str, outcome: str,
+    *, note: str = "", turn_seq: int | None = None,
+) -> GrillDimension:
+    """Record one dimension's outcome. Idempotent per (prd, dimension) — a later round
+    revises the verdict rather than stacking a second one."""
+    if dimension not in DIMENSIONS:
+        raise ValueError(f"unknown grill dimension: {dimension!r} (expected {sorted(DIMENSIONS)})")
+    if outcome not in OUTCOMES:
+        raise ValueError(f"unknown grill outcome: {outcome!r} (expected {list(OUTCOMES)})")
+    row = db.scalar(
+        select(GrillDimension).where(
+            GrillDimension.prd_id == prd_id, GrillDimension.dimension == dimension
+        )
+    )
+    if row is None:
+        row = GrillDimension(prd_id=prd_id, dimension=dimension, outcome=outcome)
+        db.add(row)
+    row.outcome = outcome
+    row.note = note
+    row.turn_seq = turn_seq
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def completion(db: Session, prd_id: str) -> dict:
+    """Is this PRD's grill finished, and if not, what is outstanding?
+
+    Two rules, both deliberate:
+
+    - **Completion is zero `unanswered`.** Deferrals do not block.
+    - **A grill with no recorded answers is never complete**, whatever any model claims.
+      Without this floor an empty conversation could be graded straight to approved,
+      which is the one outcome that would make the whole standard theatre.
+    """
+    rows = {
+        d.dimension: d
+        for d in db.scalars(select(GrillDimension).where(GrillDimension.prd_id == prd_id)).all()
+    }
+    dimensions = {
+        name: {
+            "outcome": rows[name].outcome if name in rows else _BLOCKING,
+            "note": rows[name].note if name in rows else "",
+            "turn_seq": rows[name].turn_seq if name in rows else None,
+            "question": prompt,
+        }
+        for name, prompt in DIMENSIONS.items()
+    }
+    outstanding = sorted(n for n, d in dimensions.items() if d["outcome"] == _BLOCKING)
+    answered = db.scalar(
+        select(func.count()).select_from(GrillTurn).where(
+            GrillTurn.prd_id == prd_id, GrillTurn.role == "user"
+        )
+    ) or 0
+    return {
+        "dimensions": dimensions,
+        "outstanding": outstanding,
+        "deferred": sorted(n for n, d in dimensions.items() if d["outcome"] == "deferred"),
+        "answers": answered,
+        "complete": bool(answered) and not outstanding,
+    }
+
+
 def grill_state(db: Session, prd_id: str) -> dict:
     """What the server knows about this PRD's grill, with no client involved. The shape
     AL-297 hangs per-dimension outcomes off, and what proves this item works: a fresh
     session can answer it."""
     turns = grill_turns(db, prd_id)
+    done = completion(db, prd_id)
     return {
         "prd_id": prd_id,
         "turns": [{"seq": t.seq, "role": t.role, "text": t.text} for t in turns],
         "questions": sum(1 for t in turns if t.role == "agent"),
         "answers": sum(1 for t in turns if t.role == "user"),
         "grilled": any(t.role == "user" for t in turns),
+        # The completion standard, so one call answers both "what was said" and
+        # "is it finished" — AL-300 derives status from exactly this.
+        "dimensions": done["dimensions"],
+        "outstanding": done["outstanding"],
+        "deferred": done["deferred"],
+        "complete": done["complete"],
     }
 
 

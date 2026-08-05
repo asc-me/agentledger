@@ -452,6 +452,39 @@ class GrillTurn(Base):
     __table_args__ = (UniqueConstraint("prd_id", "seq", name="uq_grill_turn_seq"),)
 
 
+class GrillDimension(Base):
+    """One dimension's outcome for a PRD's grill (AL-297 / PRD-15 D1).
+
+    "The grill ran out of objections" has to mean the same thing everywhere, or
+    `approved` denotes something different on every instance and PRD-12's baselines stop
+    being comparable to each other. Four fixed dimensions, three outcomes each.
+
+    `deferred` is the load-bearing one. Real specs leave things open, and "we are
+    consciously not deciding X yet" is itself a decision — so it completes rather than
+    blocks, and rides onto the baseline where later drift on that point reads as expected
+    instead of as a surprise. What must never pass is an IMPLICIT non-answer counted as an
+    answer, which is exactly what naming `deferred` separately makes visible.
+
+    A dimension with no row here is `unanswered`. Absence is the honest default: it means
+    nobody put the question, which is not the same as an author declining to answer it.
+    """
+
+    __tablename__ = "grill_dimensions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    prd_id: Mapped[str] = mapped_column(ForeignKey("prds.id"), index=True)
+    dimension: Mapped[str] = mapped_column(String)  # see prds.DIMENSIONS
+    outcome: Mapped[str] = mapped_column(String)  # resolved | deferred | unanswered
+    note: Mapped[str] = mapped_column(Text, default="")  # why — the deferral reason, etc.
+    # Which turn settled it, for traceability back into the conversation.
+    turn_seq: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+    __table_args__ = (UniqueConstraint("prd_id", "dimension", name="uq_grill_dimension"),)
+
+
 class PrdVersion(Base):
     __tablename__ = "prd_versions"
 
