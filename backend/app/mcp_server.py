@@ -1648,6 +1648,17 @@ async def mcp_endpoint(
         except KeyError as e:
             # A required arg slipped past validation (belt and braces).
             return _tool_error(id_, "validation", f"missing argument: {e}")
+        except httpx.HTTPError as e:
+            # A provider adapter that hasn't been wrapped yet (providers/base.py
+            # `provider_errors` gives a far better message where it is applied). Still
+            # far better than the generic handler below, whose "safe to retry once" is
+            # actively wrong for a misconfiguration.
+            logger.warning("provider transport failure in %r: %s", name, e)
+            return _tool_error(
+                id_, "unavailable", f"AI provider unreachable: {type(e).__name__}",
+                hint="check the provider base URL, key and model in Settings -> AI "
+                     "providers; this is configuration, not a transient failure",
+            )
         except Exception:  # noqa: BLE001 — never leak a raw 500 to a JSON-RPC client
             logger.exception("MCP tool %r failed", name)
             db.rollback()

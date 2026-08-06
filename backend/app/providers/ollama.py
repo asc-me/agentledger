@@ -11,6 +11,7 @@ import time
 import httpx
 
 from app.config import settings
+from app.providers.base import provider_errors
 
 logger = logging.getLogger("graphban.providers.ollama")
 
@@ -76,7 +77,10 @@ class OllamaChat:
         return "".join(self.stream(system=system, context=context, question=question)).strip()
 
     def stream(self, *, system: str, context: str, question: str):
-        with httpx.stream(
+        # The connection and status check happen on the first `next()`, so wrapping the
+        # generator body is what turns a misconfigured endpoint into an actionable error
+        # instead of the dispatcher's generic "internal … safe to retry once".
+        with provider_errors("ollama", model=self.model, endpoint=self.base_url), httpx.stream(
             "POST",
             f"{self.base_url}/api/chat",
             headers=_headers(self.auth_key),
