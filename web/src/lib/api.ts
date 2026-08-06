@@ -27,6 +27,7 @@ import type {
   Item,
   EventPage,
   GrillMessage,
+  GrillState,
   McpToolInfo,
   Org,
   OrgMember,
@@ -346,6 +347,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ command }),
     }),
+  grillState: (id: string) => request<GrillState>(`/prds/${id}/grill`),
+
+  grillDefer: (id: string, dimension: string, reason: string) =>
+    request<GrillState>(`/prds/${id}/grill/defer`, {
+      method: "POST",
+      body: JSON.stringify({ dimension, reason }),
+    }),
+
   grillApply: (id: string, history: GrillMessage[]) =>
     request<{ body: string; decisions_captured: number }>(`/prds/${id}/grill/apply`, {
       method: "POST",

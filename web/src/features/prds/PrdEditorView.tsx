@@ -16,12 +16,13 @@ import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { lineDiff } from "@/lib/diff";
 import { Markdown } from "@/lib/markdown";
-import { keys, useItems, usePrd, usePrdVersions } from "@/lib/queries";
+import { keys, useGrillState, useItems, usePrd, usePrdVersions } from "@/lib/queries";
 import type { PrdStatus, PrdVersion } from "@/lib/types";
 
 import { AssistantPanel } from "@/features/assistant/AssistantPanel";
 import { GrillPanel } from "./GrillPanel";
-import { PRD_STATUS_META, PRD_STATUS_ORDER } from "./meta";
+import { PRD_SETTABLE_STATUSES, PRD_STATUS_META } from "./meta";
+import { ApprovedIsEarned, GrillProgress } from "./GrillProgress";
 
 const AI_COMMANDS = [
   { key: "expand", label: "Expand" },
@@ -35,6 +36,7 @@ export function PrdEditorView() {
   const qc = useQueryClient();
   const { data: prd } = usePrd(id);
   const { data: versions = [] } = usePrdVersions(id);
+  const { data: grill } = useGrillState(id);
 
   const [title, setTitle] = React.useState("");
   const [body, setBody] = React.useState("");
@@ -111,7 +113,7 @@ export function PrdEditorView() {
           onChange={(e) => setTitle(e.target.value)}
           className="min-w-0 flex-1 bg-transparent text-[15px] font-semibold outline-none"
         />
-        <StatusMenu status={prd.status} onChange={setStatus} />
+        <StatusMenu status={prd.status} onChange={setStatus} complete={!!grill?.complete} />
         <span className="rounded-md bg-surface-4 px-2 py-1 font-mono text-[10px] text-muted-2">{prd.version}</span>
         <Button variant="outline" size="sm" onClick={snapshot}>
           <History size={13} />
@@ -173,7 +175,12 @@ export function PrdEditorView() {
           ) : rightTab === "assistant" ? (
             <AssistantPanel entityType="prd" entityId={id} projectId={prd.project_id} />
           ) : rightTab === "grill" ? (
-            <GrillPanel prdId={id} onApply={(b) => { setBody(b); setRightTab("preview"); }} />
+            <div className="flex min-h-0 flex-1 flex-col gap-3">
+              {grill && <GrillProgress state={grill} />}
+              <div className="min-h-0 flex-1">
+                <GrillPanel prdId={id} onApply={(b) => { setBody(b); setRightTab("preview"); }} />
+              </div>
+            </div>
           ) : rightTab === "coverage" ? (
             <CoveragePanel prdId={id} onDecomposed={refresh} />
           ) : (
@@ -206,7 +213,15 @@ function TabBtn({ active, onClick, icon, label }: { active: boolean; onClick: ()
   );
 }
 
-function StatusMenu({ status, onChange }: { status: PrdStatus; onChange: (s: PrdStatus) => void }) {
+function StatusMenu({
+  status,
+  onChange,
+  complete,
+}: {
+  status: PrdStatus;
+  onChange: (s: PrdStatus) => void;
+  complete: boolean;
+}) {
   const meta = PRD_STATUS_META[status];
   return (
     <DropdownMenu>
@@ -220,7 +235,9 @@ function StatusMenu({ status, onChange }: { status: PrdStatus; onChange: (s: Prd
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        {PRD_STATUS_ORDER.map((s) => (
+        {/* `approved` is REACHED, not picked (PRD-15). Offering it would be a control
+            whose every use the server refuses. */}
+        {PRD_SETTABLE_STATUSES.map((s) => (
           <DropdownMenuItem key={s} onSelect={() => onChange(s)}>
             <span className="h-1.5 w-1.5 rounded-full" style={{ background: PRD_STATUS_META[s].color }} />
             <span className="font-mono text-[11px] uppercase tracking-wide" style={{ color: PRD_STATUS_META[s].color }}>
@@ -228,6 +245,7 @@ function StatusMenu({ status, onChange }: { status: PrdStatus; onChange: (s: Prd
             </span>
           </DropdownMenuItem>
         ))}
+        <ApprovedIsEarned complete={complete} />
       </DropdownMenuContent>
     </DropdownMenu>
   );
