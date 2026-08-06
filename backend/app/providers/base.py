@@ -11,7 +11,60 @@ so the whole stack runs offline. Ollama / OpenAI / Anthropic adapters are opt-in
 from __future__ import annotations
 
 import math
+from contextlib import contextmanager
 from typing import Protocol, runtime_checkable
+
+import httpx
+
+from app import errors
+
+
+@contextmanager
+def provider_errors(provider: str, *, model: str = "", endpoint: str = ""):
+    """Turn a provider transport failure into an ACTIONABLE domain error.
+
+    Without this every provider problem reached the agent as
+    `internal error executing 'grill_prd'` with the hint "safe to retry once" —
+    which is worse than useless for a misconfiguration: retrying a refused
+    connection never helps, and the hint sends the agent off to file a bug instead
+    of checking Settings. That message cost two separate debugging sessions (a
+    wrong model name, then a wrong base URL on a different project) before anyone
+    saw the actual cause, which was one layer down the whole time.
+
+    `Unavailable` is the right class: the call was well formed and permitted, this
+    instance just is not configured to serve it, and nothing the caller does
+    differently will change that.
+    """
+    where = f"{provider}" + (f" ({endpoint})" if endpoint else "")
+    try:
+        yield
+    except httpx.HTTPStatusError as e:
+        status = e.response.status_code
+        body = (e.response.text or "")[:200]
+        if status == 404 and model and model in body:
+            raise errors.Unavailable(
+                f"{where} has no model {model!r}",
+                hint=f"pull it on the provider (`ollama pull {model}`) or correct the "
+                     "model name in Settings -> AI providers; retrying will not help",
+            ) from e
+        raise errors.Unavailable(
+            f"{where} returned HTTP {status}" + (f": {body}" if body else ""),
+            hint="check the provider's credentials and model configuration in "
+                 "Settings -> AI providers",
+        ) from e
+    except httpx.TimeoutException as e:
+        raise errors.Unavailable(
+            f"{where} timed out",
+            hint="the model may be cold or the endpoint overloaded; this one IS worth "
+                 "retrying, or raise LLM_TIMEOUT_SECONDS",
+        ) from e
+    except httpx.HTTPError as e:
+        raise errors.Unavailable(
+            f"cannot reach {where}: {type(e).__name__}",
+            hint="correct the provider base URL in Settings -> AI providers. Note that "
+                 "`localhost` resolves to the API CONTAINER, not the host — use the "
+                 "host's name or address; retrying will not help",
+        ) from e
 
 
 @runtime_checkable
