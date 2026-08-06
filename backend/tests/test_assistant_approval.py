@@ -44,7 +44,7 @@ def test_write_is_staged_not_executed(db):
 def test_read_executes_immediately(db):
     thread = _item_thread(db)
     res = approval.executor(db, thread, user_id="u1")(ToolCall(id="c1", name="get_item_details", input={}))
-    assert not res.is_error and "AL-08" in res.content
+    assert not res.is_error and "CP-8" in res.content  # rendered key
     assert approval.list_pending(db, thread.id) == []  # reads don't stage
 
 

@@ -216,10 +216,16 @@ def get_item_details(db: Session, item_id: str) -> dict | None:
     item = db.get(Item, keys.resolve_item(db, item_id) or item_id)
     if item is None:
         return None
-    shards = db.scalars(select(MemoryShard).where(MemoryShard.item_id == item_id)).all()
-    reqs = db.scalars(select(Request).where(Request.linked_to == item_id)).all()
+    # Query by the RESOLVED id, never the caller's string. `item_id` may be any form
+    # that resolves — a key rendered under the project's current tag, a retired tag, or
+    # a pre-tag legacy id — while these columns hold the frozen stored id. Using the
+    # caller's string made linked memory and requests silently vanish the moment a
+    # project was retagged and an agent looked the item up by its new key (PRD-13).
+    shards = db.scalars(select(MemoryShard).where(MemoryShard.item_id == item.id)).all()
+    reqs = db.scalars(select(Request).where(Request.linked_to == item.id)).all()
     return {
-        "id": item.id,
+        # Rendered, not stored — every other read surface renders, and this one didn't.
+        "id": item.key,
         "title": item.title,
         "description": item.description,
         "status": item.status,
@@ -229,7 +235,7 @@ def get_item_details(db: Session, item_id: str) -> dict | None:
         "blocker": item.blocker,
         "pr": item.pr,
         "linked_shards": [{"id": s.id, "text": s.text, "source": s.source} for s in shards],
-        "linked_requests": [{"id": r.id, "title": r.title, "type": r.type} for r in reqs],
+        "linked_requests": [{"id": r.key, "title": r.title, "type": r.type} for r in reqs],
     }
 
 

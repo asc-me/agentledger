@@ -87,7 +87,9 @@ def test_mcp_all_new_tools(client, auth):
     assert backlog["limit"] == 5 and "total" in backlog and "has_more" in backlog
 
     details = _call(client, key, "get_item_details", {"id": "AL-08"})
-    assert details["id"] == "AL-08"
+    # Looked up by its stored id, answered with its RENDERED key — the same shape
+    # search_items and /api/items return. See test_retag_read_surfaces.py.
+    assert details["id"] == "CP-8", details["id"]
     assert "linked_shards" in details
 
     nxt = _call(client, key, "suggest_next", {})
