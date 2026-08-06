@@ -374,7 +374,7 @@ pnpm test && pnpm typecheck
 ]
 
 
-def render_readme(invariants: str) -> str:
+def render_readme(invariants: str, defaults: str) -> str:
     rows = "\n".join(
         [
             "| Agent | Tier | Writes? | Role |",
@@ -425,16 +425,27 @@ overlap.
 ## Non-negotiables (verbatim from AGENTS.md — every agent obeys)
 
 {invariants}
+
+## Design defaults (verbatim from AGENTS.md — argue with them if you have a reason)
+
+{defaults}
 """
 
 
 def render_files() -> dict[str, str]:
     """Return {relative_path: content} for every generated file, all toolchains."""
-    invariants = extract_section(AGENTS_MD.read_text(), "Invariants")
+    agents_md = AGENTS_MD.read_text()
+    invariants = extract_section(agents_md, "Invariants")
     if not invariants:
         raise SystemExit("could not extract '## Invariants' from AGENTS.md")
+    # The fleet writes most of the code, so a design default it never sees shapes
+    # nothing. Carried verbatim for the same reason the invariants are: a paraphrase
+    # here would drift from AGENTS.md and nothing would catch it.
+    defaults = extract_section(agents_md, "Design defaults")
+    if not defaults:
+        raise SystemExit("could not extract '## Design defaults' from AGENTS.md")
 
-    readme = render_readme(invariants)
+    readme = render_readme(invariants, defaults)
     files: dict[str, str] = {}
     for tool in TOOLCHAINS:
         ext, render = RENDERERS[tool]
