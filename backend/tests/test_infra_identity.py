@@ -16,6 +16,7 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 COMPOSE = (REPO / "docker-compose.yml").read_text()
+DEPLOY_DOC = (REPO / "docs" / "deploy.md").read_text()
 
 
 # ---- renamed: labels, nothing keyed by them ---------------------------------------
@@ -62,3 +63,37 @@ def test_postgres_defaults_are_not_renamed(var):
     documents as a deploy-breaking failure."""
     assert f"${{{var}:-agentledger}}" in COMPOSE, f"{var} default must stay `agentledger`"
     assert f"{var}=agentledger" in (REPO / ".env.example").read_text()
+
+
+# ---- the runbook has to name the SAME frozen identifiers ---------------------------
+# Added after the tier-4 cosmetic sweep renamed them in docs/deploy.md while leaving the
+# box untouched: the runbook told an operator to `cd ~/graphban` and `psql -U graphban`,
+# neither of which exists. Freezing the values in compose is not enough if the document
+# people actually follow says something else — the section explaining which identifiers
+# must never be renamed had its own identifiers renamed, and nothing noticed for days.
+
+def test_the_runbook_uses_the_real_postgres_role_and_database():
+    """Every psql invocation in the runbook must use the frozen role/db. A doc that names
+    a role which does not exist fails at the worst moment — mid-recovery."""
+    for bad in ("psql -U graphban", "-d graphban "):
+        assert bad not in DEPLOY_DOC, (
+            f"docs/deploy.md uses {bad!r}; the live role and database are `agentledger` "
+            "(frozen at initdb — see the tests above)"
+        )
+    assert "psql -U agentledger -d agentledger" in DEPLOY_DOC
+
+
+def test_the_runbook_targets_the_real_deploy_directory():
+    """`~/graphban` does not exist on the box. Following it would rsync into a fresh
+    directory with no `.env`, and compose would come up on default ports — the exact
+    port-conflict failure documented a few lines below it."""
+    assert "~/graphban" not in DEPLOY_DOC, (
+        "docs/deploy.md points at ~/graphban; the server directory is ~/agentledger"
+    )
+    assert "ubuntu-srv:~/agentledger/" in DEPLOY_DOC
+
+
+def test_the_runbook_quotes_the_compose_project_name_correctly():
+    """It claims compose pins a project name; that claim has to match the pin, or the
+    volume-orphaning explanation around it is nonsense."""
+    assert "pins `name: agentledger`" in DEPLOY_DOC
