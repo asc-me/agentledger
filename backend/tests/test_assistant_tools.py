@@ -35,7 +35,7 @@ def test_available_tools_are_entity_scoped(db):
 def test_dispatch_read_returns_item(db):
     r = at.dispatch(_ctx(db, "item", "AL-08"), ToolCall(id="c1", name="get_item_details", input={}))
     assert not r.is_error
-    assert json.loads(r.content)["id"] == "AL-08"
+    assert json.loads(r.content)["id"] == "CP-8"  # rendered, not the stored id
 
 
 def test_dispatch_update_item_is_scoped_to_the_thread_entity(db):

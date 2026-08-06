@@ -143,7 +143,7 @@ def test_unknown_key_is_404_not_500(client, auth):
 
 
 def test_mcp_get_item_details_accepts_a_pre_retag_key(client, retagged):
-    _p, old_key, _new, stored_id = retagged
+    _p, old_key, _new, stored_id = retagged  # noqa: F841 — _new is asserted below
     key = client.post(
         "/api/api-keys", json={"name": "resolver", "scopes": ["read"]},
         headers=_login(client),
@@ -159,7 +159,13 @@ def test_mcp_get_item_details_accepts_a_pre_retag_key(client, retagged):
     body = r.json()
     assert "error" not in body, body
     assert body["result"].get("isError") is not True, body["result"]
-    assert stored_id in str(body["result"])
+    # The old key RESOLVED — that is what this test is about. The response renders the
+    # CURRENT key, like every other read surface; asserting the stored id here pinned
+    # the one place that didn't (fixed alongside this change).
+    import json as _json
+    details = _json.loads(body["result"]["content"][0]["text"])
+    assert details["id"] == _new, details["id"]
+    assert details["id"] != stored_id
 
 
 # ---- WRITE paths across a retag ---------------------------------------------------
@@ -175,7 +181,7 @@ def test_rest_patch_accepts_a_pre_retag_key(client, auth, retagged):
 
 def test_claim_heartbeat_and_release_accept_a_pre_retag_key(client, retagged):
     """The lease lifecycle end to end, driven entirely by a key that no longer renders."""
-    _p, old_key, _new, stored_id = retagged
+    _p, old_key, _new, stored_id = retagged  # noqa: F841 — _new is asserted below
     api_key = client.post(
         "/api/api-keys", json={"name": "leaser", "scopes": ["read", "write"]},
         headers=_login(client),
