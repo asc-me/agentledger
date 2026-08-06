@@ -404,6 +404,31 @@ export interface Member {
 
 export type PrdStatus = "draft" | "review" | "approved";
 
+/** The completion standard (PRD-15). `approved` is REACHED when every dimension is
+ *  resolved or deferred — it is not a status anyone picks. */
+export type GrillOutcome = "resolved" | "deferred" | "unanswered";
+
+export interface GrillDimensionState {
+  outcome: GrillOutcome;
+  note: string;
+  turn_seq: number | null;
+  /** A provider id, `stub` (answers counted, substance NOT assessed), or `author`. */
+  graded_by: string;
+  question: string;
+}
+
+export interface GrillState {
+  prd_id: string;
+  turns: { seq: number; role: string; text: string; via: string; actor: string }[];
+  questions: number;
+  answers: number;
+  grilled: boolean;
+  dimensions: Record<string, GrillDimensionState>;
+  outstanding: string[];
+  deferred: string[];
+  complete: boolean;
+}
+
 export interface PrdSummary {
   id: string;
   title: string;

@@ -157,6 +157,14 @@ export function usePrds(projectId?: string) {
   return useQuery({ queryKey: [...keys.prds, projectId], queryFn: () => api.prds(projectId), enabled: !!projectId });
 }
 
+export function useGrillState(id: string) {
+  return useQuery({
+    queryKey: ["grill", id],
+    queryFn: () => api.grillState(id),
+    enabled: !!id,
+  });
+}
+
 export function usePrd(id: string) {
   return useQuery({ queryKey: keys.prd(id), queryFn: () => api.prd(id), enabled: !!id });
 }
