@@ -49,7 +49,7 @@ overlap.
   functions in `backend/app/services/`. Never duplicate domain logic in a router
   or tool handler.
 - **Schema is owned by Alembic** on Postgres (`backend/alembic/versions/`,
-  currently 0001–0016). SQLite/tests use `create_all`. Never edit an applied
+  currently 0001–0044). SQLite/tests use `create_all`. Never edit an applied
   migration; add a new one.
 - **AI providers only via `backend/app/providers/`** (`Embedder`/`ChatModel`/
   `Extractor` protocols, selected by `EMBED_PROVIDER`/`CHAT_PROVIDER`). Offline
@@ -58,3 +58,30 @@ overlap.
   (TanStack Query). Query keys include the active project id.
 - **Enums live in services** (`services/items.py:STATUSES`, `requests.py`,
   `links.py`, `code_graph.py`) — reference them; don't inline copies.
+
+## Design defaults (verbatim from AGENTS.md — argue with them if you have a reason)
+
+- **Simplest thing that fully meets the requirement.** No speculative
+  abstraction, configuration, or indirection. Config is the expensive one: 49
+  settings already exist, and each new one is a permanent branch in every
+  deployment's behaviour. PRD-14 proposed a per-project `profile` field and it
+  was cut for exactly this — the need was imagined, and removing it made the
+  design better, not smaller.
+- **Grow in layers; never trade a working product for unfinished complexity.**
+  Decompose so the first item is the smallest thing that works end to end and
+  each later one lands on something that already runs. In practice: the root
+  item ships first, the acceptance walk ships last, and every PR in between
+  leaves `main` deployable.
+- **Reach for what's already here.** Use the dependencies the project already
+  has before adding one or writing your own — and check a library's docs and
+  types before concluding it can't do the thing. Reimplementing is allowed, but
+  the reason goes in a comment (see `_validate_args` in `mcp_server.py`, which
+  says why it hand-rolls schema checking).
+
+**Compatibility is NOT one of these defaults — the opposite rule applies.** Two
+instances are deployed, API keys live in agents' configs, and the MCP tool names
+are cached by clients. So: *an identifier that existing data is keyed by is
+identity, not branding* (PRD-13). Removing an obsolete internal path is good
+housekeeping; removing one something external is keyed by is data loss wearing a
+tidy-up costume. `test_wire_name_compat.py` and `test_infra_identity.py` exist to
+stop that, and a failure there is never a naming bug.

@@ -1,13 +1,21 @@
 """AL-46: code is the single owner of the tool catalog; docs must not silently
 drift (review finding F5). These ratchets fail the moment docs/mcp.md and the
 live TOOLS list disagree — the durable fix, not a one-time sweep.
+
+Extended to AGENTS.md's migration range, which had drifted to "0001-0016" while the
+chain reached 0044. The tool count in the SAME file stayed correct the whole time
+because a ratchet guarded it and nothing guarded the range — which is the argument for
+ratchets over sweeps, made by accident.
 """
 import re
 from pathlib import Path
 
 from app.mcp_server import LIVE_TOOL_COUNT, TOOLS
 
-_DOCS = Path(__file__).resolve().parents[2] / "docs" / "mcp.md"
+_REPO = Path(__file__).resolve().parents[2]
+_DOCS = _REPO / "docs" / "mcp.md"
+_AGENTS = _REPO / "AGENTS.md"
+_MIGRATIONS = _REPO / "backend" / "alembic" / "versions"
 
 
 def _doc_tool_rows() -> list[str]:
@@ -53,3 +61,14 @@ def test_mcp_enums_reference_service_constants():
     req_enum = by_name["report_graphban_issue"]["inputSchema"]["properties"]["type"]["enum"]
     assert link_enum == links_svc.LINK_TYPES
     assert req_enum == req_svc.REQUEST_TYPES
+
+
+def test_agents_md_states_the_live_migration_range():
+    """AGENTS.md orients every agent, so a stale range there sends someone to edit an
+    applied migration — the one thing that section forbids."""
+    head = max(p.name.split("_", 1)[0] for p in _MIGRATIONS.glob("[0-9]*.py"))
+    match = re.search(r"currently 0001[–-](\d+)", _AGENTS.read_text())
+    assert match, "AGENTS.md must state the migration range as `currently 0001-<head>`"
+    assert match.group(1) == head, (
+        f"AGENTS.md says migrations run to {match.group(1)}, but the chain head is {head}"
+    )
