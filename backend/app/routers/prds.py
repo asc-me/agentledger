@@ -10,6 +10,7 @@ from app.providers import iter_reply
 from app.schemas import (
     GrillApplyIn,
     GrillDeferIn,
+    RebaselineIn,
     GrillApplyOut,
     GrillIn,
     PrdAiIn,
@@ -104,6 +105,33 @@ def prd_grill_defer(prd_id: str, body: GrillDeferIn, db: Session = Depends(get_d
                            target_id=prd.id, project_id=prd.project_id,
                            meta={"dimension": body.dimension, "reason": body.reason})
     return prd_svc.grill_state(db, prd.id)
+
+
+@router.post("/{prd_id}/rebaseline", response_model=PrdOut)
+def request_rebaseline(prd_id: str, body: RebaselineIn, db: Session = Depends(get_db),
+                       user: User = Depends(get_current_user)):
+    """Ask for new frozen intent (AL-241). Re-opens the grill; does NOT approve anything.
+
+    The existing baseline stays governing until a new one is earned, so work in flight is
+    still measured against something real while the spec is being re-interrogated."""
+    prd = prd_svc.get_prd(db, prd_id)
+    if prd is None:
+        raise HTTPException(404, "prd not found")
+    authz.require_writable(db, user.id, prd.project_id, "prd")
+    try:
+        return prd_svc.request_rebaseline(db, prd, reason_type=body.reason_type,
+                                          reason=body.reason, requested_by=f"user:{user.id}")
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+
+@router.get("/{prd_id}/baselines", response_model=list[PrdVersionOut])
+def prd_baseline_chain(prd_id: str, db: Session = Depends(get_db),
+                       user: User = Depends(get_current_user)):
+    """The whole chain, oldest first — reading it is how you tell a spec that was
+    corrected once from one that kept moving."""
+    prd = _require_readable_prd(db, user, prd_id)
+    return prd_svc.baseline_chain(db, prd.id)
 
 
 @router.post("/{prd_id}/decompose")

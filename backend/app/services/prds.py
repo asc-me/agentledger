@@ -613,7 +613,14 @@ def freeze_baseline(db: Session, prd: Prd) -> PrdVersion:
     second "original intent".
     """
     existing = baseline_of(db, prd.id)
+    pending = prd.pending_rebaseline or {}
+    # An unchanged body re-approving is a no-op — EXCEPT when a rebaseline was requested,
+    # where the point may be that the intent was reaffirmed after being questioned. Even
+    # then an identical body earns no new baseline; there is nothing new to freeze.
     if existing is not None and existing.body == prd.body:
+        if pending:
+            prd.pending_rebaseline = None
+            db.commit()
         return existing
 
     done = completion(db, prd.id)
@@ -622,13 +629,20 @@ def freeze_baseline(db: Session, prd: Prd) -> PrdVersion:
         prd_id=prd.id,
         version=prd.version,
         date="just now",
-        note="Intent baseline — the spec as approved.",
+        note=("Rebaseline — new intent, superseding the previous baseline."
+              if existing is not None else "Intent baseline — the spec as approved."),
         body=prd.body,
         is_baseline=True,
         grill_outcomes={n: {"outcome": d["outcome"], "note": d["note"]}
                         for n, d in done["dimensions"].items()},
+        # The chain. N+1 points BACK at N; N is never touched.
+        supersedes_id=existing.id if existing is not None else None,
+        rebaseline_reason_type=pending.get("reason_type", ""),
+        rebaseline_reason=pending.get("reason", ""),
+        requested_by=pending.get("requested_by", ""),
     )
     db.add(row)
+    prd.pending_rebaseline = None
     prd.updated = "just now"
     db.commit()
     db.refresh(row)
@@ -670,6 +684,71 @@ def invalidate_approval(db: Session, prd: Prd, *, reason: str) -> Prd:
         db, actor_type="system", actor_label="grill", surface="system",
         action="invalidate_prd_approval", target_type="prd", target_id=prd.id,
         project_id=prd.project_id, meta={"reason": reason},
+    )
+    return prd
+
+
+REBASELINE_REASONS = ("learning", "scope-change", "correction")
+
+
+def baseline_chain(db: Session, prd_id: str) -> list[PrdVersion]:
+    """Every baseline this PRD has had, oldest first. Never one row — the chain IS the
+    record, and reading it is how you tell a spec that was corrected from one that kept
+    moving."""
+    return list(db.scalars(
+        select(PrdVersion)
+        .where(PrdVersion.prd_id == prd_id, PrdVersion.is_baseline.is_(True))
+        .order_by(PrdVersion.created_at, PrdVersion.id)
+    ).all())
+
+
+def request_rebaseline(
+    db: Session, prd: Prd, *, reason_type: str, reason: str, requested_by: str,
+) -> Prd:
+    """Ask for new frozen intent. Does NOT create a baseline — it re-opens the grill.
+
+    Approval is the grill, not an authority check (PRD-12 v1.0, answer 1): a rebaseline
+    is a new statement of intent, so it earns approval the way the original did, by being
+    interrogated until the completion standard is met. That is also the better answer to
+    laundering than a click would be — "we edited the spec to match what we built" has to
+    survive being questioned, and the questions and answers are recorded.
+
+    So this clears the dimension verdicts and drops the PRD to `review`. The EXISTING
+    baseline is left completely alone: it is still the governing intent until a new one
+    is earned, and anything built in the meantime is still measured against it.
+
+    The reason is stored on the PRD's pending state and carried onto the new baseline
+    when the grill completes. It is the requester's own words on purpose — an agent
+    mid-work is often where new intent surfaces, and that reasoning dies with the context
+    window unless something writes it down.
+    """
+    if reason_type not in REBASELINE_REASONS:
+        raise ValueError(
+            f"reason_type must be one of {list(REBASELINE_REASONS)}, got {reason_type!r}"
+        )
+    if not (reason or "").strip():
+        raise ValueError("a rebaseline needs a stated reason in the requester's own words")
+    if prd.status == "closed":
+        raise ValueError("a closed PRD can never be rebaselined; open a successor PRD instead")
+    if baseline_of(db, prd.id) is None:
+        raise ValueError("this PRD has no baseline to supersede; it has never been approved")
+
+    prd.pending_rebaseline = {
+        "reason_type": reason_type,
+        "reason": reason.strip(),
+        "requested_by": requested_by,
+    }
+    for row in db.scalars(select(GrillDimension).where(GrillDimension.prd_id == prd.id)).all():
+        db.delete(row)
+    prd.status = "review"
+    prd.updated = "just now"
+    db.commit()
+    db.refresh(prd)
+    events_svc.record(
+        db, actor_type="agent" if requested_by.startswith("agent:") else "user",
+        actor_label=requested_by, surface="mcp",
+        action="request_rebaseline", target_type="prd", target_id=prd.id,
+        project_id=prd.project_id, meta={"reason_type": reason_type, "reason": reason.strip()},
     )
     return prd
 

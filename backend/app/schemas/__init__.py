@@ -572,6 +572,10 @@ class PrdVersionOut(ORMModel):
     # AL-239: which of these is the agreed spec, and what was deferred when it was agreed.
     is_baseline: bool = False
     grill_outcomes: dict | None = None
+    supersedes_id: int | None = None
+    rebaseline_reason_type: str = ""
+    rebaseline_reason: str = ""
+    requested_by: str = ""
     created_at: datetime
 
 
@@ -680,6 +684,13 @@ class GrillApplyIn(BaseModel):
 class GrillDeferIn(BaseModel):
     dimension: str  # one of prds.DIMENSIONS
     reason: str = ""  # why it's being left open — rides onto the AL-302 baseline
+
+
+class RebaselineIn(BaseModel):
+    # Typed so a chain reads at a glance: a run of `correction` is a spec that was wrong,
+    # a run of `scope-change` is a project that moved.
+    reason_type: str
+    reason: str  # the requester's own words, never a paraphrase
 
 
 class GrillApplyOut(BaseModel):

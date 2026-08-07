@@ -398,6 +398,11 @@ class Prd(Base):
     version: Mapped[str] = mapped_column(String, default="v0.1")
     body: Mapped[str] = mapped_column(Text, default="")
     linked: Mapped[list] = mapped_column(JSON, default=list)  # linked item ids
+    # A rebaseline that has been REQUESTED but not yet earned (AL-241). Holds the
+    # requester's words until the grill completes, then travels onto the new baseline and
+    # is cleared. Non-null means "this PRD is being re-interrogated", which is exactly
+    # the state a UI needs to distinguish from an ordinary first-time review.
+    pending_rebaseline: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     updated: Mapped[str] = mapped_column(String, default="")  # display date from design
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
@@ -519,6 +524,24 @@ class PrdVersion(Base):
     # The grill outcomes as they stood at approval, so a deferral is visible ON the
     # baseline and later drift on that point reads as expected rather than as a surprise.
     grill_outcomes: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Rebaselining (AL-241). Baselines form an APPEND-ONLY chain: N+1 never destroys N,
+    # because learning, scope change and laundering are content-identical from the end
+    # state. Only sequencing and a stated reason separate them, which is why both are
+    # mandatory rather than nice to have.
+    #
+    # NULL on the first baseline — it supersedes nothing.
+    supersedes_id: Mapped[int | None] = mapped_column(
+        ForeignKey("prd_versions.id"), nullable=True
+    )
+    # learning | scope-change | correction. Typed so a chain can be read at a glance:
+    # a run of `correction` is a spec that was wrong, a run of `scope-change` is a
+    # project that moved, and the difference matters to whoever reads it later.
+    rebaseline_reason_type: Mapped[str] = mapped_column(String, default="", server_default="", nullable=False)
+    # The requester's OWN WORDS, not a paraphrase — the `capture_grill_decisions`
+    # preservation principle. A reason written by the agent that wanted the rebaseline
+    # is the thing most likely to be lost when a context window clears.
+    rebaseline_reason: Mapped[str] = mapped_column(Text, default="", server_default="", nullable=False)
+    requested_by: Mapped[str] = mapped_column(String, default="", server_default="", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     prd: Mapped[Prd] = relationship(back_populates="versions")
