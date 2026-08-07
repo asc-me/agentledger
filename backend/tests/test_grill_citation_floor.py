@@ -13,8 +13,19 @@ model read a thorough document and graded THE ARTIFACT rather than THE INTERROGA
 well-written PRD was evidence for its own approval.
 
 The fix is a citation the server checks rather than trusts: a verdict must point at a
-numbered author answer and quote words that really occur in it. The PRD's own prose
-cannot satisfy that, because the document is not an answer.
+numbered author answer that exists. The PRD's own prose cannot satisfy that, because the
+document is not an answer.
+
+It briefly demanded a verbatim quote too. That was removed — three separate bugs came
+from the validator disagreeing with how models render text, each rejecting a CORRECT
+verdict, and the quote never bought what people assume: a real quote filed under the
+wrong dimension passes it just as easily.
+
+So the honest statement of this floor: it guarantees a verdict points at something the
+AUTHOR said. It does NOT guarantee that answer was about that dimension. Misattribution
+is a reviewer's job, which is why the note and answer number are recorded where a
+reviewer sees them. `test_index_only_does_not_prevent_misattribution` pins that limit so
+nobody mistakes this for more than it is.
 """
 import json
 
@@ -63,56 +74,56 @@ def _answer(db, prd, text):
 
 
 # ---- the failure that actually happened -----------------------------------------------
-def test_the_prd_body_can_no_longer_resolve_a_dimension(db, prd, monkeypatch):
-    """The exact regression. The model credits the author for what the DOCUMENT says and
-    quotes the document to prove it — which is not an answer, so nothing clears."""
-    _answer(db, prd, "Rebaselines are approved by grilling them, same as the PRD itself.")
-    _model(monkeypatch, {
-        name: {"outcome": "resolved", "note": "the PRD covers this thoroughly",
-               "answered_by": 1, "quote": "On timeout we retry once then surface the error"}
-        for name in prd_svc.DIMENSIONS
-    })
+def test_a_thorough_prd_with_no_answers_resolves_nothing(db, prd, monkeypatch):
+    """The original bug, stated correctly for index-only.
+
+    PRD-12 was approved because the classifier read a thorough document and reported that
+    the author had explained failure modes and contracts. The author had said nothing.
+
+    Under index-only the document cannot be cited at all — it is not a numbered answer —
+    so a PRD with no answers resolves nothing no matter how complete its prose. The
+    `prd` fixture here deliberately covers all four dimensions in its body."""
+    _model(monkeypatch, {n: {"outcome": "resolved", "note": "the PRD covers this thoroughly",
+                             "answered_by": 1} for n in prd_svc.DIMENSIONS})
     prd_svc.classify_grill(db, prd)
 
     done = prd_svc.completion(db, prd.id)
     assert done["complete"] is False
     assert sorted(done["outstanding"]) == sorted(prd_svc.DIMENSIONS)
-    assert "not in the answer" in done["dimensions"]["contracts"]["note"]
 
 
-def test_one_answer_does_not_clear_four_dimensions_for_free(db, prd, monkeypatch):
-    """What we watched happen on PRD-12: one answer about rebaselining, four green."""
-    answer = "Rebaselines are approved by grilling them, same as the PRD itself."
-    _answer(db, prd, answer)
-    _model(monkeypatch, {
-        "scope_edges": {"outcome": "resolved", "note": "ok", "answered_by": 1,
-                        "quote": "approved by grilling them"},
-        # The other three cite the same answer but quote words it does not contain.
-        "failure_modes": {"outcome": "resolved", "note": "ok", "answered_by": 1,
-                          "quote": "we retry once then surface the error"},
-        "contracts": {"outcome": "resolved", "note": "ok", "answered_by": 1,
-                      "quote": "JSON-RPC over POST"},
-        "open_decisions": {"outcome": "resolved", "note": "ok", "answered_by": 1,
-                           "quote": "nothing remains open"},
-    })
+def test_index_only_does_not_prevent_misattribution(db, prd, monkeypatch):
+    """The limit of this design, pinned deliberately rather than discovered later.
+
+    One answer CAN clear four dimensions, because a valid index is all the server can
+    check. The quote requirement did not prevent this either — grading PRD-12, the model
+    quoted real words from a real answer and filed them under three dimensions the answer
+    never addressed. Verifying relevance is the same judgement we are asking the model to
+    make, so no server-side check reaches it.
+
+    What the recorded note and answer number buy is that a reviewer can SEE it in one
+    glance, which is the achievable property."""
+    _answer(db, prd, "Rebaselines are approved by grilling, same as the PRD itself.")
+    _model(monkeypatch, {n: {"outcome": "resolved", "note": "n", "answered_by": 1}
+                         for n in prd_svc.DIMENSIONS})
     prd_svc.classify_grill(db, prd)
 
     done = prd_svc.completion(db, prd.id)
-    assert done["dimensions"]["scope_edges"]["outcome"] == "resolved"  # genuinely cited
-    assert sorted(done["outstanding"]) == ["contracts", "failure_modes", "open_decisions"]
+    assert done["complete"] is True, "index-only accepts this; the reviewer catches it"
+    assert all("from answer 1" in d["note"] for d in done["dimensions"].values()), \
+        "so every verdict must say WHICH answer it leant on"
 
 
-# ---- a genuine answer still clears -----------------------------------------------------
 def test_a_real_answer_still_resolves_its_dimension(db, prd, monkeypatch):
     """The floor must not make approval unreachable — it makes it earned."""
     _answer(db, prd, "Out of scope for v1: hosted mode and any migration tooling.")
     _model(monkeypatch, {"scope_edges": {"outcome": "resolved", "note": "author set the edges",
-                                         "answered_by": 1, "quote": "Out of scope for v1: hosted mode"}})
+                                         "answered_by": 1}})
     prd_svc.classify_grill(db, prd)
 
     d = prd_svc.completion(db, prd.id)["dimensions"]["scope_edges"]
     assert d["outcome"] == "resolved"
-    assert "cited answer 1" in d["note"] and "hosted mode" in d["note"]
+    assert "from answer 1" in d["note"]
 
 
 def test_a_deferral_must_be_cited_too(db, prd, monkeypatch):
@@ -120,10 +131,9 @@ def test_a_deferral_must_be_cited_too(db, prd, monkeypatch):
     otherwise a model could defer everything and complete the grill."""
     _answer(db, prd, "Let's leave pricing open until after the beta.")
     _model(monkeypatch, {
-        "open_decisions": {"outcome": "deferred", "note": "author deferred", "answered_by": 1,
-                           "quote": "leave pricing open until after the beta"},
-        "contracts": {"outcome": "deferred", "note": "invented", "answered_by": 1,
-                      "quote": "contracts can wait"},
+        "open_decisions": {"outcome": "deferred", "note": "author deferred", "answered_by": 1},
+        # No answer 7 exists — a deferral cannot be conjured out of nothing.
+        "contracts": {"outcome": "deferred", "note": "invented", "answered_by": 7},
     })
     prd_svc.classify_grill(db, prd)
 
@@ -135,25 +145,14 @@ def test_a_deferral_must_be_cited_too(db, prd, monkeypatch):
 # ---- malformed citations fail closed ----------------------------------------------------
 @pytest.mark.parametrize("entry,why", [
     ({"outcome": "resolved", "note": "n"}, "no citation at all"),
-    ({"outcome": "resolved", "note": "n", "answered_by": 9, "quote": "x"}, "answer does not exist"),
-    ({"outcome": "resolved", "note": "n", "answered_by": 1, "quote": ""}, "empty quote"),
-    ({"outcome": "resolved", "note": "n", "answered_by": "one", "quote": "hosted"}, "unparseable index"),
+    ({"outcome": "resolved", "note": "n", "answered_by": 9}, "answer does not exist"),
+    ({"outcome": "resolved", "note": "n", "answered_by": "one"}, "unparseable index"),
 ])
 def test_a_broken_citation_is_unanswered(db, prd, monkeypatch, entry, why):
     _answer(db, prd, "Out of scope for v1: hosted mode.")
     _model(monkeypatch, {"scope_edges": entry})
     prd_svc.classify_grill(db, prd)
     assert prd_svc.completion(db, prd.id)["dimensions"]["scope_edges"]["outcome"] == "unanswered", why
-
-
-def test_quoting_is_whitespace_and_case_tolerant(db, prd, monkeypatch):
-    """The quote has to be checkable, not a formatting trap — a model that reflows or
-    re-cases the author's words is still pointing at real ones."""
-    _answer(db, prd, "Out of scope for v1:\n  hosted mode and migrations.")
-    _model(monkeypatch, {"scope_edges": {"outcome": "resolved", "note": "n", "answered_by": 1,
-                                         "quote": "OUT OF SCOPE FOR V1: hosted mode"}})
-    prd_svc.classify_grill(db, prd)
-    assert prd_svc.completion(db, prd.id)["dimensions"]["scope_edges"]["outcome"] == "resolved"
 
 
 def test_no_answers_means_the_model_is_not_even_asked(db, prd, monkeypatch):
@@ -194,10 +193,8 @@ def test_verdicts_under_unknown_keys_are_ignored(db, prd, monkeypatch):
     and must not crash."""
     _answer(db, prd, "Out of scope for v1: hosted mode.")
     _model(monkeypatch, {
-        "intent_baseline": {"outcome": "resolved", "note": "n", "answered_by": 1,
-                            "quote": "Out of scope for v1"},
-        "coverage": {"outcome": "resolved", "note": "n", "answered_by": 1,
-                     "quote": "hosted mode"},
+        "intent_baseline": {"outcome": "resolved", "note": "n", "answered_by": 1},
+        "coverage": {"outcome": "resolved", "note": "n", "answered_by": 1},
     })
     prd_svc.classify_grill(db, prd)
 
@@ -206,37 +203,3 @@ def test_verdicts_under_unknown_keys_are_ignored(db, prd, monkeypatch):
 
 
 # ---- quoting the way people actually quote ---------------------------------------------
-def test_a_quote_may_elide_the_middle(db, prd, monkeypatch):
-    """Exact-substring matching was the first attempt and it was too strict on real
-    output: grading PRD-12, the model quoted two non-adjacent sentences of a long answer
-    and dropped the middle. Every word was the author's; it was rejected as fabrication.
-
-    Ordinary quoting elides. What must hold is that no word is invented."""
-    _answer(db, prd, "Rebaselines are approved by grilling. We considered a human click "
-                     "and rejected it. The agent must grill the rebaseline to approve it.")
-    _model(monkeypatch, {"open_decisions": {
-        "outcome": "resolved", "note": "settled", "answered_by": 1,
-        "quote": "Rebaselines are approved by grilling. The agent must grill the rebaseline"}})
-    prd_svc.classify_grill(db, prd)
-    assert prd_svc.completion(db, prd.id)["dimensions"]["open_decisions"]["outcome"] == "resolved"
-
-
-def test_an_elided_quote_still_cannot_smuggle_in_invented_words(db, prd, monkeypatch):
-    """The loosening must not become a hole: a fragment the author never wrote fails the
-    whole citation, even when the other fragment is genuine."""
-    _answer(db, prd, "Rebaselines are approved by grilling, same as the PRD itself.")
-    _model(monkeypatch, {"contracts": {
-        "outcome": "resolved", "note": "n", "answered_by": 1,
-        "quote": "Rebaselines are approved by grilling. Contracts are JSON-RPC over POST"}})
-    prd_svc.classify_grill(db, prd)
-    assert prd_svc.completion(db, prd.id)["dimensions"]["contracts"]["outcome"] == "unanswered"
-
-
-def test_trivial_fragments_cannot_carry_a_citation(db, prd, monkeypatch):
-    """Matching "the" and "and" proves nothing, so short fragments are ignored — and a
-    quote made only of them has nothing left to verify."""
-    _answer(db, prd, "Out of scope for v1: hosted mode and migration tooling.")
-    _model(monkeypatch, {"scope_edges": {"outcome": "resolved", "note": "n", "answered_by": 1,
-                                         "quote": "the. and. of."}})
-    prd_svc.classify_grill(db, prd)
-    assert prd_svc.completion(db, prd.id)["dimensions"]["scope_edges"]["outcome"] == "unanswered"
