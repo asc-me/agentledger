@@ -1,6 +1,7 @@
 """PRD tracker service (Phase 3): CRUD, version snapshots, item links, AI commands."""
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -589,6 +590,85 @@ def classify_grill(db: Session, prd: Prd) -> dict:
     # someone to notice the standard is met (AL-300).
     sync_status(db, prd)
     return completion(db, prd.id)
+
+
+def section_digest(body: str) -> dict[str, str]:
+    """`{section title: sha256 of its body}` — the unit invalidation is scoped to.
+
+    Per section, not per body, because whole-body hashing would invalidate every
+    classification beneath a typo fix. That makes the correct behaviour painful and the
+    wrong one convenient, which is how a feature gets routed around.
+
+    Whitespace is normalised so reflowing a paragraph is not a content change. Nothing
+    else is: wording IS the intent, and a spec that changed its words changed.
+    """
+    return {
+        title: hashlib.sha256(" ".join(text.split()).encode()).hexdigest()
+        for title, text in section_bodies(body).items()
+    }
+
+
+def diff_sections(old_body: str, new_body: str) -> dict:
+    """What changed between two specs, at section granularity.
+
+    Returns `{unchanged, modified, renamed, added, removed}`. `renamed` carries
+    `(old_title, new_title)` pairs.
+
+    Rename detection is the whole point. If identity were the title, renaming a section
+    would invalidate every classification beneath it AND read as **dropped + added** in
+    the close report — handing a PM a false "this was dropped" entry in the one artifact
+    they are meant to act on. So a body whose hash survives under a different title is a
+    rename, and its classifications survive with it.
+
+    The ambiguity this cannot escape: a section that was BOTH renamed and edited is
+    indistinguishable from a drop plus an add, because nothing anchors it. It is reported
+    as removed + added, which is the honest reading — pretending to match it would be
+    guessing, and a wrong guess hides a real dropped section. AL-240's fallback of stable
+    per-section IDs assigned at baseline time is what closes that, and it is only worth
+    building if this proves insufficient in practice.
+    """
+    old, new = section_digest(old_body), section_digest(new_body)
+    old_by_hash = {h: t for t, h in old.items()}
+
+    unchanged = sorted(t for t in new if t in old and old[t] == new[t])
+    modified = sorted(t for t in new if t in old and old[t] != new[t])
+
+    renamed, added = [], []
+    for title in sorted(set(new) - set(old)):
+        prior = old_by_hash.get(new[title])
+        if prior is not None and prior not in new:
+            renamed.append((prior, title))   # same body, new title
+        else:
+            added.append(title)
+
+    renamed_from = {a for a, _ in renamed}
+    removed = sorted(set(old) - set(new) - renamed_from)
+    return {"unchanged": unchanged, "modified": modified,
+            "renamed": renamed, "added": added, "removed": removed}
+
+
+def baseline_drift(db: Session, prd: Prd) -> dict:
+    """How the living body has diverged from the GOVERNING baseline.
+
+    This is the mechanical half of drift and the half that works with no chat provider
+    at all: it counts structural change against agreed intent and expresses no opinion
+    about whether that change was good.
+
+    A PRD with no baseline returns `governed: False` rather than a zero. Zero drift and
+    "never had agreed intent to drift from" are different facts, and reporting the second
+    as the first is exactly the misleading green PRD-12 exists to stop.
+    """
+    base = baseline_of(db, prd.id)
+    if base is None:
+        return {"governed": False, "baseline_version": None}
+    d = diff_sections(base.body, prd.body)
+    return {
+        "governed": True,
+        "baseline_version": base.version,
+        **d,
+        # Renames are deliberately NOT counted: the intent did not move, only its label.
+        "drifted_sections": len(d["modified"]) + len(d["added"]) + len(d["removed"]),
+    }
 
 
 def baseline_of(db: Session, prd_id: str) -> PrdVersion | None:
