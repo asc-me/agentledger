@@ -446,6 +446,30 @@ def _classify_context(prd: Prd, history: list[dict]) -> str:
     return "\n".join(parts)
 
 
+_ELISION = re.compile(r"\s*(?:\.\.\.|…|\[\.\.\.\])\s*|(?<=[.?!])\s+")
+
+
+def _quote_is_from(quote: str, source: str) -> bool:
+    """Is every word of `quote` actually the author's?
+
+    Exact-substring matching was the first attempt and it was too strict on real output:
+    the model quoted two non-adjacent sentences of a long answer, eliding the middle,
+    which is ordinary quoting and was rejected as fabrication.
+
+    So the quote may be split across elisions and sentence boundaries, but EVERY fragment
+    must occur verbatim in the answer cited. That still cannot be satisfied by text the
+    author never wrote — which is the only property this check has to hold — while
+    letting a model summarise a long answer the way a person would.
+
+    Fragments shorter than three words are ignored rather than trusted: matching "the" or
+    "and" proves nothing, and requiring them would fail on punctuation differences.
+    """
+    if quote in source:
+        return True
+    parts = [f.strip() for f in _ELISION.split(quote) if len(f.split()) >= 3]
+    return bool(parts) and all(f in source for f in parts)
+
+
 def _validated(entry: dict, answers: list[str]) -> dict | None:
     """Accept a verdict only if it points at an author answer that really says so.
 
@@ -469,7 +493,7 @@ def _validated(entry: dict, answers: list[str]) -> dict | None:
 
     quote = " ".join(str(entry.get("quote", "")).split()).lower()
     source = " ".join(answers[idx - 1].split()).lower()
-    if not quote or quote not in source:
+    if not quote or not _quote_is_from(quote, source):
         return {"outcome": "unanswered",
                 "note": "cited words are not in the answer it points at"}
     return {"outcome": outcome, "note": note, "answered_by": idx, "quote": quote[:200]}

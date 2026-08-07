@@ -203,3 +203,40 @@ def test_verdicts_under_unknown_keys_are_ignored(db, prd, monkeypatch):
 
     done = prd_svc.completion(db, prd.id)
     assert sorted(done["outstanding"]) == sorted(prd_svc.DIMENSIONS)
+
+
+# ---- quoting the way people actually quote ---------------------------------------------
+def test_a_quote_may_elide_the_middle(db, prd, monkeypatch):
+    """Exact-substring matching was the first attempt and it was too strict on real
+    output: grading PRD-12, the model quoted two non-adjacent sentences of a long answer
+    and dropped the middle. Every word was the author's; it was rejected as fabrication.
+
+    Ordinary quoting elides. What must hold is that no word is invented."""
+    _answer(db, prd, "Rebaselines are approved by grilling. We considered a human click "
+                     "and rejected it. The agent must grill the rebaseline to approve it.")
+    _model(monkeypatch, {"open_decisions": {
+        "outcome": "resolved", "note": "settled", "answered_by": 1,
+        "quote": "Rebaselines are approved by grilling. The agent must grill the rebaseline"}})
+    prd_svc.classify_grill(db, prd)
+    assert prd_svc.completion(db, prd.id)["dimensions"]["open_decisions"]["outcome"] == "resolved"
+
+
+def test_an_elided_quote_still_cannot_smuggle_in_invented_words(db, prd, monkeypatch):
+    """The loosening must not become a hole: a fragment the author never wrote fails the
+    whole citation, even when the other fragment is genuine."""
+    _answer(db, prd, "Rebaselines are approved by grilling, same as the PRD itself.")
+    _model(monkeypatch, {"contracts": {
+        "outcome": "resolved", "note": "n", "answered_by": 1,
+        "quote": "Rebaselines are approved by grilling. Contracts are JSON-RPC over POST"}})
+    prd_svc.classify_grill(db, prd)
+    assert prd_svc.completion(db, prd.id)["dimensions"]["contracts"]["outcome"] == "unanswered"
+
+
+def test_trivial_fragments_cannot_carry_a_citation(db, prd, monkeypatch):
+    """Matching "the" and "and" proves nothing, so short fragments are ignored — and a
+    quote made only of them has nothing left to verify."""
+    _answer(db, prd, "Out of scope for v1: hosted mode and migration tooling.")
+    _model(monkeypatch, {"scope_edges": {"outcome": "resolved", "note": "n", "answered_by": 1,
+                                         "quote": "the. and. of."}})
+    prd_svc.classify_grill(db, prd)
+    assert prd_svc.completion(db, prd.id)["dimensions"]["scope_edges"]["outcome"] == "unanswered"
