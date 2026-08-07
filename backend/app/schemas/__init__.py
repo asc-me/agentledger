@@ -569,6 +569,9 @@ class PrdVersionOut(ORMModel):
     date: str
     note: str
     body: str
+    # AL-239: which of these is the agreed spec, and what was deferred when it was agreed.
+    is_baseline: bool = False
+    grill_outcomes: dict | None = None
     created_at: datetime
 
 

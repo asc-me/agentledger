@@ -40,6 +40,17 @@ def _bump(version: str) -> str:
     return f"v{m.group(1)}.{int(m.group(2)) + 1}"
 
 
+def _promote(version: str) -> str:
+    """Approval promotes v0.x to v1.0 (AL-239). `_bump` only ever increments minor, so it
+    cannot express "this stopped being a draft" — which is the whole point of the moment.
+    An already-major version bumps minor instead: a re-approval is v1.1, not a second v1.0."""
+    m = re.match(r"v(\d+)\.(\d+)", version or "v0.0")
+    if not m:
+        return "v1.0"
+    major = int(m.group(1))
+    return "v1.0" if major == 0 else f"v{major}.{int(m.group(2)) + 1}"
+
+
 def list_prds(db: Session, project_id: str | None = None) -> list[Prd]:
     stmt = select(Prd)
     if project_id:
@@ -477,6 +488,50 @@ def classify_grill(db: Session, prd: Prd) -> dict:
     return completion(db, prd.id)
 
 
+def baseline_of(db: Session, prd_id: str) -> PrdVersion | None:
+    """The agreed spec for this PRD, or None if it has never been approved. The latest
+    baseline wins — a re-approval supersedes, and the earlier ones stay as history."""
+    return db.scalars(
+        select(PrdVersion)
+        .where(PrdVersion.prd_id == prd_id, PrdVersion.is_baseline.is_(True))
+        .order_by(PrdVersion.created_at.desc(), PrdVersion.id.desc())
+    ).first()
+
+
+def freeze_baseline(db: Session, prd: Prd) -> PrdVersion:
+    """Snapshot the spec as agreed, and promote the version (AL-239).
+
+    Called at approval — since PRD-15, when the grill concludes. Records the
+    per-dimension outcomes alongside the body so a deferral is visible on the baseline
+    itself.
+
+    Idempotent per body: re-approving an unchanged spec returns the existing baseline
+    rather than stacking duplicates, so a status recomputation can never quietly mint a
+    second "original intent".
+    """
+    existing = baseline_of(db, prd.id)
+    if existing is not None and existing.body == prd.body:
+        return existing
+
+    done = completion(db, prd.id)
+    prd.version = _promote(prd.version)
+    row = PrdVersion(
+        prd_id=prd.id,
+        version=prd.version,
+        date="just now",
+        note="Intent baseline — the spec as approved.",
+        body=prd.body,
+        is_baseline=True,
+        grill_outcomes={n: {"outcome": d["outcome"], "note": d["note"]}
+                        for n, d in done["dimensions"].items()},
+    )
+    db.add(row)
+    prd.updated = "just now"
+    db.commit()
+    db.refresh(row)
+    return row
+
+
 def sync_status(db: Session, prd: Prd) -> Prd:
     """Move the PRD's status to match its grill (AL-300 / PRD-15 D5).
 
@@ -504,6 +559,10 @@ def sync_status(db: Session, prd: Prd) -> Prd:
         prd.updated = "just now"
         db.commit()
         db.refresh(prd)
+        # Approval is the moment the spec was agreed, so the baseline freezes HERE
+        # rather than waiting for anyone to remember (AL-239, and what AL-302 described).
+        if target == "approved":
+            freeze_baseline(db, prd)
     return prd
 
 
@@ -563,6 +622,14 @@ def grill_apply(db: Session, prd_id: str, history: list[dict]) -> str:
     prd = get_prd(db, prd_id)
     if prd is None:
         raise ValueError(f"prd not found: {prd_id}")
+    # Snapshot BEFORE proposing a wholesale rewrite (AL-239). `GRILL_APPLY_SYSTEM` asks
+    # the model to return the FULL body, so whatever comes back replaces everything —
+    # and until now nothing preserved what was there. An ordinary snapshot, not a
+    # baseline: this records what the author had, not what anyone agreed to.
+    if (prd.body or "").strip():
+        db.add(PrdVersion(prd_id=prd.id, version=prd.version, date="just now",
+                          note="Before folding in grill decisions.", body=prd.body))
+        db.commit()
     provider, chat = platform_svc.resolve_chat(db, prd.project_id)
     if provider == "stub":
         answers = [m.get("text", "").strip() for m in history if m.get("role") == "user"]

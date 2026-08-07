@@ -143,6 +143,16 @@ def list_versions(prd_id: str, db: Session = Depends(get_db), user: User = Depen
     return prd.versions
 
 
+@router.get("/{prd_id}/baseline", response_model=PrdVersionOut | None)
+def prd_baseline(prd_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """The agreed spec, or null if this PRD has never been approved (AL-239).
+
+    Every PRD-12 judgement cites this — "measured against v1.0" is only meaningful if the
+    thing measured against is fetchable and immutable."""
+    prd = _require_readable_prd(db, user, prd_id)
+    return prd_svc.baseline_of(db, prd.id)
+
+
 @router.post("/{prd_id}/versions", response_model=PrdOut, status_code=201)
 def snapshot(prd_id: str, body: PrdVersionIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _require_writable_prd(db, user, prd_id)
