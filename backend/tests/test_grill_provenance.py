@@ -129,16 +129,14 @@ def test_a_model_graded_dimension_names_the_provider(client, auth, agent_key, pr
     assert dims["scope_edges"]["graded_by"] == "anthropic"
 
 
-def test_a_failed_model_verdict_is_credited_to_the_stub_not_the_model(
+def test_a_failed_model_verdict_is_credited_to_nothing(
     client, auth, agent_key, prd, monkeypatch
 ):
-    """The case where the label actually earns its keep, and the one my first pass
-    missed: a real model IS configured, but its reply is unparseable, so the mechanical
-    stub rule decides the outcome. Crediting the model there would be a lie in exactly
-    the situation a reader most needs the truth — the bar looks judged and wasn't.
+    """A real model IS configured but its reply is unparseable. Nothing may be recorded:
+    not under the model's name, and not under the stub's either.
 
     (Found by sabotage: replacing the grader with a bare provider lookup left every test
-    green, because on a stub instance the two answers coincide.)"""
+    green, because on a stub instance "what is configured" and "what graded" coincide.)"""
     class _Garbage:
         def chat(self, **kw):
             return "I think it's probably fine?"
@@ -147,9 +145,12 @@ def test_a_failed_model_verdict_is_credited_to_the_stub_not_the_model(
     _mcp(client, agent_key, "answer_grill", {"prd_id": prd, "answer": "An answer."})
 
     d = _state(client, auth, prd)["dimensions"]["scope_edges"]
-    assert d["outcome"] == "resolved"  # the stub rule decided
-    assert d["graded_by"] == "stub", "an unparseable model reply must not be credited to the model"
-    assert "substance not assessed" in d["note"]
+    # Originally this asserted the stub rule decided and was labelled `stub`. Labelling
+    # made the weak grading visible, but it still HAPPENED — a real model failing should
+    # not silently hand grading to a weaker offline rule. Now nothing is recorded, which
+    # is both honest and unmistakable.
+    assert d["outcome"] == "unanswered"
+    assert d["graded_by"] == "", "a failed model reply must not be credited to anything"
 
 
 def test_an_explicit_deferral_is_graded_by_the_author(client, auth, prd):
