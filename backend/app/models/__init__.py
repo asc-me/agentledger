@@ -505,6 +505,20 @@ class PrdVersion(Base):
     date: Mapped[str] = mapped_column(String, default="")
     note: Mapped[str] = mapped_column(String, default="")
     body: Mapped[str] = mapped_column(Text, default="")
+    # THE agreed spec, not just another snapshot (AL-239). Set when a PRD is approved —
+    # which since PRD-15 means its grill concluded, so the baseline freezes at the moment
+    # the spec was demonstrably interrogated rather than when someone clicked something.
+    #
+    # Ordinary snapshots pile up freely; a baseline is the fixed point every later
+    # judgement measures against. Post-approval edits stay legal and deliberately do NOT
+    # move it — that is what makes drift measurable. If an edit moved the baseline, drift
+    # would be definitionally zero and PRD-12 would report health while measuring nothing.
+    is_baseline: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
+    # The grill outcomes as they stood at approval, so a deferral is visible ON the
+    # baseline and later drift on that point reads as expected rather than as a surprise.
+    grill_outcomes: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     prd: Mapped[Prd] = relationship(back_populates="versions")
