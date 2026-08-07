@@ -1444,6 +1444,8 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
                 db, args["prd_id"],
                 title=args.get("title"), status=args.get("status"), body=args.get("body"),
             )
+        except prd_svc.RebaselineExpandsScope as e:
+            raise errors.Conflict(str(e)) from e
         except prd_svc.ApprovalNotEarned as e:
             # `conflict`, not `validation`: the call was well-formed and permitted, the
             # PRD simply is not there yet. The message names what is still outstanding

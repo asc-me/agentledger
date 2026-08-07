@@ -166,6 +166,9 @@ def update_prd(prd_id: str, body: PrdUpdate, db: Session = Depends(get_db), user
     _require_writable_prd(db, user, prd_id)
     try:
         prd = prd_svc.update_prd(db, prd_id, **body.model_dump(exclude_unset=True))
+    except prd_svc.RebaselineExpandsScope as e:
+        # 409, like ApprovalNotEarned: the request is fine, the state says no.
+        raise HTTPException(409, str(e))
     except prd_svc.ApprovalNotEarned as e:
         # 409, not 422: the request is well-formed and permitted, the PRD just is not
         # there yet. A validation error would read as "you sent something malformed".
