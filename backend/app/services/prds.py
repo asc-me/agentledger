@@ -516,6 +516,11 @@ def _classify_dimensions(db: Session, prd: Prd, history: list[dict]) -> dict | N
             context=_classify_context(prd, history),
             question="Classify the four dimensions. Cite an answer number and quote it. "
                      "Return only the JSON object.",
+            # Deterministic: an identical transcript must yield an identical verdict.
+            # Measured before this was set — three runs of the same input on the same
+            # model gave two different completion states, so whether a PRD approved
+            # depended on when the classifier happened to run.
+            temperature=0,
         )
     except Exception:  # noqa: BLE001 — a model outage must not break the grill
         logger.exception("grill classify: chat call failed")

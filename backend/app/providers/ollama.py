@@ -67,16 +67,19 @@ class OllamaChat:
             {"role": "user", "content": f"Project context:\n{context}\n\nQuestion: {question}"},
         ]
 
-    def chat(self, *, system: str, context: str, question: str) -> str:
+    def chat(self, *, system: str, context: str, question: str,
+             temperature: float | None = None) -> str:
         """Full completion as a string — assembled from the STREAM, not a blocking POST.
 
         See the note in providers/openai_compat.py: a blocking completion's
         time-to-first-byte equals total generation time, which an edge proxy capping
         TTFB (~100s on Cloudflare) will sever on a long answer. Streaming makes the
         first byte immediate while keeping the identical `-> str` contract."""
-        return "".join(self.stream(system=system, context=context, question=question)).strip()
+        return "".join(self.stream(system=system, context=context, question=question,
+                                   temperature=temperature)).strip()
 
-    def stream(self, *, system: str, context: str, question: str):
+    def stream(self, *, system: str, context: str, question: str,
+               temperature: float | None = None):
         # The connection and status check happen on the first `next()`, so wrapping the
         # generator body is what turns a misconfigured endpoint into an actionable error
         # instead of the dispatcher's generic "internal … safe to retry once".
@@ -84,7 +87,9 @@ class OllamaChat:
             "POST",
             f"{self.base_url}/api/chat",
             headers=_headers(self.auth_key),
-            json={"model": self.model, "messages": self._msgs(system, context, question), "stream": True},
+            json={"model": self.model, "messages": self._msgs(system, context, question),
+                  "stream": True,
+                  **({"options": {"temperature": temperature}} if temperature is not None else {})},
             timeout=_timeout(),
         ) as r:
             r.raise_for_status()

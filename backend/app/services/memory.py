@@ -321,7 +321,10 @@ def _llm_judge(db: Session, shard: MemoryShard) -> dict | None:
     if provider == "stub":
         return None  # the offline stub can't judge — fall back to similarity
     try:
-        raw = model.chat(system=_JUDGE_SYSTEM, context=shard.text, question=_JUDGE_QUESTION)
+        # Same reason as the grill classifier: a judge that answers differently for
+        # identical input turns "is this memory worth keeping" into a coin flip.
+        raw = model.chat(system=_JUDGE_SYSTEM, context=shard.text, question=_JUDGE_QUESTION,
+                         temperature=0)
     except Exception:  # noqa: BLE001 — a model outage must not fail the memory write
         logger.exception("llm judge: chat call failed")
         return None

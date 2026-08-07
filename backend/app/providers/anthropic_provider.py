@@ -27,7 +27,8 @@ class AnthropicChat:
         self.model = model
         self.api_key = api_key
 
-    def chat(self, *, system: str, context: str, question: str) -> str:
+    def chat(self, *, system: str, context: str, question: str,
+             temperature: float | None = None) -> str:
         msg = _client(self.api_key).messages.create(
             model=self.model,
             max_tokens=_MAX_TOKENS,
@@ -41,7 +42,8 @@ class AnthropicChat:
         )
         return _text(msg)
 
-    def stream(self, *, system: str, context: str, question: str):
+    def stream(self, *, system: str, context: str, question: str,
+               temperature: float | None = None):
         with _client(self.api_key).messages.stream(
             model=self.model,
             max_tokens=_MAX_TOKENS,
@@ -49,6 +51,7 @@ class AnthropicChat:
             messages=[
                 {"role": "user", "content": f"Project context:\n{context}\n\nQuestion: {question}"}
             ],
+            **({"temperature": temperature} if temperature is not None else {}),
         ) as s:
             yield from s.text_stream
 

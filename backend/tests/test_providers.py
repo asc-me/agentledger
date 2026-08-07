@@ -77,7 +77,7 @@ def test_configured_provider_reaches_prd_ai(client, auth, monkeypatch):
     command uses the model — not the offline stub. The gate used to key off a stale
     app_settings.chat_provider flag the registry path never updated."""
     class FakeChat:
-        def chat(self, *, system, context, question):
+        def chat(self, *, system, context, question, temperature=None):
             return "REAL-MODEL-OUTPUT"
 
     monkeypatch.setattr("app.services.platform.resolve_chat", lambda db, pid: ("openai", FakeChat()))

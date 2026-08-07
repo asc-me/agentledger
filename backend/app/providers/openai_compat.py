@@ -35,7 +35,8 @@ class OpenAICompatChat:
             h["Authorization"] = f"Bearer {self.api_key}"
         return h
 
-    def chat(self, *, system: str, context: str, question: str) -> str:
+    def chat(self, *, system: str, context: str, question: str,
+             temperature: float | None = None) -> str:
         """Full completion as a string — assembled from the STREAM, not a blocking POST.
 
         A non-streaming completion returns nothing until the whole generation finishes,
@@ -44,14 +45,18 @@ class OpenAICompatChat:
         `grill_apply` is the worst case — gets severed mid-thought. Streaming makes the
         first byte immediate, so only the *total* duration matters, while callers keep
         the identical `-> str` contract."""
-        return "".join(self.stream(system=system, context=context, question=question)).strip()
+        return "".join(self.stream(system=system, context=context, question=question,
+                                   temperature=temperature)).strip()
 
-    def stream(self, *, system: str, context: str, question: str):
+    def stream(self, *, system: str, context: str, question: str,
+               temperature: float | None = None):
         with httpx.stream(
             "POST",
             f"{self.base_url}/chat/completions",
             headers=self._headers(),
-            json={"model": self.model, "messages": _messages(system, context, question), "stream": True},
+            json={"model": self.model, "messages": _messages(system, context, question),
+                  "stream": True,
+                  **({"temperature": temperature} if temperature is not None else {})},
             timeout=_timeout(),
         ) as r:
             r.raise_for_status()
