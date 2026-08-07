@@ -13,6 +13,7 @@ from collections import Counter
 from app.models import GrillDimension, GrillTurn, Prd, PrdVersion
 from app.services import items as items_svc
 from app.services import keys
+from app.services import events as events_svc
 from app.services import platform as platform_svc
 
 logger = logging.getLogger("graphban.prds")
@@ -604,6 +605,45 @@ def freeze_baseline(db: Session, prd: Prd) -> PrdVersion:
     db.commit()
     db.refresh(row)
     return row
+
+
+def invalidate_approval(db: Session, prd: Prd, *, reason: str) -> Prd:
+    """Un-approve a PRD whose approval rested on assumptions now known to be wrong.
+
+    Normally approval is one-way: `sync_status` never demotes, because a spec that was
+    genuinely agreed stays agreed. This is the exception, and it exists because the
+    alternative is worse — if the STANDARD that granted an approval turns out to be
+    broken, leaving the approval standing means the baseline everything is measured
+    against was never really earned, and no later work can tell.
+
+    So: an approval is only as good as the process that granted it. When the process is
+    found wanting, the approval goes with it.
+
+    Clears the dimension verdicts (they were reached under the old standard and would
+    otherwise survive as unearned passes), drops the PRD back to `review`, and removes the
+    baseline that approval froze. The grill TURNS are deliberately kept — the author
+    really did answer those questions, and re-grilling should not make them retype it.
+
+    Audited as a system event, because silently un-approving something is exactly the
+    kind of act that has to leave a trace.
+    """
+    for row in db.scalars(select(GrillDimension).where(GrillDimension.prd_id == prd.id)).all():
+        db.delete(row)
+    for row in db.scalars(
+        select(PrdVersion).where(PrdVersion.prd_id == prd.id, PrdVersion.is_baseline.is_(True))
+    ).all():
+        db.delete(row)
+    prd.status = "review" if grill_state(db, prd.id)["answers"] else "draft"
+    prd.version = "v0.1"
+    prd.updated = "just now"
+    db.commit()
+    db.refresh(prd)
+    events_svc.record(
+        db, actor_type="system", actor_label="grill", surface="system",
+        action="invalidate_prd_approval", target_type="prd", target_id=prd.id,
+        project_id=prd.project_id, meta={"reason": reason},
+    )
+    return prd
 
 
 def sync_status(db: Session, prd: Prd) -> Prd:

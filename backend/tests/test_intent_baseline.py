@@ -158,3 +158,60 @@ def test_the_baseline_is_readable_over_the_api(client, auth, db, prd):
     assert got["is_baseline"] is True
     assert got["version"] == "v1.0"
     assert "Original intent." in got["body"]
+
+
+# ---- when the standard itself was wrong ------------------------------------------------
+def test_invalidating_an_approval_removes_the_baseline_it_froze(db, prd):
+    """Approval is normally one-way — `sync_status` never demotes, because a spec that was
+    genuinely agreed stays agreed. The exception is when the STANDARD that granted it turns
+    out to be broken: leaving the approval standing would mean everything is measured
+    against a baseline nobody earned, and no later work could tell.
+
+    Exercised for real on PRD-12, whose approval was granted before the grill required
+    citations and so cleared four dimensions on one answer."""
+    _approve(db, prd)
+    assert prd_svc.baseline_of(db, prd.id) is not None
+
+    prd_svc.invalidate_approval(db, prd, reason="approved under a standard since found wanting")
+
+    assert prd.status == "review"
+    assert prd.version == "v0.1"
+    assert prd_svc.baseline_of(db, prd.id) is None, "an unearned baseline must not survive"
+    assert prd_svc.completion(db, prd.id)["outstanding"] == sorted(prd_svc.DIMENSIONS)
+
+
+def test_invalidation_keeps_the_answers_the_author_actually_gave(db, prd):
+    """The verdicts were reached under the old standard and go. The author's answers are
+    theirs and really happened — making someone retype them would be a punishment for our
+    bug."""
+    _approve(db, prd)
+    before = prd_svc.grill_state(db, prd.id)["answers"]
+    assert before > 0
+
+    prd_svc.invalidate_approval(db, prd, reason="standard changed")
+    assert prd_svc.grill_state(db, prd.id)["answers"] == before
+
+
+def test_it_can_be_re_earned_under_the_new_standard(db, prd):
+    """Invalidation is not a dead end — the PRD goes back to being gradeable."""
+    _approve(db, prd)
+    prd_svc.invalidate_approval(db, prd, reason="standard changed")
+
+    for name in prd_svc.DIMENSIONS:
+        prd_svc.set_dimension(db, prd.id, name, "resolved")
+    prd_svc.sync_status(db, prd)
+
+    assert prd.status == "approved" and prd.version == "v1.0"
+    assert prd_svc.baseline_of(db, prd.id) is not None
+
+
+def test_invalidation_is_audited(db, prd):
+    """Silently un-approving something is exactly the act that has to leave a trace."""
+    from app.models import Event
+
+    _approve(db, prd)
+    prd_svc.invalidate_approval(db, prd, reason="citation floor added after approval")
+
+    ev = db.query(Event).filter(Event.action == "invalidate_prd_approval").all()
+    assert len(ev) == 1
+    assert "citation floor" in str(ev[0].meta)
