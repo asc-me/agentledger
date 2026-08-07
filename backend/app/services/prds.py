@@ -387,29 +387,100 @@ def completion(db: Session, prd_id: str) -> dict:
 # from, and mixing them would make a malformed token both a broken sentence and a lost
 # outcome. Mirrors `memory._llm_judge`: focused prompt, defensive parse, None on failure.
 GRILL_CLASSIFY_SYSTEM = (
-    "You assess whether a PRD has been interrogated on four fixed dimensions. For EACH "
-    "dimension decide: `resolved` (the author gave a substantive answer), `deferred` (the "
-    "author deliberately chose not to decide yet — a legitimate outcome), or `unanswered` "
-    "(never put to them, or answered evasively without electing to defer). A vague, "
-    "hand-waving, or 'we'll figure it out later' reply that does NOT explicitly choose to "
-    "defer is `unanswered`, not `resolved`. Respond with ONLY a compact JSON object: "
-    '{"scope_edges": {"outcome": "...", "note": "..."}, "failure_modes": {...}, '
-    '"contracts": {...}, "open_decisions": {...}}. Notes are one short sentence.'
+    "You assess whether the AUTHOR HAS BEEN INTERROGATED on four fixed dimensions.\n\n"
+    "CRITICAL: the PRD's own text is the thing under question. It is NEVER evidence that a "
+    "question was answered. However thoroughly the document covers a dimension, only "
+    "something the AUTHOR SAID in the conversation can resolve it. A well-written PRD with "
+    "no answers is `unanswered` on all four.\n\n"
+    "For EACH dimension decide: `resolved` (an author answer substantively settled it), "
+    "`deferred` (the author deliberately chose not to decide yet — legitimate), or "
+    "`unanswered` (never put to them, answered evasively, or addressed only by the document "
+    "itself). Hand-waving or 'we'll figure it out later' without explicitly choosing to "
+    "defer is `unanswered`.\n\n"
+    "For `resolved` and `deferred` you MUST cite the author answer that settled it, by its "
+    "numbered label in the transcript, and quote the words from THAT answer which do so. If "
+    "you cannot point at the author's own words, the honest verdict is `unanswered`.\n\n"
+    "Respond with ONLY a compact JSON object keyed by dimension, each value "
+    '{"outcome": "...", "note": "one short sentence", "answered_by": <answer number>, '
+    '"quote": "<= 20 words copied verbatim from that answer"}. Omit answered_by/quote for '
+    "`unanswered`."
 )
+
+
+def _numbered_answers(history: list[dict]) -> list[str]:
+    """The author's turns, in order. Citations index into this list (1-based)."""
+    return [m["text"] for m in history if m.get("role") == "user" and (m.get("text") or "").strip()]
+
+
+def _classify_context(prd: Prd, history: list[dict]) -> str:
+    """Context for classification, which is NOT the context for conversation.
+
+    `grill_context` leads with the PRD body, and that is exactly what went wrong the first
+    time this ran for real: the model read a thorough document and reported that the
+    author had explained failure modes and contracts, when the author had said nothing
+    about either. It graded the artifact instead of the interrogation.
+
+    So the body is labelled here as the thing under question, and the author's answers are
+    presented as the only admissible evidence — numbered, so a verdict has to point at
+    one."""
+    answers = _numbered_answers(history)
+    parts = [
+        f"PRD UNDER QUESTION — {prd.title}. This document is what is being interrogated. "
+        "It is NOT evidence that any question was answered.",
+        prd.body or "(empty)",
+        "",
+        "AUTHOR'S ANSWERS — the only thing that can resolve a dimension:",
+    ]
+    parts += [f"[answer {i}] {a}" for i, a in enumerate(answers, 1)] or ["(none — the author has not answered anything)"]
+    return "\n".join(parts)
+
+
+def _validated(entry: dict, answers: list[str]) -> dict | None:
+    """Accept a verdict only if it points at an author answer that really says so.
+
+    The citation is checked, not trusted: `answered_by` must index a real answer and
+    `quote` must actually occur in it. A model crediting the PRD's own prose cannot
+    satisfy that, because the document is not an answer — which is the whole point.
+    """
+    outcome = str(entry.get("outcome", "")).strip().lower()
+    if outcome not in OUTCOMES:
+        return None
+    note = str(entry.get("note", "")).strip()
+    if outcome == "unanswered":
+        return {"outcome": "unanswered", "note": note}
+
+    try:
+        idx = int(entry.get("answered_by"))
+    except (TypeError, ValueError):
+        return {"outcome": "unanswered", "note": "no answer cited for this dimension"}
+    if not 1 <= idx <= len(answers):
+        return {"outcome": "unanswered", "note": f"cited answer {idx} does not exist"}
+
+    quote = " ".join(str(entry.get("quote", "")).split()).lower()
+    source = " ".join(answers[idx - 1].split()).lower()
+    if not quote or quote not in source:
+        return {"outcome": "unanswered",
+                "note": "cited words are not in the answer it points at"}
+    return {"outcome": outcome, "note": note, "answered_by": idx, "quote": quote[:200]}
 
 
 def _classify_dimensions(db: Session, prd: Prd, history: list[dict]) -> dict | None:
     """Ask the project's chat model to grade the four dimensions. Returns
-    {dimension: {outcome, note}}, or None when no real model is configured or the reply
-    can't be parsed — the caller then falls back to the stub rule rather than guessing."""
+    {dimension: {outcome, note, ...}}, or None when no real model is configured or the
+    reply can't be parsed — the caller then falls back to the stub rule rather than
+    guessing."""
     provider, chat = platform_svc.resolve_chat(db, prd.project_id)
     if provider == "stub":
         return None
+    answers = _numbered_answers(history)
+    if not answers:
+        return None  # nothing citable exists; the floor in `completion` catches this too
     try:
         raw = chat.chat(
             system=GRILL_CLASSIFY_SYSTEM,
-            context=grill_context(prd, history),
-            question="Classify the four dimensions. Return only the JSON object.",
+            context=_classify_context(prd, history),
+            question="Classify the four dimensions. Cite an answer number and quote it. "
+                     "Return only the JSON object.",
         )
     except Exception:  # noqa: BLE001 — a model outage must not break the grill
         logger.exception("grill classify: chat call failed")
@@ -428,9 +499,9 @@ def _classify_dimensions(db: Session, prd: Prd, history: list[dict]) -> dict | N
         entry = data.get(name)
         if not isinstance(entry, dict):
             continue
-        outcome = str(entry.get("outcome", "")).strip().lower()
-        if outcome in OUTCOMES:
-            out[name] = {"outcome": outcome, "note": str(entry.get("note", "")).strip()}
+        verdict = _validated(entry, answers)
+        if verdict is not None:
+            out[name] = verdict
     return out or None
 
 
@@ -480,8 +551,11 @@ def classify_grill(db: Session, prd: Prd) -> dict:
     for name, verdict in graded.items():
         if existing.get(name) == "deferred" and verdict["outcome"] != "deferred":
             continue
+        note = verdict.get("note", "")
+        if verdict.get("quote"):
+            note = f"{note} — cited answer {verdict['answered_by']}: \u201c{verdict['quote']}\u201d"
         set_dimension(db, prd.id, name, verdict["outcome"],
-                      note=verdict.get("note", ""), turn_seq=last_seq, graded_by=grader)
+                      note=note, turn_seq=last_seq, graded_by=grader)
     # Approval is a consequence of the grill, so it lands here rather than waiting for
     # someone to notice the standard is met (AL-300).
     sync_status(db, prd)
