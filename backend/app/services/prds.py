@@ -408,13 +408,12 @@ GRILL_CLASSIFY_SYSTEM = (
     "`unanswered` (never put to them, answered evasively, or addressed only by the "
     "document itself). Hand-waving or 'we'll figure it out later' without explicitly "
     "choosing to defer is `unanswered`.\n\n"
-    "For `resolved` and `deferred` you MUST cite the author answer that settled it, by "
-    "its number, and quote the words from THAT answer which do so. If you cannot point "
-    "at the author's own words, the honest verdict is `unanswered`.\n\n"
+    "For `resolved` and `deferred` you MUST name WHICH author answer settled it, by its "
+    "number. If you cannot point at a specific answer, the honest verdict is "
+    "`unanswered`.\n\n"
     "Respond with ONLY a compact JSON object whose keys are the four names above, each "
-    'value {"outcome": "...", "note": "one short sentence", "answered_by": <answer '
-    'number>, "quote": "<= 20 words copied verbatim from that answer"}. Omit '
-    "answered_by/quote for `unanswered`."
+    'value {"outcome": "...", "note": "one short sentence saying what that answer '
+    'settled", "answered_by": <answer number>}. Omit answered_by for `unanswered`.'
 )
 
 
@@ -446,36 +445,21 @@ def _classify_context(prd: Prd, history: list[dict]) -> str:
     return "\n".join(parts)
 
 
-_ELISION = re.compile(r"\s*(?:\.\.\.|…|\[\.\.\.\])\s*|(?<=[.?!])\s+")
-
-
-def _quote_is_from(quote: str, source: str) -> bool:
-    """Is every word of `quote` actually the author's?
-
-    Exact-substring matching was the first attempt and it was too strict on real output:
-    the model quoted two non-adjacent sentences of a long answer, eliding the middle,
-    which is ordinary quoting and was rejected as fabrication.
-
-    So the quote may be split across elisions and sentence boundaries, but EVERY fragment
-    must occur verbatim in the answer cited. That still cannot be satisfied by text the
-    author never wrote — which is the only property this check has to hold — while
-    letting a model summarise a long answer the way a person would.
-
-    Fragments shorter than three words are ignored rather than trusted: matching "the" or
-    "and" proves nothing, and requiring them would fail on punctuation differences.
-    """
-    if quote in source:
-        return True
-    parts = [f.strip() for f in _ELISION.split(quote) if len(f.split()) >= 3]
-    return bool(parts) and all(f in source for f in parts)
-
-
 def _validated(entry: dict, answers: list[str]) -> dict | None:
-    """Accept a verdict only if it points at an author answer that really says so.
+    """Accept a verdict only if it points at an author answer that exists.
 
-    The citation is checked, not trusted: `answered_by` must index a real answer and
-    `quote` must actually occur in it. A model crediting the PRD's own prose cannot
-    satisfy that, because the document is not an answer — which is the whole point.
+    That single check buys the property this floor was built for: a model crediting the
+    PRD's own prose cannot satisfy it, because the document is not an answer.
+
+    It used to demand a verbatim quote as well. That was dropped — three separate bugs
+    came from the validator disagreeing with how models render text (elided middles,
+    added terminal stops, non-breaking hyphens for "-"), each rejecting a CORRECT verdict,
+    and "text a model produces when quoting" is not a closed set. The quote never caught
+    the failure people assume it does either: misattribution survives it, because a real
+    quote can be filed under the wrong dimension.
+
+    What replaces it is the note plus the answer number, which a reviewer reads against
+    the answer itself. Same reviewability, no string matching.
     """
     outcome = str(entry.get("outcome", "")).strip().lower()
     if outcome not in OUTCOMES:
@@ -491,12 +475,7 @@ def _validated(entry: dict, answers: list[str]) -> dict | None:
     if not 1 <= idx <= len(answers):
         return {"outcome": "unanswered", "note": f"cited answer {idx} does not exist"}
 
-    quote = " ".join(str(entry.get("quote", "")).split()).lower()
-    source = " ".join(answers[idx - 1].split()).lower()
-    if not quote or not _quote_is_from(quote, source):
-        return {"outcome": "unanswered",
-                "note": "cited words are not in the answer it points at"}
-    return {"outcome": outcome, "note": note, "answered_by": idx, "quote": quote[:200]}
+    return {"outcome": outcome, "note": note, "answered_by": idx}
 
 
 def _classify_dimensions(db: Session, prd: Prd, history: list[dict]) -> dict | None:
@@ -514,8 +493,8 @@ def _classify_dimensions(db: Session, prd: Prd, history: list[dict]) -> dict | N
         raw = chat.chat(
             system=GRILL_CLASSIFY_SYSTEM,
             context=_classify_context(prd, history),
-            question="Classify the four dimensions. Cite an answer number and quote it. "
-                     "Return only the JSON object.",
+            question="Classify the four dimensions. Name the answer number that settled "
+                     "each one. Return only the JSON object.",
             # Deterministic: an identical transcript must yield an identical verdict.
             # Measured before this was set — three runs of the same input on the same
             # model gave two different completion states, so whether a PRD approved
@@ -602,8 +581,8 @@ def classify_grill(db: Session, prd: Prd) -> dict:
         if existing.get(name) == "deferred" and verdict["outcome"] != "deferred":
             continue
         note = verdict.get("note", "")
-        if verdict.get("quote"):
-            note = f"{note} — cited answer {verdict['answered_by']}: \u201c{verdict['quote']}\u201d"
+        if verdict.get("answered_by"):
+            note = f"{note} — from answer {verdict['answered_by']}"
         set_dimension(db, prd.id, name, verdict["outcome"],
                       note=note, turn_seq=last_seq, graded_by=grader)
     # Approval is a consequence of the grill, so it lands here rather than waiting for

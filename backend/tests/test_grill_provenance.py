@@ -117,10 +117,9 @@ def test_a_stub_graded_dimension_says_stub(client, auth, agent_key, prd):
 def test_a_model_graded_dimension_names_the_provider(client, auth, agent_key, prd, monkeypatch):
     class _Chat:
         def chat(self, **kw):
-            # Must cite a real answer and quote it verbatim — the classifier rejects an
-            # uncited verdict now (grill citation floor).
+            # Must name a real answer — the classifier rejects an uncited verdict.
             return json.dumps({n: {"outcome": "resolved", "note": "ok",
-                                   "answered_by": 1, "quote": "A real answer"}
+                                   "answered_by": 1}
                                for n in prd_svc.DIMENSIONS})
 
     monkeypatch.setattr(prd_svc.platform_svc, "resolve_chat", lambda db, pid: ("anthropic", _Chat()))
@@ -176,7 +175,7 @@ def test_a_stub_and_a_model_baseline_are_distinguishable(client, auth, agent_key
     class _Chat:
         def chat(self, **kw):
             return json.dumps({n: {"outcome": "resolved", "note": "substantive",
-                                   "answered_by": 1, "quote": "A real answer"}
+                                   "answered_by": 1}
                                for n in prd_svc.DIMENSIONS})
 
     monkeypatch.setattr(prd_svc.platform_svc, "resolve_chat", lambda db, pid: ("ollama", _Chat()))

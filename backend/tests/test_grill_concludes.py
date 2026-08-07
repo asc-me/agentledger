@@ -89,14 +89,14 @@ def _fake_model(monkeypatch, payload: str):
 
 
 def test_a_real_model_verdict_is_recorded(client, auth, prd, monkeypatch):
-    # Citations are mandatory now; `_qa` answers read "A substantive answer about topic N".
+    # Citations are mandatory: each verdict names the answer that settled it.
     _fake_model(monkeypatch, json.dumps({
         "scope_edges": {"outcome": "resolved", "note": "local only",
-                        "answered_by": 1, "quote": "substantive answer about topic 0"},
+                        "answered_by": 1},
         "failure_modes": {"outcome": "resolved", "note": "retries once",
-                          "answered_by": 2, "quote": "substantive answer about topic 1"},
+                          "answered_by": 2},
         "contracts": {"outcome": "deferred", "note": "after the prototype",
-                      "answered_by": 1, "quote": "substantive answer about topic 0"},
+                      "answered_by": 1},
         "open_decisions": {"outcome": "unanswered", "note": "not discussed"},
     }))
     _apply(client, auth, prd, _qa(2))
