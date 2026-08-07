@@ -387,24 +387,34 @@ def completion(db: Session, prd_id: str) -> dict:
 # into it. Streaming is for the author to read; classifying is state approval derives
 # from, and mixing them would make a malformed token both a broken sentence and a lost
 # outcome. Mirrors `memory._llm_judge`: focused prompt, defensive parse, None on failure.
+# Built FROM `DIMENSIONS` rather than restating them. The first version of this prompt
+# after the citation change described "four fixed dimensions" without naming any of them,
+# so the model invented its own from the PRD's subject matter — `intent_baseline`,
+# `coverage` — none of which matched, every verdict was discarded, and grading silently
+# fell back to the stub. Deriving the list means the prompt cannot drift from the
+# standard it is grading against; a test asserts every dimension appears.
 GRILL_CLASSIFY_SYSTEM = (
-    "You assess whether the AUTHOR HAS BEEN INTERROGATED on four fixed dimensions.\n\n"
-    "CRITICAL: the PRD's own text is the thing under question. It is NEVER evidence that a "
-    "question was answered. However thoroughly the document covers a dimension, only "
-    "something the AUTHOR SAID in the conversation can resolve it. A well-written PRD with "
-    "no answers is `unanswered` on all four.\n\n"
+    "You assess whether the AUTHOR HAS BEEN INTERROGATED on exactly these four "
+    "dimensions, and no others:\n"
+    + "".join(f"  - {name}: {question}\n" for name, question in DIMENSIONS.items())
+    + "\nUse these exact keys. Do not invent dimensions from the document's subject "
+    "matter.\n\n"
+    "CRITICAL: the PRD's own text is the thing under question. It is NEVER evidence that "
+    "a question was answered. However thoroughly the document covers a dimension, only "
+    "something the AUTHOR SAID in the conversation can resolve it. A well-written PRD "
+    "with no answers is `unanswered` on all four.\n\n"
     "For EACH dimension decide: `resolved` (an author answer substantively settled it), "
     "`deferred` (the author deliberately chose not to decide yet — legitimate), or "
-    "`unanswered` (never put to them, answered evasively, or addressed only by the document "
-    "itself). Hand-waving or 'we'll figure it out later' without explicitly choosing to "
-    "defer is `unanswered`.\n\n"
-    "For `resolved` and `deferred` you MUST cite the author answer that settled it, by its "
-    "numbered label in the transcript, and quote the words from THAT answer which do so. If "
-    "you cannot point at the author's own words, the honest verdict is `unanswered`.\n\n"
-    "Respond with ONLY a compact JSON object keyed by dimension, each value "
-    '{"outcome": "...", "note": "one short sentence", "answered_by": <answer number>, '
-    '"quote": "<= 20 words copied verbatim from that answer"}. Omit answered_by/quote for '
-    "`unanswered`."
+    "`unanswered` (never put to them, answered evasively, or addressed only by the "
+    "document itself). Hand-waving or 'we'll figure it out later' without explicitly "
+    "choosing to defer is `unanswered`.\n\n"
+    "For `resolved` and `deferred` you MUST cite the author answer that settled it, by "
+    "its number, and quote the words from THAT answer which do so. If you cannot point "
+    "at the author's own words, the honest verdict is `unanswered`.\n\n"
+    "Respond with ONLY a compact JSON object whose keys are the four names above, each "
+    'value {"outcome": "...", "note": "one short sentence", "answered_by": <answer '
+    'number>, "quote": "<= 20 words copied verbatim from that answer"}. Omit '
+    "answered_by/quote for `unanswered`."
 )
 
 
@@ -540,9 +550,19 @@ def classify_grill(db: Session, prd: Prd) -> dict:
     history = grill_history(db, prd.id)
     answers = sum(1 for t in history if t["role"] == "user")
     verdicts = _classify_dimensions(db, prd, history)
-    # `graded_by` is what makes a stub-graded baseline legible as such later.
-    grader = _grader_id(db, prd) if verdicts is not None else "stub"
-    graded = verdicts or _stub_classification(answers)
+    if verdicts is None:
+        # No usable verdict. The stub's mechanical rule applies ONLY when the stub is
+        # genuinely what this instance has — falling back to it after a REAL model failed
+        # would quietly grade with a weaker bar than the one that just refused to answer,
+        # and stamp `graded_by=stub` on a project that pays for a model. Nothing is
+        # recorded; the next round tries again.
+        if _grader_id(db, prd) != "stub":
+            logger.warning("grill classify: unusable verdict for %s; leaving dimensions "
+                           "unchanged rather than applying the offline bar", prd.id)
+            return completion(db, prd.id)
+        graded, grader = _stub_classification(answers), "stub"
+    else:
+        graded, grader = verdicts, _grader_id(db, prd)
 
     existing = {
         d.dimension: d.outcome

@@ -119,21 +119,28 @@ def test_an_evasive_answer_is_not_completion(client, auth, prd, monkeypatch):
 
 @pytest.mark.parametrize("payload", ["not json at all", "{}", '{"scope_edges": "resolved"}',
                                      '{"scope_edges": {"outcome": "vibes"}}'])
-def test_an_unparseable_verdict_falls_back_rather_than_erroring(client, auth, prd, monkeypatch, payload):
-    """A model outage or a malformed reply must not break the grill or invent outcomes —
-    it degrades to the stub bar, same as `memory._llm_judge`."""
+def test_an_unparseable_verdict_records_nothing_rather_than_erroring(client, auth, prd, monkeypatch, payload):
+    """A malformed reply must not break the grill and must not invent outcomes.
+
+    It also must not fall back to the OFFLINE bar. That is what this originally asserted,
+    and it was wrong: applying the stub's mechanical rule after a real model failed grades
+    with a weaker standard than the one that just refused to answer, on a project that
+    pays for a model. Nothing is recorded; the next round tries again."""
     _fake_model(monkeypatch, payload)
     _apply(client, auth, prd, _qa(1))
     state = _state(client, auth, prd)
-    assert state["dimensions"]["scope_edges"]["outcome"] == "resolved"  # stub rule applied
-    assert "substance not assessed" in state["dimensions"]["scope_edges"]["note"]
+    assert state["dimensions"]["scope_edges"]["outcome"] == "unanswered"
+    assert state["complete"] is False
 
 
 def test_a_model_outage_does_not_break_classification(client, auth, prd, monkeypatch):
-    """Scoped to `classify_grill`, which is what this item adds. `grill_apply`'s own
-    body-synthesis call is separately unguarded and surfaces a provider outage as an
-    error — pre-existing behaviour, deliberately not changed here, since swallowing it
-    would silently return an unedited PRD as though the rewrite had succeeded."""
+    """Scoped to `classify_grill`. `grill_apply`'s own body-synthesis call is separately
+    unguarded and surfaces a provider outage as an error — pre-existing, deliberately
+    unchanged, since swallowing it would return an unedited PRD as though the rewrite had
+    succeeded.
+
+    An outage leaves the dimensions alone rather than grading them offline: a provider
+    being down is not evidence about what the author said."""
     from app.db import SessionLocal
 
     class _Boom:
@@ -145,7 +152,8 @@ def test_a_model_outage_does_not_break_classification(client, auth, prd, monkeyp
     try:
         prd_svc.record_grill_turns(db, prd, _qa(1))
         done = prd_svc.classify_grill(db, prd_svc.get_prd(db, prd))  # must not raise
-        assert done["dimensions"]["scope_edges"]["outcome"] == "resolved"  # stub fallback
+        assert done["dimensions"]["scope_edges"]["outcome"] == "unanswered"
+        assert done["answers"] == 1, "the answer itself is still on record"
     finally:
         db.close()
 

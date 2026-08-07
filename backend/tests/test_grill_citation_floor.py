@@ -172,3 +172,34 @@ def test_no_answers_means_the_model_is_not_even_asked(db, prd, monkeypatch):
     prd_svc.classify_grill(db, prd)
     assert called == []
     assert prd_svc.completion(db, prd.id)["complete"] is False
+
+
+# ---- the prompt must ask for the dimensions it grades ---------------------------------
+def test_the_classify_prompt_names_every_dimension():
+    """Caught in production, on PRD-12. The prompt said "four fixed dimensions" and named
+    none of them, so the model invented its own from the document's subject matter
+    (`intent_baseline`, `coverage`). None matched `DIMENSIONS`, every verdict was
+    discarded, and grading silently fell back to the stub — a real model configured and
+    paid for, contributing nothing.
+
+    The prompt is now BUILT from `DIMENSIONS`; this asserts it stays that way, because a
+    prompt that drifts from the standard it grades fails invisibly."""
+    for name, question in prd_svc.DIMENSIONS.items():
+        assert name in prd_svc.GRILL_CLASSIFY_SYSTEM, f"prompt never names {name}"
+        assert question in prd_svc.GRILL_CLASSIFY_SYSTEM, f"prompt omits what {name} means"
+
+
+def test_verdicts_under_unknown_keys_are_ignored(db, prd, monkeypatch):
+    """The failure mode itself: a reply keyed by invented names must not resolve anything,
+    and must not crash."""
+    _answer(db, prd, "Out of scope for v1: hosted mode.")
+    _model(monkeypatch, {
+        "intent_baseline": {"outcome": "resolved", "note": "n", "answered_by": 1,
+                            "quote": "Out of scope for v1"},
+        "coverage": {"outcome": "resolved", "note": "n", "answered_by": 1,
+                     "quote": "hosted mode"},
+    })
+    prd_svc.classify_grill(db, prd)
+
+    done = prd_svc.completion(db, prd.id)
+    assert sorted(done["outstanding"]) == sorted(prd_svc.DIMENSIONS)
