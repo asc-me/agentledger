@@ -179,7 +179,8 @@ class _FakeChat:
     def __init__(self, reply: str):
         self._reply = reply
 
-    def chat(self, *, system: str, context: str, question: str) -> str:
+    def chat(self, *, system: str, context: str, question: str,
+             temperature: float | None = None) -> str:
         return self._reply
 
 

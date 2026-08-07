@@ -37,7 +37,8 @@ class StubEmbedder:
 class StubChat:
     """Retrieval-grounded, no-LLM chat. Composes an answer from the given context."""
 
-    def chat(self, *, system: str, context: str, question: str) -> str:
+    def chat(self, *, system: str, context: str, question: str,
+             temperature: float | None = None) -> str:
         lines = [context.strip()] if context.strip() else []
         lines.append(
             "(Local stub agent — no external model configured. "
@@ -45,7 +46,8 @@ class StubChat:
         )
         return "\n\n".join(lines)
 
-    def stream(self, *, system: str, context: str, question: str):
+    def stream(self, *, system: str, context: str, question: str,
+               temperature: float | None = None):
         reply = self.chat(system=system, context=context, question=question)
         for i in range(0, len(reply), 24):  # emit in chunks to simulate token stream
             yield reply[i : i + 24]

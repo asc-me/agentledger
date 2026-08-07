@@ -23,7 +23,7 @@ class _FakeStreamChat:
         self.cls = cls
         self.streamed = False
 
-    def stream(self, *, system, context, question):
+    def stream(self, *, system, context, question, temperature=None):
         self.streamed = True
         yield "Hello"
         yield ", "

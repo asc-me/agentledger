@@ -76,7 +76,11 @@ class Embedder(Protocol):
 
 @runtime_checkable
 class ChatModel(Protocol):
-    def chat(self, *, system: str, context: str, question: str) -> str: ...
+    # `temperature=0` asks for a deterministic answer. Judging is not writing: a
+    # classifier that returns a different verdict for identical input makes approval
+    # depend on WHEN it ran. Providers that cannot honour it ignore it.
+    def chat(self, *, system: str, context: str, question: str,
+             temperature: float | None = None) -> str: ...
 
 
 @runtime_checkable
