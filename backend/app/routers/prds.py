@@ -125,6 +125,18 @@ def request_rebaseline(prd_id: str, body: RebaselineIn, db: Session = Depends(ge
         raise HTTPException(422, str(e))
 
 
+@router.get("/{prd_id}/drift")
+def prd_drift(prd_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Structural divergence from the governing baseline (AL-240).
+
+    The mechanical half of drift — no chat provider required. `governed: false` when the
+    PRD has never been approved, because "no drift" and "nothing to drift from" are
+    different facts and reporting the second as the first is the misleading green this
+    feature exists to stop."""
+    prd = _require_readable_prd(db, user, prd_id)
+    return prd_svc.baseline_drift(db, prd)
+
+
 @router.get("/{prd_id}/baselines", response_model=list[PrdVersionOut])
 def prd_baseline_chain(prd_id: str, db: Session = Depends(get_db),
                        user: User = Depends(get_current_user)):
