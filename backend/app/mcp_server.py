@@ -977,7 +977,7 @@ def _item_dict(item) -> dict:
     # internal, and an agent that quotes a rendered key back is resolved by services/keys
     # (PRD-13). Emitting the stored id here would leak a retired tag straight into agent
     # memory, where it would outlive the rename by months.
-    return {
+    out = {
         "id": item.key,
         "project_id": item.project_id,
         "title": item.title,
@@ -992,6 +992,22 @@ def _item_dict(item) -> dict:
         "fidelity": item.fidelity,
         "evidence": item.evidence or [],
     }
+    # In-flight invalidation (GRPH-242/312). Present only when this item's PRD rebaselined
+    # after work on it started — so it costs nothing on the overwhelming majority of reads
+    # and is impossible to miss on the ones that matter. Delivered here rather than on the
+    # claim path because an agent can complete an item without ever claiming it, and that
+    # was the hole: its work then gets classified against intent it never saw move.
+    from sqlalchemy.orm import object_session
+
+    from app.services import prds as prd_svc
+
+    # Same degradation as `models._key_of`: a detached object has no session to ask, and
+    # serialization must not raise over a field that is absent on nearly every row.
+    session = object_session(item)
+    hold = prd_svc.intent_hold(session, item) if session is not None else None
+    if hold:
+        out["intent_hold"] = hold
+    return out
 
 
 def _ref_key(db, stored_id: str) -> str:

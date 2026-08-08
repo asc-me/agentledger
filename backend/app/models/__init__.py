@@ -311,6 +311,13 @@ class Item(Base):
     prd_linked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # The governing baseline version when work on this item STARTED — stamped at claim,
+    # or at the move to `in_progress` for work that never took a lease (GRPH-242). If the
+    # PRD has rebaselined since, this item is being built against superseded intent, and
+    # that is a derived fact rather than a notification: it does not stop being true
+    # because someone dismissed it. NULL means work started before this was recorded, and
+    # no claim about which intent it targeted can honestly be made.
+    baseline_at_claim: Mapped[str | None] = mapped_column(String, nullable=True)
     # Fidelity (AL-68): `low` = specifiable in words now; `high` = needs a prototype
     # to answer (the grill → prototype → grill handoff). Routes prototype-first work.
     fidelity: Mapped[str] = mapped_column(String, default="low")  # low | high

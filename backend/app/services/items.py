@@ -131,6 +131,13 @@ def update_item(db: Session, item_id: str, **fields) -> Item | None:
     if fields.get("fidelity") is not None and fields["fidelity"] not in FIDELITIES:
         raise ValueError(f"invalid fidelity: {fields['fidelity']}")
     prev_status = item.status
+    # Captured BEFORE the status moves. `intent_hold` is about work in flight and goes
+    # quiet once an item is done, so asking after the transition always answers None —
+    # which silently turned the completion receipt into dead code.
+    hold_at_completion = (
+        _pending_hold(db, item)
+        if fields.get("status") == "done" and prev_status != "done" else None
+    )
     if fields.get("prd_id") is not None:
         fields = {**fields, "prd_id": _stored_prd_id(db, fields["prd_id"])}
         # Stamped when the link CHANGES, never on an ordinary edit. Re-saving an item
@@ -152,9 +159,51 @@ def update_item(db: Session, item_id: str, **fields) -> Item | None:
         from app.services.clustering import sync_code_links
         sync_code_links(db, item)
 
+    # Work can reach `in_progress` without ever taking a lease — a human moving a card, an
+    # agent that edits rather than claims. Stamping here too is what keeps the hold from
+    # covering only the subset of work that happens to use the claim path.
+    if item.status == "in_progress" and prev_status != "in_progress":
+        stamp_baseline_at_start(db, item)
+
     if item.status == "done" and prev_status != "done":
+        _record_superseded_intent(db, item, hold_at_completion)
         _auto_extract_lessons(db, item)
     return item
+
+
+def _pending_hold(db: Session, item: Item) -> dict | None:
+    from app.services import prds as prd_svc  # local: prds imports this module
+
+    return prd_svc.intent_hold(db, item)
+
+
+def _record_superseded_intent(db: Session, item: Item, hold: dict | None) -> None:
+    """Stamp a completion that happened against intent which has since moved (GRPH-312).
+
+    The hold is delivered on every read, but an agent can complete an item without ever
+    looking — and then its work is classified against superseded intent and the resulting
+    drift is blamed on delivery rather than on the invalidation nobody saw. Recording the
+    mismatch at the moment of completion makes it attributable afterwards, which is the
+    part that survives the agent walking away.
+
+    `hold` is passed in because it has to be read before the status moves: the hold is
+    about work in flight and goes quiet on `done`, so computing it here would always find
+    nothing.
+
+    Written as `evidence`, not a new column: this is a receipt about the work, which is
+    exactly what that field already holds, and it travels wherever the item's evidence
+    travels.
+    """
+    if hold is None:
+        return
+    item.evidence = (item.evidence or []) + normalize_evidence([{
+        "kind": "note",
+        "detail": (f"Completed against superseded intent: work started under "
+                   f"{hold['started_against']}, the governing baseline is now "
+                   f"{hold['baseline_version']}. Classify against the baseline in force "
+                   f"when this was built, not the current one."),
+    }])
+    db.commit()
 
 
 def _auto_extract_lessons(db: Session, item: Item) -> None:
@@ -345,9 +394,30 @@ def _try_claim(db: Session, cand: Item, agent_id: str) -> Item | None:
     if db.execute(stmt).rowcount == 1:
         db.commit()
         db.expire_all()
-        return db.get(Item, cand.id)
+        item = db.get(Item, cand.id)
+        stamp_baseline_at_start(db, item)
+        return item
     db.commit()
     return None
+
+
+def stamp_baseline_at_start(db: Session, item: Item) -> None:
+    """Record which agreed intent this item's work started against (GRPH-242).
+
+    Written once and never overwritten: the question it answers is "what was agreed when
+    work began", and restamping on a later claim would erase exactly the mismatch the
+    in-flight hold is derived from. An item with no PRD, or on a PRD with no baseline, has
+    no agreed intent to have started against and stays NULL.
+    """
+    if item is None or item.baseline_at_claim or not item.prd_id:
+        return
+    from app.services import prds as prd_svc  # local: prds imports this module
+
+    base = prd_svc.baseline_of(db, item.prd_id)
+    if base is None:
+        return
+    item.baseline_at_claim = base.version
+    db.commit()
 
 
 def claim_item(db: Session, item_id: str, agent_id: str, lease_seconds: int = DEFAULT_LEASE_SECONDS) -> Item | None:
