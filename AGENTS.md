@@ -69,6 +69,19 @@ Postgres run executes the real `<=>` SQL and migrations.
   types before concluding it can't do the thing. Reimplementing is allowed, but
   the reason goes in a comment (see `_validate_args` in `mcp_server.py`, which
   says why it hand-rolls schema checking).
+- **Break it on purpose before you believe the tests.** For each load-bearing
+  claim, revert that one behaviour and re-run: if the suite still passes, the
+  test asserts something weaker than it reads. Then restore and note in the PR
+  what failed and how many. This is cheap and its hit rate here has been high —
+  it has caught a test excluding by filename where the guard needed a path, an
+  assertion pinned to a value `create_prd` had already snapshotted, a grader test
+  that passed only because the stub and the configured model happened to agree,
+  and a set of hold tests that all claimed an item first, so the very gate the
+  feature existed to remove passed every one of them. Two of those were tests
+  reproducing the exact defect they were written to prevent, which no amount of
+  re-reading them would have found. Green on both engines is necessary and is not
+  evidence; a judgement surface especially can pass a full suite and still be
+  wrong on contact with real data, so run it against a live PRD too.
 
 **Compatibility is NOT one of these defaults — the opposite rule applies.** Two
 instances are deployed, API keys live in agents' configs, and the MCP tool names
