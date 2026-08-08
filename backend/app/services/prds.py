@@ -1190,7 +1190,10 @@ def coverage(db: Session, prd: Prd) -> dict:
             "gap": implementable and len(its) == 0,
             "high_fidelity": sum(1 for it in its if it.fidelity == "high"),
             "open_high_fidelity": open_high,
-            "item_ids": [it.id for it in its],
+            # The rendered key, not the frozen id — otherwise a retagged project reports
+            # its work under the tag it no longer holds, and the ids coverage hands back
+            # are ones the UI and the agent surface no longer use (PRD-13).
+            "item_ids": [it.key for it in its],
         })
     total = len(items)
     done = sum(1 for it in items if it.status == "done")
