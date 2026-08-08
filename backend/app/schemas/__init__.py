@@ -693,6 +693,16 @@ class RebaselineIn(BaseModel):
     reason: str  # the requester's own words, never a paraphrase
 
 
+class PromoteIn(BaseModel):
+    """Promote dropped intent out of a PRD (GRPH-246)."""
+
+    sections: list[str]
+    # `item` keeps the intent inside this PRD and gives it work; `prd` moves it to a
+    # successor, which is the path that lets a terminal state stay terminal.
+    target: str = "item"
+    title: str = ""
+
+
 class GrillApplyOut(BaseModel):
     body: str
     decisions_captured: int = 0  # candidate memory shards created from the transcript (AL-69)

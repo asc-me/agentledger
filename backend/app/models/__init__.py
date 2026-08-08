@@ -302,6 +302,15 @@ class Item(Base):
     # Spec traceability (feature D): the PRD + section this item implements.
     prd_id: Mapped[str | None] = mapped_column(String, nullable=True)
     prd_section: Mapped[str] = mapped_column(String, default="")
+    # When this item was attached to that PRD (GRPH-243). `created_at` cannot answer it:
+    # an item raised months earlier and linked after approval is scope ADDED, and reading
+    # its creation time would file it as original scope — under-reporting exactly the
+    # growth this feature exists to surface. NULL means the link predates this column;
+    # scope-drift falls back to `created_at` and reports how many it had to infer, rather
+    # than backfilling a timestamp nobody recorded.
+    prd_linked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     # Fidelity (AL-68): `low` = specifiable in words now; `high` = needs a prototype
     # to answer (the grill → prototype → grill handoff). Routes prototype-first work.
     fidelity: Mapped[str] = mapped_column(String, default="low")  # low | high
@@ -403,6 +412,13 @@ class Prd(Base):
     # is cleared. Non-null means "this PRD is being re-interrogated", which is exactly
     # the state a UI needs to distinguish from an ordinary first-time review.
     pending_rebaseline: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Lineage (GRPH-246). A PRD created to carry intent DROPPED from an earlier one points
+    # back at it, and names the baselined sections it inherited. Both are needed: the link
+    # alone says a successor exists, and `promoted_sections` is what makes the chain from
+    # original intent, through what was dropped, to what came next actually walkable.
+    # Holds the frozen id, never a rendering — see GRPH-319.
+    supersedes_prd_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    promoted_sections: Mapped[list] = mapped_column(JSON, default=list)
     updated: Mapped[str] = mapped_column(String, default="")  # display date from design
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(

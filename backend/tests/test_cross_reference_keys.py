@@ -114,6 +114,29 @@ def test_coverage_reports_items_under_the_tag_the_project_holds_now(db, retagged
 
 
 # ---- the backfill, against data ------------------------------------------------------
+def _round_trip_migrations(db):
+    """Downgrade past 0047 and back up, against whatever rows are already there.
+
+    `db.close()` first, and it is not optional. An ORM session that has merely READ leaves
+    an open transaction holding a lock on the table, and a downgrade past a schema change
+    needs ACCESS EXCLUSIVE — the two wait on each other until something is killed. It
+    passed before 0048/0049 existed only because downgrading *to* 0046 ran nothing but
+    0047's no-op, so no ALTER ever contended. Adding a column two migrations later turned
+    a latent deadlock into a hang, which is the sort of thing that looks like a slow test
+    run right up until it is a wedged CI job.
+    """
+    from alembic import command
+    from alembic.config import Config
+
+    from app.migrate import _BACKEND_ROOT
+
+    db.close()
+    cfg = Config(str(_BACKEND_ROOT / "alembic.ini"))
+    cfg.set_main_option("script_location", str(_BACKEND_ROOT / "alembic"))
+    command.downgrade(cfg, "0046")
+    command.upgrade(cfg, "head")
+
+
 @pytest.mark.skipif(_IS_SQLITE, reason="Alembic owns the schema on Postgres only")
 def test_the_migration_repairs_rows_already_written(client, auth, db, retagged_prd):
     """Fixing the write path leaves 22 rows on the live database still broken, and a data
@@ -121,47 +144,33 @@ def test_the_migration_repairs_rows_already_written(client, auth, db, retagged_p
     AL-248 failure. So: write the bad row the old code would have written, re-run the
     migration against it, and assert the row moved.
     """
-    from alembic import command
-    from alembic.config import Config
-
-    from app.migrate import _BACKEND_ROOT
-
     item = items_svc.create_item(db, title="Work", project_id="core",
                                  prd_section="Delivery")
+    item_id, prd_key, prd_id = item.id, retagged_prd.key, retagged_prd.id
     db.commit()
     with engine.begin() as conn:  # exactly what create_item did before the fix
         conn.execute(text("UPDATE items SET prd_id = :k WHERE id = :i"),
-                     {"k": retagged_prd.key, "i": item.id})
+                     {"k": prd_key, "i": item_id})
 
-    cfg = Config(str(_BACKEND_ROOT / "alembic.ini"))
-    cfg.set_main_option("script_location", str(_BACKEND_ROOT / "alembic"))
-    command.downgrade(cfg, "0046")
-    command.upgrade(cfg, "head")
+    _round_trip_migrations(db)
 
     with engine.connect() as conn:
         assert conn.execute(text("SELECT prd_id FROM items WHERE id = :i"),
-                            {"i": item.id}).scalar() == retagged_prd.id
+                            {"i": item_id}).scalar() == prd_id
 
 
 @pytest.mark.skipif(_IS_SQLITE, reason="Alembic owns the schema on Postgres only")
 def test_the_migration_leaves_a_reference_that_names_nothing_alone(client, auth, db):
     """The stored string is the only surviving evidence of what the author meant."""
-    from alembic import command
-    from alembic.config import Config
-
-    from app.migrate import _BACKEND_ROOT
-
     item = items_svc.create_item(db, title="Orphan", project_id="core")
+    item_id = item.id
     db.commit()
     with engine.begin() as conn:
         conn.execute(text("UPDATE items SET prd_id = 'NOPE-P9' WHERE id = :i"),
-                     {"i": item.id})
+                     {"i": item_id})
 
-    cfg = Config(str(_BACKEND_ROOT / "alembic.ini"))
-    cfg.set_main_option("script_location", str(_BACKEND_ROOT / "alembic"))
-    command.downgrade(cfg, "0046")
-    command.upgrade(cfg, "head")
+    _round_trip_migrations(db)
 
     with engine.connect() as conn:
         assert conn.execute(text("SELECT prd_id FROM items WHERE id = :i"),
-                            {"i": item.id}).scalar() == "NOPE-P9"
+                            {"i": item_id}).scalar() == "NOPE-P9"
