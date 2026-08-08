@@ -44,7 +44,12 @@ def db(client):
 
 
 def _approve(db, prd):
-    prd_svc.record_grill_turns(db, prd.id, [{"role": "user", "text": "An answer."}])
+    # A distinct answer per round. Re-posting the previous one records nothing (GRPH-322):
+    # a rebaseline is graded only on answers given after it was requested.
+    window = prd_svc.grill_window(db, prd.id)
+    prior = prd_svc.grill_history(db, prd.id, since=window)
+    prd_svc.record_grill_turns(db, prd.id, prior + [
+        {"role": "user", "text": f"An answer, round {len(prd_svc.baseline_chain(db, prd.id))}."}])
     for name in prd_svc.DIMENSIONS:
         prd_svc.set_dimension(db, prd.id, name, "resolved")
     prd_svc.sync_status(db, prd)

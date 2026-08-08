@@ -1477,7 +1477,9 @@ def _call_tool(db: Session, name: str, args: dict[str, Any], key: ApiKey) -> Any
         answer = (args.get("answer") or "").strip()
         if not answer:
             raise errors.Validation("answer is empty; relay what the author actually said")
-        history = prd_svc.grill_history(db, prd.id)
+        # Current interrogation only (GRPH-322): this is fed straight back into
+        # `record_grill_turns`, which appends whatever is past what it already holds.
+        history = prd_svc.grill_history(db, prd.id, since=prd_svc.grill_window(db, prd.id))
         prd_svc.record_grill_turns(
             db, prd.id, history + [{"role": "user", "text": answer}],
             via="agent", actor=f"agent:{key.name or key.id}",

@@ -303,8 +303,11 @@ def grill_stream(prd_id: str, body: GrillIn, db: Session = Depends(get_db), user
     prd_svc.record_grill_turns(db, prd.id, client_history, via="human", actor=user.id)
 
     # Prefer what the server holds over what the caller sent: it is the same
-    # conversation plus anything a second session contributed.
-    history = prd_svc.grill_history(db, prd.id)
+    # conversation plus anything a second session contributed. Scoped to the current
+    # interrogation (GRPH-322) — after a rebaseline the questions are about the new spec,
+    # and this value is fed back into `record_grill_turns`, which appends the suffix past
+    # what it is given: hand it the whole of history and every earlier turn re-appends.
+    history = prd_svc.grill_history(db, prd.id, since=prd_svc.grill_window(db, prd.id))
     context = prd_svc.grill_context(prd, history)
     question = body.message or "Begin — ask your opening clarifying questions about this PRD."
 
@@ -356,7 +359,7 @@ def grill_apply(prd_id: str, body: GrillApplyIn, db: Session = Depends(get_db), 
     # that died before its turn was written. Appends only what isn't already stored.
     prd_svc.record_grill_turns(db, prd.id, [m.model_dump() for m in body.history],
                                via="human", actor=user.id)
-    history = prd_svc.grill_history(db, prd.id)
+    history = prd_svc.grill_history(db, prd.id, since=prd_svc.grill_window(db, prd.id))
     proposed = prd_svc.grill_apply(db, prd_id, history)
     shards = prd_svc.capture_grill_decisions(db, prd, history)
     prd_svc.classify_grill(db, prd)
