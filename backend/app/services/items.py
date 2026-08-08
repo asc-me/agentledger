@@ -14,6 +14,24 @@ FIDELITIES = ["low", "high"]  # low = specifiable now; high = needs a prototype 
 DEFAULT_LEASE_SECONDS = 600  # a claim with no heartbeat within this window is reclaimable
 
 
+def _stored_prd_id(db: Session, prd_id: str | None) -> str | None:
+    """The frozen id a caller's PRD key means, for storing in `Item.prd_id`.
+
+    `keys` resolves the entity a call *addresses*; this covers the entity a call
+    *references*. Without it a caller who passes a live rendering (`GRPH-P12`) freezes
+    that rendering into the row, and `coverage` — the one place that joins on the raw
+    string — stops seeing the item. Reads hide it: `_key_of` renders a dangling
+    reference back as itself, so the item looks correctly linked from every surface.
+
+    Unresolvable values are stored as given rather than dropped, matching how the rest
+    of the resolve path degrades: a dangling reference is recoverable, a silently
+    discarded link is not.
+    """
+    if not prd_id:
+        return prd_id
+    return keys.resolve_prd(db, prd_id) or prd_id
+
+
 def list_items(db: Session, project_id: str | None = None, status: str | None = None) -> list[Item]:
     stmt = select(Item)
     if project_id:
@@ -66,7 +84,7 @@ def create_item(
         sort_order=max_order + 1,
         reporter=reporter or {},
         date=date,
-        prd_id=prd_id,
+        prd_id=_stored_prd_id(db, prd_id),
         prd_section=prd_section or "",
         fidelity=fidelity,
     )
@@ -112,6 +130,8 @@ def update_item(db: Session, item_id: str, **fields) -> Item | None:
     if fields.get("fidelity") is not None and fields["fidelity"] not in FIDELITIES:
         raise ValueError(f"invalid fidelity: {fields['fidelity']}")
     prev_status = item.status
+    if fields.get("prd_id") is not None:
+        fields = {**fields, "prd_id": _stored_prd_id(db, fields["prd_id"])}
     for key in ("title", "description", "status", "tags", "effort", "blocker", "pr", "date",
                 "github_url", "assignee", "touchpoints", "prd_id", "prd_section", "fidelity"):
         if key in fields and fields[key] is not None:
