@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from collections import Counter
 
-from app.models import GrillDimension, GrillTurn, Prd, PrdVersion
+from app.models import GrillDimension, GrillTurn, Item, Prd, PrdVersion
 from app.services import items as items_svc
 from app.services import keys
 from app.services import events as events_svc
@@ -856,6 +856,225 @@ def completeness(db: Session, prd: Prd) -> dict:
         # how GRPH-319 hid a third of this PRD's own work.
         "outside_baseline": sorted(s for s in by_section if s and s not in claimed),
         "demanding_sections": len(demanded),
+    }
+
+
+class NothingDropped(ValueError):
+    """The section named has delivered work, so there is no dropped intent to promote."""
+
+
+def dropped_intent(db: Session, prd: Prd) -> list[str]:
+    """Baselined sections with nothing delivered against them — what can be promoted.
+
+    Reads the governing baseline, so a section deleted from the body after approval is
+    still here. That is the case promotion exists for: the intent was agreed, the work
+    never happened, and the heading quietly disappeared."""
+    done = completeness(db, prd)
+    return sorted(done["absent"] + done["undelivered"]) if done["governed"] else []
+
+
+def _dropped_or_raise(db: Session, prd: Prd, sections: list[str]) -> list[str]:
+    """Guard for both promotion paths.
+
+    Promoting intent that WAS delivered would manufacture duplicate work and, worse, write
+    a lineage record asserting something was dropped when it shipped — corrupting the one
+    artifact this feature exists to make trustworthy. So the check is on the data, not on
+    the caller's word for it.
+    """
+    if not sections:
+        raise ValueError("name at least one section to promote")
+    droppable = set(dropped_intent(db, prd))
+    if not droppable and not baseline_of(db, prd.id):
+        raise ValueError(f"{prd.key} has no baseline — there is no agreed intent to drop")
+    baselined = set(parse_sections(baseline_of(db, prd.id).body))
+    unknown = [s for s in sections if s not in baselined]
+    if unknown:
+        raise ValueError(f"not in the governing baseline: {', '.join(sorted(unknown))}")
+    delivered = [s for s in sections if s not in droppable]
+    if delivered:
+        raise NothingDropped(
+            f"has delivered work, nothing was dropped: {', '.join(sorted(delivered))}")
+    return list(sections)
+
+
+def promote_to_item(db: Session, prd: Prd, section: str, *, title: str = "") -> Item:
+    """Turn one piece of dropped intent into a backlog item on the same PRD.
+
+    The lighter of the two paths: the intent stays inside this PRD and simply acquires
+    work. After this the section reads as `undelivered` rather than `absent` — planned but
+    not shipped, which is the honest new state.
+    """
+    _dropped_or_raise(db, prd, [section])
+    body = section_bodies(baseline_of(db, prd.id).body).get(section, "")
+    return items_svc.create_item(
+        db,
+        title=title or section,
+        # Seeded from the BASELINE's text, not the living body — the point is to carry
+        # forward what was agreed, and the body may no longer contain the section at all.
+        description=f"Promoted from dropped intent in {prd.key} § {section}.\n\n{body}".strip(),
+        project_id=prd.project_id,
+        prd_id=prd.id,
+        prd_section=section,
+        status="backlog",
+    )
+
+
+def promote_to_prd(db: Session, prd: Prd, sections: list[str], *, title: str = "") -> Prd:
+    """Create a successor PRD carrying dropped intent, linked back to this one.
+
+    PRD-12 requires post-close changes to become a new PRD rather than reopening a closed
+    one, so this is the path that keeps a terminal state terminal while letting the work
+    continue somewhere honest.
+
+    The successor's body is seeded from the predecessor's **baseline**, so what it inherits
+    is what was agreed rather than whatever the body drifted to. It starts at `draft`: it
+    is new intent and has to earn its own approval through its own grill, exactly like any
+    other PRD. Inheriting approval would let a rebaseline that could not add sections
+    launder them in through a successor instead.
+    """
+    promoted = _dropped_or_raise(db, prd, sections)
+    bodies = section_bodies(baseline_of(db, prd.id).body)
+    heading = title or f"{prd.title} — dropped scope"
+    body = f"# {heading}\n\nPromoted from {prd.key}, which did not deliver these.\n\n" + "\n\n".join(
+        f"## {s}\n\n{bodies.get(s, '').strip()}" for s in promoted
+    ) + "\n"
+
+    successor = create_prd(db, title=heading, project_id=prd.project_id, body=body)
+    successor.supersedes_prd_id = prd.id
+    successor.promoted_sections = promoted
+    db.commit()
+    db.refresh(successor)
+    return successor
+
+
+def lineage(db: Session, prd: Prd) -> dict:
+    """This PRD's place in the promotion chain: what it came from, what came out of it.
+
+    Ancestors walk backwards through `supersedes_prd_id`; successors are found by the
+    reverse lookup, so nothing has to be written twice and the two views can never
+    disagree. The walk is depth-capped rather than trusting the data to be acyclic — a
+    cycle can only arrive through an import or a hand-edited row, and a server that hangs
+    on one is a worse failure than a truncated chain.
+    """
+    seen, ancestors, cur = {prd.id}, [], prd
+    while cur.supersedes_prd_id and len(ancestors) < 50:
+        parent = db.get(Prd, cur.supersedes_prd_id)
+        if parent is None or parent.id in seen:
+            break
+        seen.add(parent.id)
+        ancestors.append({"id": parent.key, "title": parent.title,
+                          "promoted_sections": cur.promoted_sections or []})
+        cur = parent
+
+    successors = db.scalars(
+        select(Prd).where(Prd.supersedes_prd_id == prd.id).order_by(Prd.number)
+    ).all()
+    return {
+        # Nearest first, so `ancestors[0]` is the PRD this was promoted out of.
+        "ancestors": ancestors,
+        "successors": [{"id": s.key, "title": s.title, "status": s.status,
+                        "promoted_sections": s.promoted_sections or []} for s in successors],
+        "dropped_intent": dropped_intent(db, prd),
+    }
+
+
+def _structural(d: dict) -> int:
+    """Structural change in a section diff, excluding renames.
+
+    A rename moved a label, not intent. Counting it would make cosmetic churn register as
+    scope change — "noise wearing a serious face", which is the AL-96 failure this whole
+    feature exists to avoid repeating."""
+    return len(d["modified"]) + len(d["added"]) + len(d["removed"])
+
+
+def scope_drift(db: Session, prd: Prd) -> dict:
+    """Mechanical scope drift — no LLM, no opinion (GRPH-243 / GRPH-315).
+
+    Works on a stub instance with no chat provider at all, which is why it anchors the
+    slice: it is the half of drift that is *countable*.
+
+    PRD-12 holds two success criteria that pull against each other — *"drift totals never
+    decrease as a result of rebaselining"* and *"never emit a number that looks like a
+    measurement when it is an opinion."* A monotonic total is precisely such a number, so
+    the halves are kept apart and only this one carries a figure. The judged half stays
+    qualitative and stays labelled as judgement.
+
+    Three readings, per the spec:
+
+    - **Scope added** — items attached to the PRD after its first baseline was frozen.
+    - **Intent undelivered** — baselined sections that ended with no delivered work.
+    - **Spec drift** — body sections diverging from the *governing* baseline.
+
+    The count splits into two figures that mean different things:
+
+    - `accumulated` sums structural change across every baseline transition. Frozen
+      history: nothing can lower it.
+    - `current` is the live divergence of the body from the governing baseline.
+
+    A rebaseline freezes the body as the new baseline, so the divergence it had been
+    reporting as `current` becomes a chain segment of exactly the same size. `total` is
+    preserved across the act rather than reset — which is what "never decreases as a
+    result of rebaselining" actually demands, and it falls out of the chain rather than
+    being enforced by a rule that could be forgotten.
+
+    `total` CAN fall if an author edits the body back toward the baseline. That is correct
+    and is not what the criterion forbids: they undid the drift. Only rebaselining is
+    barred from lowering it, because only rebaselining could launder it.
+    """
+    chain = baseline_chain(db, prd.id)
+    if not chain:
+        # Same contract as `baseline_drift` and `completeness`: never a zero. A PRD with
+        # no agreed intent has not "not drifted".
+        return {"governed": False, "baseline_version": None, "accumulated": 0,
+                "current": 0, "total": 0, "segments": [], "scope_added": [],
+                "intent_undelivered": [], "inferred_link_times": 0}
+
+    segments = []
+    for older, newer in zip(chain, chain[1:]):
+        d = diff_sections(older.body, newer.body)
+        segments.append({
+            "from": older.version, "to": newer.version,
+            "reason_type": newer.rebaseline_reason_type,
+            "structural": _structural(d),
+            "renamed": len(d["renamed"]),
+        })
+    accumulated = sum(s["structural"] for s in segments)
+
+    governing = chain[-1]
+    live = diff_sections(governing.body, prd.body)
+
+    # Everything attached after intent was first agreed. Measured from the FIRST baseline,
+    # not the governing one: a rebaseline must not wipe the record of scope that arrived
+    # before it, which is the same laundering the accumulated count exists to prevent.
+    since = chain[0].created_at
+    items = [it for it in items_svc.list_items(db, project_id=prd.project_id)
+             if it.prd_id == prd.id]
+    inferred = sum(1 for it in items if it.prd_linked_at is None)
+    scope_added = [
+        {"id": it.key, "status": it.status, "section": it.prd_section,
+         "linked_at": (it.prd_linked_at or it.created_at).isoformat(),
+         # Disclosed per item, not just in a total, so a reader can tell which rows are
+         # measured and which are a fallback reading of `created_at`.
+         "inferred": it.prd_linked_at is None}
+        for it in items if (it.prd_linked_at or it.created_at) > since
+    ]
+
+    done = completeness(db, prd)
+    return {
+        "governed": True,
+        "baseline_version": governing.version,
+        "accumulated": accumulated,
+        "current": _structural(live),
+        "total": accumulated + _structural(live),
+        "segments": segments,
+        "scope_added": sorted(scope_added, key=lambda r: r["linked_at"]),
+        # Absent and undelivered both mean "this intent has nothing delivered against it",
+        # which is the one question drift is asking here. `completeness` keeps them apart
+        # because the owners differ; this does not, because the reading does not.
+        "intent_undelivered": sorted(done["absent"] + done["undelivered"]),
+        "inferred_link_times": inferred,
+        # Reported so a reader can see they were considered and deliberately not counted.
+        "renamed": live["renamed"],
     }
 
 

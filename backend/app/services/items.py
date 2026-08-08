@@ -85,6 +85,7 @@ def create_item(
         reporter=reporter or {},
         date=date,
         prd_id=_stored_prd_id(db, prd_id),
+        prd_linked_at=utcnow() if prd_id else None,
         prd_section=prd_section or "",
         fidelity=fidelity,
     )
@@ -132,6 +133,12 @@ def update_item(db: Session, item_id: str, **fields) -> Item | None:
     prev_status = item.status
     if fields.get("prd_id") is not None:
         fields = {**fields, "prd_id": _stored_prd_id(db, fields["prd_id"])}
+        # Stamped when the link CHANGES, never on an ordinary edit. Re-saving an item
+        # already on this PRD must not restamp it, or every touch after approval would
+        # look like freshly added scope and the drift number would climb on activity
+        # alone — a metric that rises when you work is one people learn to ignore.
+        if fields["prd_id"] != item.prd_id:
+            item.prd_linked_at = utcnow()
     for key in ("title", "description", "status", "tags", "effort", "blocker", "pr", "date",
                 "github_url", "assignee", "touchpoints", "prd_id", "prd_section", "fidelity"):
         if key in fields and fields[key] is not None:

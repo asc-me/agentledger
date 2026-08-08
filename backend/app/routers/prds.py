@@ -17,6 +17,7 @@ from app.schemas import (
     PrdAiOut,
     PrdCreate,
     PrdLinkIn,
+    PromoteIn,
     PrdOut,
     PrdSummary,
     PrdUpdate,
@@ -144,6 +145,47 @@ def prd_completeness(prd_id: str, db: Session = Depends(get_db), user: User = De
     work that exists can never surface work that was never done."""
     prd = _require_readable_prd(db, user, prd_id)
     return prd_svc.completeness(db, prd)
+
+
+@router.get("/{prd_id}/scope-drift")
+def prd_scope_drift(prd_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Mechanical scope drift — no LLM, no opinion (GRPH-243).
+
+    The half of drift that is countable, so it works on a stub instance with no chat
+    provider. `total` is preserved across a rebaseline rather than reset."""
+    prd = _require_readable_prd(db, user, prd_id)
+    return prd_svc.scope_drift(db, prd)
+
+
+@router.get("/{prd_id}/lineage")
+def prd_lineage(prd_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Where this PRD's dropped intent came from and went (GRPH-246)."""
+    prd = _require_readable_prd(db, user, prd_id)
+    return prd_svc.lineage(db, prd)
+
+
+@router.post("/{prd_id}/promote")
+def prd_promote(prd_id: str, payload: PromoteIn, db: Session = Depends(get_db),
+                user: User = Depends(get_current_user)):
+    """Promote dropped intent into a backlog item or a successor PRD (GRPH-246).
+
+    422 rather than a silent no-op when the named sections have delivered work: writing a
+    lineage record that says something was dropped when it shipped would corrupt the one
+    artifact this feature exists to make trustworthy."""
+    _require_writable_prd(db, user, prd_id)
+    prd = prd_svc.get_prd(db, prd_id)
+    if prd is None:
+        raise HTTPException(404, "no such PRD")
+    try:
+        if payload.target == "prd":
+            out = prd_svc.promote_to_prd(db, prd, payload.sections, title=payload.title)
+            return {"target": "prd", "id": out.key, "promoted_sections": out.promoted_sections}
+        if len(payload.sections) != 1:
+            raise ValueError("promoting to an item takes exactly one section")
+        item = prd_svc.promote_to_item(db, prd, payload.sections[0], title=payload.title)
+        return {"target": "item", "id": item.key, "promoted_sections": [item.prd_section]}
+    except ValueError as e:
+        raise HTTPException(422, str(e))
 
 
 @router.get("/{prd_id}/drift")
