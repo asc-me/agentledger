@@ -657,6 +657,84 @@ def diff_sections(old_body: str, new_body: str) -> dict:
             "renamed": renamed, "added": added, "removed": removed}
 
 
+def intent_diff(db: Session, prd: Prd) -> dict:
+    """What a rebaseline would actually change, section by section (GRPH-317).
+
+    PRD-12 is blunt about why this exists: without it "the human ratifies a decision
+    already made in chat without seeing its effect on the spec, and it is rubber-stamping
+    with an audit trail." The approver has to see the change, not be told there is one.
+
+    Per SECTION, not whole-body, for the same reason baselines hash that way: a
+    whole-body diff drowns a real scope change in the noise of a typo fix, and a reader
+    who has to hunt for the important line will stop reading. Only sections that actually
+    changed carry line detail; unchanged ones are named and left alone.
+
+    `governed: False` when there is no baseline — nothing to diff against, which is a
+    different statement from "nothing changed".
+    """
+    base = baseline_of(db, prd.id)
+    if base is None:
+        return {"governed": False, "baseline_version": None, "sections": [], "pending": None}
+
+    d = diff_sections(base.body, prd.body)
+    old_bodies, new_bodies = section_bodies(base.body), section_bodies(prd.body)
+    renamed_from = {new: old for old, new in d["renamed"]}
+
+    sections = []
+    for title in parse_sections(prd.body):
+        if title in d["modified"]:
+            state = "modified"
+        elif title in renamed_from:
+            state = "renamed"
+        elif title in d["added"]:
+            state = "added"
+        else:
+            state = "unchanged"
+        entry = {"title": title, "state": state}
+        if state == "renamed":
+            entry["was"] = renamed_from[title]
+        if state in ("modified", "added"):
+            before = old_bodies.get(renamed_from.get(title, title), "") if state == "modified" else ""
+            entry["lines"] = _line_diff(before, new_bodies.get(title, ""))
+        sections.append(entry)
+
+    # A removed section has no place in the new body's order, so it is appended — but it
+    # carries its old text, because "this was deleted" is the single most consequential
+    # thing an approver can miss.
+    for title in d["removed"]:
+        sections.append({"title": title, "state": "removed",
+                         "lines": _line_diff(old_bodies.get(title, ""), "")})
+
+    return {
+        "governed": True,
+        "baseline_version": base.version,
+        "pending": prd.pending_rebaseline,
+        "sections": sections,
+        "changed": len(d["modified"]) + len(d["added"]) + len(d["removed"]) + len(d["renamed"]),
+    }
+
+
+def _line_diff(before: str, after: str) -> list[dict]:
+    """Line-level changes, as `{op, text}` with op in `+ - =`.
+
+    Context lines are kept so a change reads in place rather than as a pile of orphaned
+    additions. Nothing is truncated: a diff that hides part of the change is worse than
+    a long one, because the reader believes they have seen everything."""
+    import difflib
+
+    out = []
+    for line in difflib.ndiff(before.splitlines(), after.splitlines()):
+        op, text = line[:2], line[2:]
+        if op == "+ ":
+            out.append({"op": "+", "text": text})
+        elif op == "- ":
+            out.append({"op": "-", "text": text})
+        elif op == "  ":
+            out.append({"op": "=", "text": text})
+        # "? " hint lines are difflib's intra-line markers — noise for a human reader.
+    return out
+
+
 def baseline_drift(db: Session, prd: Prd) -> dict:
     """How the living body has diverged from the GOVERNING baseline.
 

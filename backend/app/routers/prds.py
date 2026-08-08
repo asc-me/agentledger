@@ -125,6 +125,16 @@ def request_rebaseline(prd_id: str, body: RebaselineIn, db: Session = Depends(ge
         raise HTTPException(422, str(e))
 
 
+@router.get("/{prd_id}/intent-diff")
+def prd_intent_diff(prd_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """What a rebaseline would change, section by section (GRPH-317).
+
+    PRD-12: without this the approver "ratifies a decision already made in chat without
+    seeing its effect on the spec." Approval is the grill, so this belongs beside it."""
+    prd = _require_readable_prd(db, user, prd_id)
+    return prd_svc.intent_diff(db, prd)
+
+
 @router.get("/{prd_id}/drift")
 def prd_drift(prd_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Structural divergence from the governing baseline (AL-240).

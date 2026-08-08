@@ -417,6 +417,23 @@ export interface GrillDimensionState {
   question: string;
 }
 
+export interface IntentDiffLine { op: "+" | "-" | "="; text: string }
+
+export interface IntentDiffSection {
+  title: string;
+  state: "unchanged" | "modified" | "renamed" | "added" | "removed";
+  was?: string;
+  lines?: IntentDiffLine[];
+}
+
+export interface IntentDiff {
+  governed: boolean;
+  baseline_version: string | null;
+  pending: { reason_type: string; reason: string; requested_by: string } | null;
+  sections: IntentDiffSection[];
+  changed?: number;
+}
+
 export interface GrillState {
   prd_id: string;
   turns: { seq: number; role: string; text: string; via: string; actor: string }[];
