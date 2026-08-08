@@ -117,6 +117,16 @@ def update_prd(db: Session, prd_id: str, **fields) -> Prd | None:
                if done["outstanding"] else "No answers are recorded yet. ")
             + "Answer the open dimensions (or defer one explicitly) and it approves itself."
         )
+    # Refuse the edit that introduces the violation, rather than letting the author
+    # finish a whole grill and be rejected at the end (GRPH-318).
+    if fields.get("body") is not None:
+        added = rebaseline_added_sections(db, prd, fields["body"])
+        if added:
+            raise RebaselineExpandsScope(
+                "a rebaseline cannot add sections: " + ", ".join(repr(a) for a in added)
+                + ". Rebaselining adjusts a PRD to match reality; new scope belongs in a "
+                "sub-PRD or a follow-up PRD linked back to this one."
+            )
     for key in ("title", "status", "body"):
         if fields.get(key) is not None:
             setattr(prd, key, fields[key])
@@ -782,6 +792,29 @@ def baseline_chain(db: Session, prd_id: str) -> list[PrdVersion]:
     ).all())
 
 
+class RebaselineExpandsScope(ValueError):
+    """A pending rebaseline would add sections. That is a new PRD, not a rebaseline."""
+
+
+def rebaseline_added_sections(db: Session, prd: Prd, body: str | None = None) -> list[str]:
+    """Sections in `body` that the governing baseline has no counterpart for.
+
+    Empty unless a rebaseline is pending — an ordinary post-approval edit may add
+    whatever it likes, because it is drift and drift is the thing being measured, not
+    forbidden.
+
+    Uses `diff_sections`, so a RENAME does not read as an addition (AL-240). Without that
+    this rule would block the most ordinary correction there is: retitling a section
+    while fixing it.
+    """
+    if not prd.pending_rebaseline:
+        return []
+    base = baseline_of(db, prd.id)
+    if base is None:
+        return []
+    return diff_sections(base.body, body if body is not None else prd.body)["added"]
+
+
 def request_rebaseline(
     db: Session, prd: Prd, *, reason_type: str, reason: str, requested_by: str,
 ) -> Prd:
@@ -855,6 +888,14 @@ def sync_status(db: Session, prd: Prd) -> Prd:
         return prd
     done = completion(db, prd.id)
     target = "approved" if done["complete"] else ("review" if done["answers"] else "draft")
+    # A rebaseline that expands scope cannot earn approval, however well it was grilled
+    # (GRPH-318). Checked BEFORE the status moves, so the PRD is never left approved with
+    # no baseline — `freeze_baseline` refusing after the fact would produce exactly that.
+    if target == "approved":
+        added = rebaseline_added_sections(db, prd)
+        if added:
+            logger.warning("rebaseline for %s adds sections %s; refusing approval", prd.id, added)
+            target = "review"
     if target != prd.status:
         prd.status = target
         prd.updated = "just now"

@@ -171,3 +171,81 @@ def test_the_chain_is_readable_over_the_api(client, auth, db, approved):
     assert [c["version"] for c in chain] == ["v1.0", "v1.1"]
     assert chain[0]["supersedes_id"] is None
     assert chain[1]["supersedes_id"] == chain[0]["id"]
+
+
+# ---- a rebaseline adjusts a PRD to reality; it does not expand scope --------------------
+def _pending(db, approved):
+    _request(db, approved)
+    return approved
+
+
+def test_a_rebaseline_cannot_add_sections(db, approved):
+    """Decided 2026-08-07. Rebaselining adjusts a PRD to match reality — correcting what
+    was wrong, recording what was learned. New scope is a sub-PRD or a follow-up PRD.
+
+    This also closes a hole the grill found in the drift model: a section with no
+    predecessor in any prior baseline is neither drift nor delivered-as-agreed, and there
+    is no third case for it. Forbidding the situation is cheaper than inventing one."""
+    _pending(db, approved)
+    with pytest.raises(prd_svc.RebaselineExpandsScope, match="cannot add sections"):
+        prd_svc.update_prd(db, approved.id,
+                           body=approved.body + "\n## Brand new scope\n\nMore features.\n")
+
+
+def test_the_refusal_names_the_offending_sections(db, approved):
+    """"Cannot add sections" without saying which one leaves the author diffing by hand
+    against a baseline they cannot see (GRPH-317 is not built yet)."""
+    _pending(db, approved)
+    with pytest.raises(prd_svc.RebaselineExpandsScope, match="Brand new scope"):
+        prd_svc.update_prd(db, approved.id,
+                           body=approved.body + "\n## Brand new scope\n\nMore.\n")
+
+
+def test_rewriting_and_removing_sections_stays_legal(db, approved):
+    """Those are corrections, which is exactly what a rebaseline is for."""
+    _pending(db, approved)
+    prd_svc.update_prd(db, approved.id, body="# Spec\n\nWholly rewritten intent.\n")
+    assert "Wholly rewritten" in prd_svc.get_prd(db, approved.id).body
+
+
+def test_a_rename_is_not_an_addition(db):
+    """Without AL-240's body-hash identity this rule would block the most ordinary
+    correction there is: retitling a section while fixing it."""
+    prd = prd_svc.create_prd(db, title="S", project_id="core",
+                             body="# S\n\n## Scope\n\nOut of scope: hosted.\n")
+    _grill_to_approval(db, prd)
+    _request(db, prd)
+
+    renamed = "# S\n\n## Scope and boundaries\n\nOut of scope: hosted.\n"
+    prd_svc.update_prd(db, prd.id, body=renamed)  # must not raise
+    assert "Scope and boundaries" in prd_svc.get_prd(db, prd.id).body
+
+
+def test_an_ordinary_post_approval_edit_may_add_sections(db, approved):
+    """No rebaseline pending, so this is drift — the thing being MEASURED, not forbidden.
+    Blocking it would make the feature a gate, contradicting the non-goal."""
+    prd_svc.update_prd(db, approved.id, body=approved.body + "\n## Extra\n\nAdded later.\n")
+    assert "## Extra" in prd_svc.get_prd(db, approved.id).body
+
+
+def test_a_scope_expanding_rebaseline_cannot_earn_approval(db, approved):
+    """The backstop. If the body is expanded some other way — a direct write, an import —
+    the grill must not be able to bless it. Checked BEFORE the status moves, so the PRD is
+    never left approved with no baseline."""
+    from app.models import Prd
+
+    _pending(db, approved)
+    db.get(Prd, approved.id).body = approved.body + "\n## Snuck in\n\nExtra scope.\n"
+    db.commit()
+
+    _grill_to_approval(db, approved)
+    assert approved.status == "review", "a scope-expanding rebaseline was approved"
+    assert len(prd_svc.baseline_chain(db, approved.id)) == 1
+
+
+def test_the_refusal_is_a_conflict_over_the_api(client, auth, db, approved):
+    _pending(db, approved)
+    r = client.patch(f"/api/prds/{approved.id}",
+                     json={"body": approved.body + "\n## New\n\nMore.\n"}, headers=auth)
+    assert r.status_code == 409, r.text
+    assert "sub-PRD" in r.json()["detail"]
