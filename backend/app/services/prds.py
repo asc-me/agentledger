@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from collections import Counter
 
-from app.models import GrillDimension, GrillTurn, Item, Prd, PrdVersion
+from app.models import CodeNode, GrillDimension, GrillTurn, Item, Prd, PrdVersion
 from app.services import items as items_svc
 from app.services import keys
 from app.services import events as events_svc
@@ -857,6 +857,213 @@ def completeness(db: Session, prd: Prd) -> dict:
         "outside_baseline": sorted(s for s in by_section if s and s not in claimed),
         "demanding_sections": len(demanded),
     }
+
+
+# What a verdict is allowed to point at (GRPH-314). `code` was the only form PRD-12 v1.0
+# defined, which made the output of the component it names authoritative on COMPLETENESS
+# definitionally malformed under its own validator: missing work has no path and no
+# symbol, so an absence finding could never cite anything.
+CITATION_KINDS = ("code", "intent", "evidence")
+
+
+def validate_citation(db: Session, prd: Prd, citation: dict) -> tuple[bool, str]:
+    """Whether a verdict's citation resolves to something real. `(ok, reason)`.
+
+    PRD-12 requires that a verdict citing nothing is rejected as malformed, and that every
+    citation resolve. That is what makes a verdict falsifiable rather than trustworthy —
+    the server cannot check whether code is CORRECT, but it can check that what was cited
+    exists, and a claim that can be checked at all is the achievable upgrade.
+
+    Three forms, because one was never enough:
+
+    - `code` — a path or symbol in the project's code graph. The original form.
+    - `intent` — a section of the governing baseline. This is what an ABSENCE finding
+      cites: "nothing was delivered against § Judging" points at the intent, not at code
+      that by definition does not exist. Still falsifiable, since the section must resolve
+      in the baseline; just not against the graph.
+    - `evidence` — a receipt already carried by a completed item. `Item.evidence` accepts
+      `test`, `url`, `screenshot`, `health` and `note`, so a code-graph-only rule rejected
+      valid proof and skewed verdicts toward code-shaped work — a documentation or
+      infrastructure item could never be signed off.
+    """
+    kind = (citation or {}).get("kind")
+    ref = str((citation or {}).get("ref") or "").strip()
+    if kind not in CITATION_KINDS:
+        return False, f"unknown citation kind: {kind!r}"
+    if not ref:
+        return False, "citation names nothing"
+
+    if kind == "code":
+        found = db.scalar(select(CodeNode).where(CodeNode.project_id == prd.project_id,
+                                                 CodeNode.path == ref))
+        return (True, "") if found else (False, f"no such code node: {ref}")
+
+    if kind == "intent":
+        base = baseline_of(db, prd.id)
+        if base is None:
+            return False, "the PRD has no baseline to cite intent from"
+        if ref in parse_sections(base.body):
+            return True, ""
+        # A section renamed since the baseline is the same intent; refusing its baseline
+        # title would make a rename invalidate every absence finding beneath it.
+        renamed = {new: old for old, new in diff_sections(base.body, prd.body)["renamed"]}
+        if ref in renamed:
+            return True, ""
+        return False, f"no such section in baseline {base.version}: {ref}"
+
+    item = items_svc.get_item(db, ref)
+    if item is None:
+        return False, f"no such item: {ref}"
+    if not (item.evidence or []):
+        return False, f"{item.key} carries no evidence to cite"
+    return True, ""
+
+
+def validate_verdict(db: Session, prd: Prd, citations: list[dict]) -> dict:
+    """A verdict is well-formed only if it cites, and every citation resolves.
+
+    Rejecting an EMPTY citation list is the load-bearing half. A verdict that points at
+    nothing cannot be argued with, and one that cannot be argued with is not evidence —
+    it is an assertion wearing evidence's clothes.
+    """
+    if not citations:
+        return {"ok": False, "problems": ["a verdict must cite something"], "checked": 0}
+    problems = []
+    for c in citations:
+        ok, why = validate_citation(db, prd, c)
+        if not ok:
+            problems.append(why)
+    return {"ok": not problems, "problems": problems, "checked": len(citations)}
+
+
+# How a judged close can fail, and why the two are not the same failure (GRPH-311).
+JUDGE_ABSENT, JUDGE_DOWN, JUDGE_READY = "unconfigured", "unavailable", "ready"
+
+
+def judge_status(db: Session, project_id: str, *, reachable: bool = True) -> str:
+    """Whether this project has a judge, and whether it answered.
+
+    PRD-12 v1.0 answered its own question 7 with *"if the judge becomes unavailable during
+    a closing, refuse to close the ticket."* Right for a transient outage, wrong as the
+    shipped default: `CHAT_PROVIDER` defaults to `stub`, so on a default install the judge
+    is **permanently** unavailable and closing becomes permanently impossible. The rule
+    blocks the instance that most needs to ship.
+
+    So the two cases are told apart. `unconfigured` is a standing property of the
+    deployment — nobody chose a judge, and waiting for one is waiting forever.
+    `unavailable` is a judge that WAS chosen and did not answer, which is the transient
+    outage the original rule was written for, and it still blocks.
+
+    Liveness is an INPUT, not something probed here. A caller learns a judge is down by
+    calling it and catching `errors.Unavailable`; a separate health ping would add a
+    network round trip to a read and still prove nothing, since it can succeed a second
+    before the call that matters fails.
+    """
+    provider, _chat = platform_svc.resolve_chat(db, project_id)
+    if provider == "stub":
+        return JUDGE_ABSENT
+    return JUDGE_READY if reachable else JUDGE_DOWN
+
+
+def close_readiness(db: Session, prd: Prd, *, judge_reachable: bool = True) -> dict:
+    """Whether this PRD can be closed, and in what mode (GRPH-311).
+
+    The mechanical half of PRD-12 — structural drift, completeness, evidence, citation
+    validity — needs no chat model at all. So a close with no judge configured is possible
+    and is labelled `mechanical`, the same *degrade and disclose* pattern the grill already
+    uses for its stub bar: `graded_by="stub"` with the limitation stated rather than
+    hidden.
+
+    What it must never do is let `mechanical` read as `judged`. PRD-12 is explicit that a
+    verdict which looks like a measurement when it is an opinion is the failure — and the
+    inverse, an unjudged close wearing a judged label, is the same dishonesty pointing the
+    other way.
+    """
+    status = judge_status(db, prd.project_id, reachable=judge_reachable)
+    governed = baseline_of(db, prd.id) is not None
+    if not governed:
+        return {"can_close": False, "mode": None, "judge": status,
+                "blocked_on": "no baseline — there is no agreed intent to close against"}
+    if status == JUDGE_DOWN:
+        # The case the original rule was written for, and it still blocks. A judge that was
+        # configured and is not answering means the judged close is merely LATE, and
+        # closing mechanically now would silently downgrade a verdict someone is expecting.
+        return {"can_close": False, "mode": None, "judge": status,
+                "blocked_on": "a judge is configured but not answering; retry when it is back"}
+    return {
+        "can_close": True,
+        "mode": "mechanical" if status == JUDGE_ABSENT else "judged",
+        "judge": status,
+        "blocked_on": None,
+        # Carried so a caller cannot render a mechanical close as a judged one by accident.
+        "disclosure": (
+            "No judge is configured. Structural drift, completeness and citation validity "
+            "were checked; whether the work SATISFIES the intent was not assessed."
+        ) if status == JUDGE_ABSENT else None,
+    }
+
+
+def intent_hold(db: Session, item: Item) -> dict | None:
+    """Whether this item is being built against intent that has since moved (GRPH-242).
+
+    **Derived, never stored.** PRD-12 asks for the notice to be pull-based "so no push
+    channel can fail and the agent cannot miss it" — and computing it goes further than a
+    delivered message would: there is nothing to acknowledge away. The item WAS claimed
+    under v1.0 and the governing baseline IS v1.1; that stays true no matter who read
+    what, and a stored flag could be marked seen while the mismatch persisted.
+
+    Returned from `_item_dict`, so it rides on every item any agent reads — claim,
+    heartbeat, update, search. GRPH-312's hole was that reassessment hung off the claim
+    path while agents can complete without ever touching it; hanging it off the item
+    itself is what closes that, because there is no way to work on an item without
+    reading one.
+
+    None once the item is `done`: the hold is about work in flight. The completion path
+    stamps the mismatch onto the item's evidence instead, so the record outlives it.
+    """
+    if item is None or item.status == "done" or not item.prd_id:
+        return None
+    if not item.baseline_at_claim:
+        # Work that started before this was recorded. Saying nothing is the honest answer;
+        # assuming it targeted the current baseline would invent the very fact in doubt.
+        return None
+    base = baseline_of(db, item.prd_id)
+    if base is None or base.version == item.baseline_at_claim:
+        return None
+
+    prior = next((v for v in baseline_chain(db, item.prd_id)
+                  if v.version == item.baseline_at_claim), None)
+    changed = diff_sections(prior.body, base.body) if prior is not None else None
+    return {
+        "started_against": item.baseline_at_claim,
+        "baseline_version": base.version,
+        "reason_type": base.rebaseline_reason_type,
+        "reason": base.rebaseline_reason,
+        # Which sections actually moved, so the holder can tell "my section changed" from
+        # "something else in the PRD changed" without re-reading the whole spec.
+        "sections_changed": sorted(changed["modified"] + changed["added"] + changed["removed"])
+        if changed else [],
+        "section_affected": bool(
+            changed and item.prd_section in
+            set(changed["modified"] + changed["added"] + changed["removed"])
+        ),
+    }
+
+
+def held_claims(db: Session, prd: Prd) -> list[dict]:
+    """In-flight work on this PRD that started against superseded intent.
+
+    The other direction of `intent_hold`: who needs telling. `claimed_by` and the lease
+    give the list, which is why no separate subscription table is needed."""
+    out = []
+    for it in items_svc.list_items(db, project_id=prd.project_id):
+        if it.prd_id != prd.id:
+            continue
+        hold = intent_hold(db, it)
+        if hold:
+            out.append({"id": it.key, "status": it.status, "claimed_by": it.claimed_by,
+                        "section": it.prd_section, **hold})
+    return out
 
 
 class NothingDropped(ValueError):
