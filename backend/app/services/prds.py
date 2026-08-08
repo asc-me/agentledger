@@ -251,17 +251,65 @@ def grill_context(prd: Prd, history: list[dict]) -> str:
 # the conversation rather than receive it. These functions are the whole of that
 # ownership; the completion standard (AL-297) reads them and adds nothing to the store.
 
-def grill_turns(db: Session, prd_id: str) -> list[GrillTurn]:
-    """The persisted conversation, oldest first."""
-    return list(db.scalars(
-        select(GrillTurn).where(GrillTurn.prd_id == prd_id).order_by(GrillTurn.seq)
-    ).all())
+def grill_turns(db: Session, prd_id: str, *, since: int = 0) -> list[GrillTurn]:
+    """The persisted conversation, oldest first.
+
+    `since` is the evidence window (GRPH-322), not a pagination offset. The full
+    transcript is history and is never truncated; what narrows is which turns a
+    *judgement* may rest on. Default 0 is the whole thing.
+    """
+    stmt = select(GrillTurn).where(GrillTurn.prd_id == prd_id)
+    if since:
+        stmt = stmt.where(GrillTurn.seq >= since)
+    return list(db.scalars(stmt.order_by(GrillTurn.seq)).all())
 
 
-def grill_history(db: Session, prd_id: str) -> list[dict]:
+def grill_window(db: Session, prd_id: str) -> int:
+    """The seq the current interrogation starts at — 0 until a rebaseline moves it."""
+    prd = db.get(Prd, prd_id)
+    return int(getattr(prd, "grill_from_seq", 0) or 0) if prd is not None else 0
+
+
+def grill_history(db: Session, prd_id: str, *, since: int = 0) -> list[dict]:
     """The conversation in the `{role, text}` shape the prompts and `_transcript` use,
     so a caller can drop the client-supplied transcript entirely."""
-    return [{"role": t.role, "text": t.text} for t in grill_turns(db, prd_id)]
+    return [{"role": t.role, "text": t.text} for t in grill_turns(db, prd_id, since=since)]
+
+
+def _already_stored(existing: list[GrillTurn], history: list[dict], window: int) -> int:
+    """How many leading turns of `history` are already recorded.
+
+    Callers send one of two things and both have to work. A client that has been in this
+    conversation the whole time replays the FULL transcript; a client that joined after a
+    rebaseline replays only the current interrogation, because that is the whole
+    conversation as far as it knows. Deciding by length alone gets exactly one of them
+    right — measuring against the full transcript silently drops every answer of the
+    second (GRPH-322 by a second route), and measuring against the window duplicates the
+    entire history of the first.
+
+    With no window there is no ambiguity, so the original positional rule stands
+    untouched: everything stored is already stored. That path stays deliberately
+    forgiving about a divergent prefix — a client's copy of a streamed agent reply is
+    routinely not byte-identical to what was saved, and refusing its genuinely new answer
+    over a paraphrase would lose the thing that matters to keep the thing that does not.
+
+    Only once a window exists do the two readings diverge, and there content decides it:
+    anchor at the start of the transcript, else at the start of the window. A replay is
+    recognised because its prefix matches what is stored; anything unrecognised is treated
+    as material for the current round, because after a rebaseline that is what it almost
+    certainly is, and the costly mistake here is dropping a new answer rather than
+    recording a stray one.
+    """
+    if not window:
+        return len(existing)
+    texts = [(m.get("text") or "").strip() for m in history]
+    stored_texts = [t.text for t in existing]
+    n = len(existing)
+    for start in (0, window):
+        already = n - start
+        if 0 <= already <= len(texts) and texts[:already] == stored_texts[start:n]:
+            return already
+    return max(n - window, 0)
 
 
 def record_grill_turns(
@@ -279,9 +327,9 @@ def record_grill_turns(
     silently erase answers that approval is derived from, which is a worse failure than
     a transcript that lags a confused client.
     """
-    stored = db.scalar(
-        select(func.count()).select_from(GrillTurn).where(GrillTurn.prd_id == prd_id)
-    ) or 0
+    existing = grill_turns(db, prd_id)
+    total = len(existing)
+    stored = _already_stored(existing, history, grill_window(db, prd_id))
     added = 0
     for offset, message in enumerate(history[stored:]):
         text = (message.get("text") or "").strip()
@@ -290,7 +338,7 @@ def record_grill_turns(
         role = "user" if message.get("role") == "user" else "agent"
         db.add(GrillTurn(
             prd_id=prd_id,
-            seq=stored + offset,
+            seq=total + offset,
             role=role,
             text=text,
             # Only an ANSWER has a supplier; a question comes from the grill itself.
@@ -376,9 +424,13 @@ def completion(db: Session, prd_id: str) -> dict:
         for name, prompt in DIMENSIONS.items()
     }
     outstanding = sorted(n for n, d in dimensions.items() if d["outcome"] == _BLOCKING)
+    # Windowed (GRPH-322). The floor asks "has this interrogation been answered at all",
+    # so a rebaseline with nothing new must read as zero — counting the previous grill's
+    # answers is what let a rebaseline complete on history.
     answered = db.scalar(
         select(func.count()).select_from(GrillTurn).where(
-            GrillTurn.prd_id == prd_id, GrillTurn.role == "user"
+            GrillTurn.prd_id == prd_id, GrillTurn.role == "user",
+            GrillTurn.seq >= grill_window(db, prd_id),
         )
     ) or 0
     return {
@@ -566,7 +618,10 @@ def classify_grill(db: Session, prd: Prd) -> dict:
     Never downgrades an explicit `deferred` — an author's decision to leave something
     open is theirs, and a later round should not quietly convert it back into an open
     question just because the model didn't see the deferral restated."""
-    history = grill_history(db, prd.id)
+    # Only this interrogation's turns are admissible evidence (GRPH-322). The transcript
+    # before the window is still history and still readable; it just cannot grade a spec
+    # it was never shown.
+    history = grill_history(db, prd.id, since=grill_window(db, prd.id))
     answers = sum(1 for t in history if t["role"] == "user")
     verdicts = _classify_dimensions(db, prd, history)
     if verdicts is None:
@@ -1457,6 +1512,14 @@ def request_rebaseline(
     }
     for row in db.scalars(select(GrillDimension).where(GrillDimension.prd_id == prd.id)).all():
         db.delete(row)
+    # Open a fresh evidence window (GRPH-322). Clearing the verdicts alone was not enough:
+    # classification re-read the whole transcript and re-resolved every dimension from the
+    # PREVIOUS grill, so a rebaseline could reach `approved` without a single new answer.
+    # The transcript is untouched — it stays as history — but nothing before this point may
+    # grade the spec that replaces it.
+    prd.grill_from_seq = db.scalar(
+        select(func.count()).select_from(GrillTurn).where(GrillTurn.prd_id == prd.id)
+    ) or 0
     prd.status = "review"
     prd.updated = "just now"
     db.commit()
@@ -1487,11 +1550,22 @@ def sync_status(db: Session, prd: Prd) -> Prd:
       retract that. Derivation governs transitions from here forward.
     - **Never move a PRD nobody has grilled.** A `draft` with no answers stays `draft`;
       there is nothing to derive from.
+    - **Never call a once-approved PRD a `draft`.** A pending rebaseline legitimately has
+      no answers yet, but a governing baseline exists and saying otherwise would report a
+      spec that was agreed as one that never was.
     """
     if prd.status == "approved":
         return prd
     done = completion(db, prd.id)
     target = "approved" if done["complete"] else ("review" if done["answers"] else "draft")
+    # A PRD that has ever been approved can never read as `draft` again. Once the evidence
+    # window moved (GRPH-322) a freshly requested rebaseline has zero answers *in this
+    # round*, which is correct, but that is not the same as "never grilled" — there is a
+    # governing baseline sitting right there, and calling it a draft would tell a reader
+    # this spec was never agreed. `review` is the honest floor: agreed once, being
+    # re-interrogated now.
+    if target == "draft" and baseline_of(db, prd.id) is not None:
+        target = "review"
     # A rebaseline that expands scope cannot earn approval, however well it was grilled
     # (GRPH-318). Checked BEFORE the status moves, so the PRD is never left approved with
     # no baseline — `freeze_baseline` refusing after the fact would produce exactly that.
@@ -1517,14 +1591,20 @@ def grill_state(db: Session, prd_id: str) -> dict:
     AL-297 hangs per-dimension outcomes off, and what proves this item works: a fresh
     session can answer it."""
     turns = grill_turns(db, prd_id)
+    window = grill_window(db, prd_id)
     done = completion(db, prd_id)
     return {
         "prd_id": prd_id,
         "turns": [{"seq": t.seq, "role": t.role, "text": t.text,
                    "via": t.via, "actor": t.actor} for t in turns],
         "questions": sum(1 for t in turns if t.role == "agent"),
-        "answers": sum(1 for t in turns if t.role == "user"),
-        "grilled": any(t.role == "user" for t in turns),
+        # Counted inside the evidence window, matching what `completion` grades. `turns`
+        # above stays the FULL transcript on purpose: history is never hidden, and a
+        # reader needs to see that earlier rounds happened. `grill_from_seq` is where the
+        # current interrogation begins, so a UI can draw the line (GRPH-322).
+        "grill_from_seq": window,
+        "answers": sum(1 for t in turns if t.role == "user" and t.seq >= window),
+        "grilled": any(t.role == "user" and t.seq >= window for t in turns),
         # The completion standard, so one call answers both "what was said" and
         # "is it finished" — AL-300 derives status from exactly this.
         "dimensions": done["dimensions"],

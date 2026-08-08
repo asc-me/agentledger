@@ -38,8 +38,14 @@ def approved(db):
 
 
 def _grill_to_approval(db, prd):
-    prd_svc.record_grill_turns(db, prd.id, [{"role": "agent", "text": "Q?"},
-                                            {"role": "user", "text": "A substantive answer."}])
+    # A distinct answer per round. Re-posting the previous transcript records nothing
+    # (GRPH-322): a rebaseline earns approval only on answers given after it was requested,
+    # so the helper has to actually answer the new interrogation.
+    round_no = len(prd_svc.baseline_chain(db, prd.id))
+    prior = prd_svc.grill_history(db, prd.id, since=prd_svc.grill_window(db, prd.id))
+    prd_svc.record_grill_turns(db, prd.id, prior + [
+        {"role": "agent", "text": f"Q{round_no}?"},
+        {"role": "user", "text": f"A substantive answer for round {round_no}."}])
     for name in prd_svc.DIMENSIONS:
         prd_svc.set_dimension(db, prd.id, name, "resolved")
     return prd_svc.sync_status(db, prd)

@@ -31,7 +31,12 @@ def db(client):
 def pending(db):
     """An approved PRD with a rebaseline requested — the state this surface exists for."""
     prd = prd_svc.create_prd(db, title="Spec", project_id="core", body=BODY)
-    prd_svc.record_grill_turns(db, prd.id, [{"role": "user", "text": "An answer."}])
+    # A distinct answer per round. Re-posting the previous one records nothing (GRPH-322):
+    # a rebaseline is graded only on answers given after it was requested.
+    window = prd_svc.grill_window(db, prd.id)
+    prior = prd_svc.grill_history(db, prd.id, since=window)
+    prd_svc.record_grill_turns(db, prd.id, prior + [
+        {"role": "user", "text": f"An answer, round {len(prd_svc.baseline_chain(db, prd.id))}."}])
     for name in prd_svc.DIMENSIONS:
         prd_svc.set_dimension(db, prd.id, name, "resolved")
     prd_svc.sync_status(db, prd)
@@ -111,6 +116,9 @@ def test_a_prd_with_no_baseline_is_not_governed(db):
 def test_no_pending_rebaseline_means_nothing_is_being_approved(db, pending):
     """Divergence outside a rebaseline is DRIFT — reportable, but not a decision anyone is
     making here. The surface must not nag about it."""
+    # A rebaseline is graded only on answers given after it was requested (GRPH-322), so
+    # the new interrogation has to actually be answered before it can complete.
+    prd_svc.record_grill_turns(db, pending.id, [{"role": "user", "text": "Answered again."}])
     for name in prd_svc.DIMENSIONS:
         prd_svc.set_dimension(db, pending.id, name, "resolved")
     prd_svc.sync_status(db, pending)  # completes the grill, clearing the pending request

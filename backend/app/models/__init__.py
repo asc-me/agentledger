@@ -426,6 +426,14 @@ class Prd(Base):
     # Holds the frozen id, never a rendering — see GRPH-319.
     supersedes_prd_id: Mapped[str | None] = mapped_column(String, nullable=True)
     promoted_sections: Mapped[list] = mapped_column(JSON, default=list)
+    # Where the CURRENT interrogation starts in the transcript (GRPH-322). A rebaseline is
+    # a new statement of intent and has to earn approval on its own answers; without this
+    # the previous grill's answers grade it, and "we edited the spec to match what we
+    # built" is approved by a conversation about the spec it replaced. The transcript
+    # itself stays whole — history is append-only. Only the EVIDENCE WINDOW moves.
+    grill_from_seq: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
     updated: Mapped[str] = mapped_column(String, default="")  # display date from design
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
