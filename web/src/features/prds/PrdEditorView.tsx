@@ -16,13 +16,14 @@ import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { lineDiff } from "@/lib/diff";
 import { Markdown } from "@/lib/markdown";
-import { keys, useGrillState, useItems, usePrd, usePrdVersions } from "@/lib/queries";
+import { keys, useGrillState, useIntentDiff, useItems, usePrd, usePrdVersions } from "@/lib/queries";
 import type { PrdStatus, PrdVersion } from "@/lib/types";
 
 import { AssistantPanel } from "@/features/assistant/AssistantPanel";
 import { GrillPanel } from "./GrillPanel";
 import { PRD_SETTABLE_STATUSES, PRD_STATUS_META } from "./meta";
 import { ApprovedIsEarned, GrillProgress } from "./GrillProgress";
+import { IntentDiff } from "./IntentDiff";
 
 const AI_COMMANDS = [
   { key: "expand", label: "Expand" },
@@ -37,6 +38,7 @@ export function PrdEditorView() {
   const { data: prd } = usePrd(id);
   const { data: versions = [] } = usePrdVersions(id);
   const { data: grill } = useGrillState(id);
+  const { data: diff } = useIntentDiff(id);
 
   const [title, setTitle] = React.useState("");
   const [body, setBody] = React.useState("");
@@ -176,6 +178,7 @@ export function PrdEditorView() {
             <AssistantPanel entityType="prd" entityId={id} projectId={prd.project_id} />
           ) : rightTab === "grill" ? (
             <div className="flex min-h-0 flex-1 flex-col gap-3">
+              {diff && <IntentDiff diff={diff} />}
               {grill && <GrillProgress state={grill} />}
               <div className="min-h-0 flex-1">
                 <GrillPanel prdId={id} onApply={(b) => { setBody(b); setRightTab("preview"); }} />

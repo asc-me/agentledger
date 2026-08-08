@@ -28,6 +28,7 @@ import type {
   EventPage,
   GrillMessage,
   GrillState,
+  IntentDiff,
   McpToolInfo,
   Org,
   OrgMember,
@@ -348,6 +349,8 @@ export const api = {
       body: JSON.stringify({ command }),
     }),
   grillState: (id: string) => request<GrillState>(`/prds/${id}/grill`),
+
+  intentDiff: (id: string) => request<IntentDiff>(`/prds/${id}/intent-diff`),
 
   grillDefer: (id: string, dimension: string, reason: string) =>
     request<GrillState>(`/prds/${id}/grill/defer`, {

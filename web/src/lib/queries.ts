@@ -157,6 +157,14 @@ export function usePrds(projectId?: string) {
   return useQuery({ queryKey: [...keys.prds, projectId], queryFn: () => api.prds(projectId), enabled: !!projectId });
 }
 
+export function useIntentDiff(id: string) {
+  return useQuery({
+    queryKey: ["intent-diff", id],
+    queryFn: () => api.intentDiff(id),
+    enabled: !!id,
+  });
+}
+
 export function useGrillState(id: string) {
   return useQuery({
     queryKey: ["grill", id],
