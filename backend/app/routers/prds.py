@@ -135,6 +135,17 @@ def prd_intent_diff(prd_id: str, db: Session = Depends(get_db), user: User = Dep
     return prd_svc.intent_diff(db, prd)
 
 
+@router.get("/{prd_id}/completeness")
+def prd_completeness(prd_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """What the governing baseline demands that has nothing delivered (GRPH-251).
+
+    Distinct from `/coverage`, which asks whether the LIVING body is decomposed. This asks
+    whether the AGREED spec was delivered, and only it can answer completeness — classifying
+    work that exists can never surface work that was never done."""
+    prd = _require_readable_prd(db, user, prd_id)
+    return prd_svc.completeness(db, prd)
+
+
 @router.get("/{prd_id}/drift")
 def prd_drift(prd_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Structural divergence from the governing baseline (AL-240).

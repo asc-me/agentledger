@@ -759,6 +759,106 @@ def baseline_drift(db: Session, prd: Prd) -> dict:
     }
 
 
+# What a section's linked work adds up to, mechanically. Ordered worst-first so a caller
+# sorting by this reads the problems at the top.
+_ABSENT, _UNDELIVERED, _PARTIAL, _DELIVERED = "absent", "undelivered", "partial", "delivered"
+
+
+def completeness(db: Session, prd: Prd) -> dict:
+    """What the governing baseline demands that has nothing delivered against it (GRPH-251).
+
+    The direction is the point. Classifying work that exists can only ever find drift and
+    stowaway scope; it can never surface work that was never done. "Is this PRD complete"
+    is entirely a question about what is missing, so only this pass can close one.
+
+    **The unit of intent is the section** (GRPH-313). That choice buys rename detection
+    for free — a retitled section keeps its identity through `diff_sections`, so work
+    linked under either title still counts, and a rename never manufactures a false
+    absence. Anything finer would need its own identity scheme, which AL-240 deliberately
+    left unbuilt.
+
+    Four things this deliberately does NOT do:
+
+    - **It does not read `prd.body`.** `coverage` does, correctly, because it answers
+      "is the spec decomposed". This answers "was the agreed thing delivered", and
+      measuring delivery against a spec that moves is how drift becomes definitionally
+      zero. Sections the body has since added are not intent; sections the body has since
+      dropped still are.
+    - **It does not judge sufficiency.** A linked, `done` item counts as delivered. Whether
+      the work actually satisfies what the section asked is the agent auditor's call
+      (GRPH-252) — it has the repo. Conflating the two would put an opinion behind a
+      mechanical count, which the baseline forbids in as many words.
+    - **It does not emit a percentage.** A single green number is precisely what the PRD
+      says must never be rendered as "PRD complete", and a ratio over sections would
+      weight a one-line section equally with a ten-bullet one.
+    - **It does not drop framing sections.** `_PROSE_SECTIONS` stays as-is for
+      decomposition (a stated non-goal), but PRD-12's third named problem is that the
+      section defining "done" is *structurally exempt from every check*. So framing
+      sections are reported, flagged `framing`, and excluded only from the absence
+      rollups — visible to a reader, never demanded of.
+
+    Absence and non-delivery are kept apart. "Nothing was ever planned here" and "work was
+    planned and has not shipped" are different failures with different owners, and merging
+    them into one red count would tell a PM nothing about which they have.
+    """
+    base = baseline_of(db, prd.id)
+    if base is None:
+        # Same contract as `baseline_drift`: never a zero. "Complete" and "never had
+        # agreed intent to be complete against" are different facts.
+        return {"governed": False, "baseline_version": None, "sections": [],
+                "absent": [], "undelivered": [], "outside_baseline": []}
+
+    # A section renamed since the baseline is the SAME intent, so work filed under either
+    # title belongs to it. Without this every rename would invent an absence.
+    renames = {old: new for old, new in diff_sections(base.body, prd.body)["renamed"]}
+
+    items = [it for it in items_svc.list_items(db, project_id=prd.project_id)
+             if it.prd_id == prd.id]
+    by_section: dict[str, list] = {}
+    for it in items:
+        by_section.setdefault(it.prd_section or "", []).append(it)
+
+    per, claimed = [], set()
+    for title in parse_sections(base.body):
+        aliases = [title] + ([renames[title]] if title in renames else [])
+        its = [it for a in aliases for it in by_section.get(a, [])]
+        claimed.update(aliases)
+        delivered = sum(1 for it in its if it.status == "done")
+        if not its:
+            state = _ABSENT
+        elif delivered == len(its):
+            state = _DELIVERED
+        elif delivered:
+            state = _PARTIAL
+        else:
+            state = _UNDELIVERED
+        per.append({
+            "section": title,
+            "renamed_to": renames.get(title),
+            "framing": not is_implementable_section(title),
+            "state": state,
+            "planned": len(its),
+            "delivered": delivered,
+            "items": [{"id": it.key, "status": it.status} for it in its],
+        })
+
+    demanded = [p for p in per if not p["framing"]]
+    return {
+        "governed": True,
+        "baseline_version": base.version,
+        "sections": per,
+        # The success criterion, in the shape it was written: "absence is a first-class
+        # finding, not an empty list."
+        "absent": [p["section"] for p in demanded if p["state"] == _ABSENT],
+        "undelivered": [p["section"] for p in demanded if p["state"] == _UNDELIVERED],
+        # Work filed against a section the baseline does not contain. Not scope-drift
+        # analysis (GRPH-243) — just a refusal to silently discard items, which is exactly
+        # how GRPH-319 hid a third of this PRD's own work.
+        "outside_baseline": sorted(s for s in by_section if s and s not in claimed),
+        "demanding_sections": len(demanded),
+    }
+
+
 def baseline_of(db: Session, prd_id: str) -> PrdVersion | None:
     """The agreed spec for this PRD, or None if it has never been approved. The latest
     baseline wins — a re-approval supersedes, and the earlier ones stay as history."""
@@ -1134,6 +1234,15 @@ _PROSE_SECTIONS = {
     "risks", "risksandopenquestions", "risksopenquestions",
     "risksandmitigations", "risksmitigations",
     "phasing", "phases", "rollout", "rolloutplan", "milestones", "timeline", "faq", "faqs",
+    # Written BY `grill_apply`, and since PRD-15 made grilling the approval path it lands
+    # on essentially every approved PRD. It records why decisions were settled, not work
+    # to build — so leaving it implementable reported a false gap on almost every PRD in
+    # the instance, and would have made "nothing delivered here" the headline finding of
+    # the completeness pass (GRPH-251) every single time. Noise wearing a serious face is
+    # the AL-96 failure, and it is at its most expensive in the one output whose entire
+    # value is being trusted about absence. Matched narrowly: a section called plain
+    # "Decisions" may well be design decisions that do need building.
+    "decisionsfromgrilling",
 }
 
 
